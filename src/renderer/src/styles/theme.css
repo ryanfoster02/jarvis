@@ -1,55 +1,64 @@
-/* JARVIS tokens. Themes switch via <html data-theme="cyan|azure|gold">.
-   Fonts are macOS system faces (remote fonts are blocked by CSP). */
-:root {
-  /* Base */
-  --abyss: #050b16;
-  --navy: #0a1730;
-  --navy-2: #10223f;
-  --ink: #dce7f5;
-  --dim: #8396b3;
-  --faint: #55688a;
-  --danger: #ff5468;
-  --ok: #3ddc97;
-
-  /* Accent (overridden per theme) */
-  --accent: #3fe4f2;
-  --attention: #e8b54a; /* "needs you": approvals, executing */
-
-  --line: color-mix(in srgb, var(--accent) 14%, transparent);
-  --line-soft: color-mix(in srgb, var(--ink) 7%, transparent);
-  --glass: color-mix(in srgb, var(--navy-2) 52%, transparent);
-
-  /* Type */
-  --font-ui: 'Avenir Next', Avenir, 'Segoe UI', system-ui, sans-serif;
-  --font-cond: 'Avenir Next Condensed', 'Avenir Next', 'Arial Narrow', system-ui, sans-serif;
-  /* Scale (ratio 1.25 from 14px) */
-  --t-xs: 11.5px;
-  --t-sm: 12.5px;
-  --t-base: 14px;
-  --t-md: 17.5px;
-  --t-lg: 22px;
-  --t-xl: 27.5px;
-  --t-2xl: 34px;
-
-  --r-lg: 18px;
-  --r-md: 12px;
-  --r-sm: 8px;
-  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+/* JARVIS tokens — HUD style. Themes via <html data-theme="gold|cyan|azure">.
+   Fonts are bundled locally via @fontsource (CSP blocks remote fonts). */
+:root,
+[data-theme='gold'] {
+  --bg: #090604;
+  --bg-2: #1a1108;
+  --glow: #8a5a12;
+  --panel: rgb(18 12 7 / 0.66);
+  --ink: #f3e6cf;
+  --dim: #b09c7f;
+  --faint: #6f5f49;
+  --accent: #f0b54a;
+  --accent-hi: #ffd88a;
+  --attention: #ffe2a0; /* "needs you" */
 }
 
 [data-theme='cyan'] {
+  --bg: #02070d;
+  --bg-2: #061a26;
+  --glow: #0d5c6e;
+  --panel: rgb(6 18 28 / 0.66);
+  --ink: #dcecf5;
+  --dim: #87a3b5;
+  --faint: #4d687c;
   --accent: #3fe4f2;
-  --attention: #e8b54a;
+  --accent-hi: #a6f6fc;
+  --attention: #f0b54a;
 }
 
 [data-theme='azure'] {
-  --accent: #4c86ff;
-  --attention: #e8b54a;
+  --bg: #03060f;
+  --bg-2: #0a1532;
+  --glow: #1d3f99;
+  --panel: rgb(8 14 34 / 0.66);
+  --ink: #dde6f8;
+  --dim: #8a9bc0;
+  --faint: #4f5f86;
+  --accent: #5b8fff;
+  --accent-hi: #b5ccff;
+  --attention: #f0b54a;
 }
 
-[data-theme='gold'] {
-  --accent: #e8b54a;
-  --attention: #3fe4f2;
+:root {
+  --danger: #ff4d5e;
+  --ok: #4fd99a;
+  --line: color-mix(in srgb, var(--accent) 24%, transparent);
+  --line-soft: color-mix(in srgb, var(--accent) 10%, transparent);
+
+  --font-display: 'Michroma', 'Avenir Next', system-ui, sans-serif;
+  --font-ui: 'Avenir Next', Avenir, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+
+  --t-micro: 10px;
+  --t-xs: 11.5px;
+  --t-sm: 12.5px;
+  --t-base: 14px;
+  --t-md: 16px;
+  --t-lg: 20px;
+  --t-xl: 26px;
+
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 [data-reduced-motion='true'] *,

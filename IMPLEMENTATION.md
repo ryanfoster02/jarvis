@@ -23,16 +23,16 @@ Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ no
 **Verified on macOS 2026-11-08:** install, typecheck, tests, launch.
 
 ### Sprint 2 — Dashboard 🟡
-- 🟡 Visual system: navy base, Avenir Next / Avenir Next Condensed, accent + attention colours, 3 themes
-- 🟡 SVG AI core with 6 state signatures (idle, listening, thinking, speaking, executing, halted)
-- 🟡 Navigation rail with always-visible emergency stop; ⌘, settings, Esc back
-- 🟡 Workspace selector (persisted; context separation itself is Phase 2)
-- 🟡 Operations column: tasks, approvals, execution limits, integrations (truthful empty states)
-- 🟡 Conversation panel restyle (Enter sends, Shift+Enter newline, timestamps, pending indicator)
+- 🟡 HUD visual system (owner-requested reference look): warm-black base with amber glow and star dust, corner-bracket frames, Michroma display + JetBrains Mono data (bundled, OFL), Gold default + Cyan/Azure themes
+- 🟡 SVG AI core: dense bezel, segmented rings, counter-rotating triangles, level bars, JARVIS + state in the nucleus; 7 states (standing by, listening, thinking, working, speaking, needs you, stopped)
+- 🟡 Top bar: Dashboard/Settings nav, workspace selector, theme chip, Stop all / Re-arm; ⌘, settings, Esc back
+- 🟡 Presence legend (live state highlighted, honest availability), status terminal (provider/tokens/cost/latency — real values)
+- 🟡 Operations panel: tasks, approvals, execution limits, integrations (truthful empty states)
+- 🟡 Conversation panel (Enter sends, Shift+Enter newline, timestamps, pending indicator)
 - 🟡 Settings: appearance (theme, reduce motion, core preview), voice, provider, permissions, notifications, connections, about
 - ✅ Contract: `activeWorkspace` setting + `DEFAULT_LIMITS`, unit-tested (10 tests)
 
-**Acceptance:** typecheck passes; every control either works or says it isn't available yet; all 3 themes and all 6 core states look right on macOS; reduce-motion stops core animation; workspace + theme survive restart.
+**Acceptance:** `npm install` (new font packages) + typecheck pass; every control works or says it isn't available yet; all 3 themes and all 7 core states look right on macOS; reduce-motion stops core animation; workspace + theme survive restart.
 
 ### Sprint 3 — Voice ⬜
 Credential vault (safeStorage) + settings UI for OpenAI key; ephemeral token minting; WebRTC session; mic permission flow; live transcripts; start/stop/mute; interruption; voice selection; error states. **Acceptance:** a real spoken round-trip on macOS with the owner's key; key never visible in renderer (verified via DevTools); failures surface as errors, not fake responses.

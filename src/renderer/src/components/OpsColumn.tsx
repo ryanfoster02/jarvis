@@ -20,16 +20,16 @@ const LIMIT_ROWS: Array<[string, string]> = [
 
 export function OpsColumn(): React.JSX.Element {
   return (
-    <aside className="ops glass" aria-label="Operations">
+    <section className="frame panel ops" aria-label="Operations">
       <section className="ops-section">
-        <h2>Tasks</h2>
+        <h2 className="label">Tasks</h2>
         <p className="empty-note">
           Nothing scheduled. Reminders and scheduled tasks arrive with the scheduler in Phase 3.
         </p>
       </section>
 
       <section className="ops-section">
-        <h2>Approvals</h2>
+        <h2 className="label">Approvals</h2>
         <p className="empty-note">
           No requests waiting. When Jarvis wants to send, delete, publish or spend, the request appears here
           for you to approve.
@@ -37,7 +37,7 @@ export function OpsColumn(): React.JSX.Element {
       </section>
 
       <section className="ops-section">
-        <h2>Execution limits</h2>
+        <h2 className="label">Execution limits</h2>
         <dl className="limits">
           {LIMIT_ROWS.map(([k, v]) => (
             <div key={k}>
@@ -50,7 +50,7 @@ export function OpsColumn(): React.JSX.Element {
       </section>
 
       <section className="ops-section">
-        <h2>Integrations</h2>
+        <h2 className="label">Integrations</h2>
         <ul className="integrations">
           {INTEGRATIONS.map((i) => (
             <li key={i.name}>
@@ -61,6 +61,6 @@ export function OpsColumn(): React.JSX.Element {
           ))}
         </ul>
       </section>
-    </aside>
+    </section>
   )
 }

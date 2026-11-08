@@ -1,20 +1,21 @@
 import { useCallback, useEffect, useState } from 'react'
-import { WORKSPACES, type AppInfo, type KillSwitchState, type Settings, type Theme, type WorkspaceId } from '../../shared/ipc.ts'
-import { AiCore, CORE_LABELS, type CoreState } from './components/AiCore.tsx'
+import { WORKSPACES, type AppInfo, type KillSwitchState, type Settings } from '../../shared/ipc.ts'
+import { AiCore, type CoreState } from './components/AiCore.tsx'
 import { ConversationPanel } from './components/ConversationPanel.tsx'
 import { OpsColumn } from './components/OpsColumn.tsx'
-import { Rail, type View } from './components/Rail.tsx'
 import { SettingsView } from './components/SettingsView.tsx'
-import { TopBar } from './components/TopBar.tsx'
+import { StateLegend } from './components/StateLegend.tsx'
+import { StatusTerminal } from './components/StatusTerminal.tsx'
+import { TopBar, type View } from './components/TopBar.tsx'
 
-function readout(state: CoreState, kill: KillSwitchState | null, bridgeError: string | null): string {
+function statusLine(state: CoreState, kill: KillSwitchState | null, bridgeError: string | null): string {
   if (bridgeError) return bridgeError
   if (kill?.engaged) {
     const at = kill.engagedAt ? new Date(kill.engagedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''
-    return `Emergency stop engaged${at ? ` at ${at}` : ''}. Nothing will run until you re-arm.`
+    return `Stopped${at ? ` at ${at}` : ''}. Nothing runs until you re-arm.`
   }
-  if (state === 'processing') return 'Passing your message to the main process.'
-  return "Ready for text. Jarvis receives your messages but can't reply until an AI provider is connected."
+  if (state === 'processing') return 'Delivering your message to the main process…'
+  return 'Nothing needs you.'
 }
 
 export function App(): React.JSX.Element {
@@ -69,36 +70,36 @@ export function App(): React.JSX.Element {
     }
   }, [])
 
-  const coreState: CoreState = bridgeError || kill?.engaged ? 'error' : busy ? 'processing' : 'idle'
+  const halted = !!bridgeError || !!kill?.engaged
+  const coreState: CoreState = halted ? 'error' : busy ? 'processing' : 'idle'
   const workspace = WORKSPACES.find((w) => w.id === settings?.activeWorkspace) ?? WORKSPACES[0]
 
   return (
-    <div className="shell" data-halted={kill?.engaged ? 'true' : undefined}>
+    <div className="shell" data-halted={halted ? 'true' : undefined}>
+      <div className="starfield" aria-hidden="true" />
       <TopBar
+        view={view}
+        onNavigate={setView}
         settings={settings}
-        onWorkspace={(w: WorkspaceId) => void update({ activeWorkspace: w })}
-        onTheme={(t: Theme) => void update({ theme: t })}
+        kill={kill}
+        onWorkspace={(w) => void update({ activeWorkspace: w })}
+        onTheme={(t) => void update({ theme: t })}
       />
-      <Rail view={view} onNavigate={setView} kill={kill} />
 
       <main className="stage">
         {view === 'dashboard' ? (
           <div className="dashboard">
-            <OpsColumn />
+            <div className="col-left">
+              <StateLegend current={coreState} />
+              <OpsColumn />
+            </div>
 
-            <section className="core-stage" aria-label="Jarvis status">
+            <section className="core-stage" aria-label="Jarvis core">
               <AiCore state={coreState} />
-              <div className="readout" role="status" aria-live="polite">
-                <p className="readout-state">{CORE_LABELS[coreState]}</p>
-                <p className="readout-detail">{readout(coreState, kill, bridgeError)}</p>
-              </div>
+              <StatusTerminal line={statusLine(coreState, kill, bridgeError)} tone={halted ? 'halted' : 'normal'} />
             </section>
 
-            <ConversationPanel
-              disabled={!!bridgeError || !!kill?.engaged}
-              workspaceName={workspace.name}
-              onBusyChange={setBusy}
-            />
+            <ConversationPanel disabled={halted} workspaceName={workspace.name} onBusyChange={setBusy} />
           </div>
         ) : settings ? (
           <SettingsView

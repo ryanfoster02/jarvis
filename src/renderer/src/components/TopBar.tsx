@@ -1,38 +1,90 @@
-import { WORKSPACES, type Settings, type Theme, type WorkspaceId } from '../../../shared/ipc.ts'
-import { ThemeSwitcher } from './ThemeSwitcher.tsx'
+import { THEMES, WORKSPACES, type KillSwitchState, type Settings, type Theme, type WorkspaceId } from '../../../shared/ipc.ts'
+import { THEME_NAMES } from './ThemeSwitcher.tsx'
+
+export type View = 'dashboard' | 'settings'
 
 interface Props {
+  view: View
+  onNavigate: (v: View) => void
   settings: Settings | null
+  kill: KillSwitchState | null
   onWorkspace: (w: WorkspaceId) => void
   onTheme: (t: Theme) => void
 }
 
-export function TopBar({ settings, onWorkspace, onTheme }: Props): React.JSX.Element {
+const Mark = (): React.JSX.Element => (
+  <svg className="mark" viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="12" cy="12" r="10.5" fill="none" stroke="currentColor" strokeWidth="1" strokeDasharray="1.5 1.5" />
+    <circle cx="12" cy="12" r="6.5" fill="none" stroke="currentColor" strokeWidth="1.2" />
+    <circle cx="12" cy="12" r="2.6" fill="currentColor" />
+  </svg>
+)
+
+export function TopBar({ view, onNavigate, settings, kill, onWorkspace, onTheme }: Props): React.JSX.Element {
+  const halted = !!kill?.engaged
+  const nextTheme = (t: Theme): Theme => THEMES[(THEMES.indexOf(t) + 1) % THEMES.length] ?? 'gold'
+
   return (
     <header className="topbar">
-      <div className="wordmark" aria-label="J.A.R.V.I.S.">
-        J.A.R.V.I.S.
-      </div>
+      <div className="topbar-frame frame">
+        <div className="brand">
+          <Mark />
+          <span className="wordmark">JARVIS</span>
+        </div>
 
-      {settings && (
-        <label className="workspace">
-          <span className="sr-only">Workspace</span>
-          <select
-            value={settings.activeWorkspace}
-            onChange={(e) => onWorkspace(e.target.value as WorkspaceId)}
-            title="Switch workspace"
+        <nav className="nav" aria-label="Main">
+          <button aria-current={view === 'dashboard' ? 'page' : undefined} onClick={() => onNavigate('dashboard')}>
+            Dashboard
+          </button>
+          <button
+            aria-current={view === 'settings' ? 'page' : undefined}
+            onClick={() => onNavigate('settings')}
+            title="Settings (⌘,)"
           >
-            {WORKSPACES.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
+            Settings
+          </button>
+        </nav>
 
-      <div className="topbar-spacer" />
-      {settings && <ThemeSwitcher value={settings.theme} onChange={onTheme} />}
+        <div className="topbar-spacer" />
+
+        {settings && (
+          <>
+            <label className="chip chip-select">
+              <span className={`live-dot ${halted ? 'is-halted' : ''}`} aria-hidden="true" />
+              <span className="sr-only">Workspace</span>
+              <select value={settings.activeWorkspace} onChange={(e) => onWorkspace(e.target.value as WorkspaceId)}>
+                {WORKSPACES.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              className="chip"
+              onClick={() => onTheme(nextTheme(settings.theme))}
+              title="Switch theme"
+            >
+              Theme: {THEME_NAMES[settings.theme]}
+            </button>
+          </>
+        )}
+
+        {halted ? (
+          <button className="chip chip-rearm" onClick={() => void window.jarvis.killSwitch.rearm()}>
+            Re-arm
+          </button>
+        ) : (
+          <button
+            className="chip chip-stop"
+            onClick={() => void window.jarvis.killSwitch.engage('Stop all (dashboard)')}
+            title="Stop all execution (⌘⇧.)"
+          >
+            <span className="stop-square" aria-hidden="true" />
+            Stop all
+          </button>
+        )}
+      </div>
     </header>
   )
 }

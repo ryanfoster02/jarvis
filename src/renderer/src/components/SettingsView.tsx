@@ -39,7 +39,7 @@ export function SettingsView({ settings, info, onTheme, onReducedMotion }: Props
         ))}
       </nav>
 
-      <div className="settings-body glass">
+      <div className="settings-body frame">
         {section === 'appearance' && (
           <>
             <h2>Appearance</h2>

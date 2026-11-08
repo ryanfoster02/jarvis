@@ -10,7 +10,8 @@ Versions verified against official sources on 2026-11-08. Re-verify before major
 | Bundler | Vite | `^7.0.0` | Held at 7 until electron-vite declares Vite 8 support. |
 | UI | React + react-dom | `^19.0.0` | |
 | Language | TypeScript | `^5.9.0` | Strict mode. TS 6 deferred until the tooling chain confirms support. |
-| Styling | CSS custom properties | — | Themes via `data-theme`. Tailwind CSS re-evaluated in Sprint 2; not added until it earns its place. |
+| Styling | CSS custom properties | — | Themes via `data-theme`. Tailwind not used: the token system is small and fully custom. |
+| Fonts | `@fontsource/michroma`, `@fontsource/jetbrains-mono` | `^5.3.0` | OFL-1.1, bundled locally (CSP blocks remote fonts). Michroma = wide display/labels; JetBrains Mono = data. Added Sprint 2 for the owner-requested HUD look. |
 | Tests | `node:test` (built in) | — | Zero-dependency unit tests for shared logic. Playwright/Electron E2E added in Sprint 4. |
 | Packaging | electron-builder | added in Sprint 4 | Not needed to run in dev. |
 | Database | SQLite 3 + Drizzle ORM | Phase 2 | Likely `better-sqlite3` (native, main process only). |

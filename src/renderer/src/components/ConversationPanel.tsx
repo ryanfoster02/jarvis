@@ -56,9 +56,9 @@ export function ConversationPanel({ disabled, workspaceName, onBusyChange }: Pro
   }
 
   return (
-    <section className="conversation glass" aria-label="Conversation">
+    <section className="frame conversation" aria-label="Conversation">
       <header className="conv-head">
-        <h2>Conversation</h2>
+        <h2 className="label">Conversation</h2>
         <span className="conv-scope">{workspaceName}</span>
       </header>
 

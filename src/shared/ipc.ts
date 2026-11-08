@@ -41,7 +41,7 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = Object.freeze({
-  theme: 'cyan',
+  theme: 'gold',
   reducedMotion: false,
   activeWorkspace: 'personal',
 })
