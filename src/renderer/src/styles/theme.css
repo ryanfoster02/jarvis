@@ -1,56 +1,69 @@
-/* Theme tokens. Switch with <html data-theme="gold|azure|cyan">. */
+/* JARVIS tokens. Themes switch via <html data-theme="cyan|azure|gold">.
+   Fonts are macOS system faces (remote fonts are blocked by CSP). */
 :root {
-  --bg-0: #03060b;
-  --bg-1: #07101c;
-  --bg-2: #0c1828;
-  --glass: rgba(14, 28, 46, 0.55);
-  --glass-strong: rgba(18, 36, 58, 0.75);
-  --line: rgba(140, 190, 255, 0.12);
-  --text: #e3ecf7;
-  --text-dim: #8ea3bb;
-  --text-faint: #5a6d84;
-  --danger: #ff4d5e;
-  --ok: #38e0a0;
-  --pending: #f2b84b;
+  /* Base */
+  --abyss: #050b16;
+  --navy: #0a1730;
+  --navy-2: #10223f;
+  --ink: #dce7f5;
+  --dim: #8396b3;
+  --faint: #55688a;
+  --danger: #ff5468;
+  --ok: #3ddc97;
 
-  --font-ui: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Inter, system-ui, sans-serif;
-  --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
-  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  /* Accent (overridden per theme) */
+  --accent: #3fe4f2;
+  --attention: #e8b54a; /* "needs you": approvals, executing */
 
-  --radius: 14px;
+  --line: color-mix(in srgb, var(--accent) 14%, transparent);
+  --line-soft: color-mix(in srgb, var(--ink) 7%, transparent);
+  --glass: color-mix(in srgb, var(--navy-2) 52%, transparent);
+
+  /* Type */
+  --font-ui: 'Avenir Next', Avenir, 'Segoe UI', system-ui, sans-serif;
+  --font-cond: 'Avenir Next Condensed', 'Avenir Next', 'Arial Narrow', system-ui, sans-serif;
+  /* Scale (ratio 1.25 from 14px) */
+  --t-xs: 11.5px;
+  --t-sm: 12.5px;
+  --t-base: 14px;
+  --t-md: 17.5px;
+  --t-lg: 22px;
+  --t-xl: 27.5px;
+  --t-2xl: 34px;
+
+  --r-lg: 18px;
+  --r-md: 12px;
+  --r-sm: 8px;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 [data-theme='cyan'] {
-  --accent: #2ee6f0;
-  --accent-2: #1a9fd8;
-  --accent-rgb: 46, 230, 240;
+  --accent: #3fe4f2;
+  --attention: #e8b54a;
 }
 
 [data-theme='azure'] {
-  --accent: #4d8dff;
-  --accent-2: #2b5fe0;
-  --accent-rgb: 77, 141, 255;
+  --accent: #4c86ff;
+  --attention: #e8b54a;
 }
 
 [data-theme='gold'] {
-  --accent: #f5c04a;
-  --accent-2: #d98e1f;
-  --accent-rgb: 245, 192, 74;
+  --accent: #e8b54a;
+  --attention: #3fe4f2;
 }
 
 [data-reduced-motion='true'] *,
 [data-reduced-motion='true'] *::before,
 [data-reduced-motion='true'] *::after {
   animation: none !important;
-  transition: none !important;
+  transition-duration: 0.001ms !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
+    animation: none !important;
+    transition-duration: 0.001ms !important;
   }
 }

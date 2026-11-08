@@ -28,7 +28,7 @@ src/
   shared/      Pure TS: IPC contract, validators, types. No Electron/Node imports. Unit-tested.
   main/        Electron main: index.ts (window + security), ipc.ts (handlers), settings.ts, killswitch.ts
   preload/     contextBridge API (window.jarvis)
-  renderer/    React app (index.html, src/)
+  renderer/    React app (index.html, src/): App.tsx (views: dashboard, settings), components/, styles/ (theme tokens + app)
 tests/         node:test unit tests for src/shared
 scripts/       sunrise / sunset session tooling
 sessions/      session reports (YYYY-MM-DD_HH-mm.md)

@@ -1,20 +1,29 @@
 import { THEMES, type Theme } from '../../../shared/ipc.ts'
 
-const NAMES: Record<Theme, string> = { gold: 'Gold', azure: 'Azure', cyan: 'Cyan' }
+export const THEME_NAMES: Record<Theme, string> = { gold: 'Gold', azure: 'Azure blue', cyan: 'Cyan' }
 
-export function ThemeSwitcher({ value, onChange }: { value: Theme; onChange: (t: Theme) => void }): React.JSX.Element {
+export function ThemeSwitcher({
+  value,
+  onChange,
+  showNames = false,
+}: {
+  value: Theme
+  onChange: (t: Theme) => void
+  showNames?: boolean
+}): React.JSX.Element {
   return (
-    <div className="theme-switch" role="radiogroup" aria-label="Theme">
+    <div className={`theme-switch ${showNames ? 'with-names' : ''}`} role="radiogroup" aria-label="Theme">
       {THEMES.map((t) => (
         <button
           key={t}
           role="radio"
           aria-checked={value === t}
-          className={`swatch swatch-${t} ${value === t ? 'is-active' : ''}`}
+          className={`swatch-btn ${value === t ? 'is-active' : ''}`}
           onClick={() => onChange(t)}
-          title={NAMES[t]}
+          title={THEME_NAMES[t]}
         >
-          <span className="sr-only">{NAMES[t]}</span>
+          <span className={`swatch swatch-${t}`} />
+          {showNames ? <span>{THEME_NAMES[t]}</span> : <span className="sr-only">{THEME_NAMES[t]}</span>}
         </button>
       ))}
     </div>

@@ -24,14 +24,45 @@ export type Channel = (typeof Channels)[keyof typeof Channels]
 export const THEMES = ['gold', 'azure', 'cyan'] as const
 export type Theme = (typeof THEMES)[number]
 
+/** Workspaces separate context. Phase 2 moves these to SQLite and scopes memory by workspace. */
+export const WORKSPACES = [
+  { id: 'personal', name: 'Personal' },
+  { id: 'foster-automation', name: 'Foster Automation' },
+  { id: 'client-projects', name: 'Client projects' },
+  { id: 'development', name: 'Development' },
+  { id: 'research', name: 'Research' },
+] as const
+export type WorkspaceId = (typeof WORKSPACES)[number]['id']
+
 export interface Settings {
   theme: Theme
   reducedMotion: boolean
+  activeWorkspace: WorkspaceId
 }
 
 export const DEFAULT_SETTINGS: Settings = Object.freeze({
   theme: 'cyan',
   reducedMotion: false,
+  activeWorkspace: 'personal',
+})
+
+/** Execution limits (SECURITY.md §6). Displayed now; enforced by the agent runtime in Phase 2. */
+export interface ExecutionLimits {
+  maxIterations: number
+  maxSeconds: number
+  maxToolCalls: number
+  maxCostUsd: number
+  maxSubagentDepth: number
+  maxConcurrentAgents: number
+}
+
+export const DEFAULT_LIMITS: ExecutionLimits = Object.freeze({
+  maxIterations: 10,
+  maxSeconds: 120,
+  maxToolCalls: 20,
+  maxCostUsd: 1,
+  maxSubagentDepth: 1,
+  maxConcurrentAgents: 2,
 })
 
 export interface AppInfo {
@@ -72,6 +103,10 @@ export function isTheme(v: unknown): v is Theme {
   return typeof v === 'string' && (THEMES as readonly string[]).includes(v)
 }
 
+export function isWorkspaceId(v: unknown): v is WorkspaceId {
+  return typeof v === 'string' && WORKSPACES.some((w) => w.id === v)
+}
+
 /** Accepts only known keys with correct types. Unknown keys are rejected, not ignored. */
 export function validateSettingsPatch(input: unknown): Partial<Settings> {
   if (!isPlainObject(input)) throw new IpcValidationError('settings patch must be an object')
@@ -86,6 +121,10 @@ export function validateSettingsPatch(input: unknown): Partial<Settings> {
         if (typeof value !== 'boolean') throw new IpcValidationError('reducedMotion must be boolean')
         out.reducedMotion = value
         break
+      case 'activeWorkspace':
+        if (!isWorkspaceId(value)) throw new IpcValidationError(`invalid workspace: ${String(value)}`)
+        out.activeWorkspace = value
+        break
       default:
         throw new IpcValidationError(`unknown setting: ${key}`)
     }
@@ -99,6 +138,7 @@ export function normalizeSettings(stored: unknown): Settings {
   if (!isPlainObject(stored)) return s
   if (isTheme(stored.theme)) s.theme = stored.theme
   if (typeof stored.reducedMotion === 'boolean') s.reducedMotion = stored.reducedMotion
+  if (isWorkspaceId(stored.activeWorkspace)) s.activeWorkspace = stored.activeWorkspace
   return s
 }
 

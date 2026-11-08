@@ -1,31 +1,37 @@
-import { useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { MAX_CHAT_CHARS } from '../../../shared/ipc.ts'
 
 interface Entry {
   id: number
   role: 'user' | 'assistant' | 'system'
   text: string
+  at: Date
 }
 
 interface Props {
   disabled: boolean
+  workspaceName: string
   onBusyChange: (busy: boolean) => void
 }
 
-export function ConversationPanel({ disabled, onBusyChange }: Props): React.JSX.Element {
+const WHO: Record<Entry['role'], string> = { user: 'You', assistant: 'Jarvis', system: 'Jarvis system' }
+
+export function ConversationPanel({ disabled, workspaceName, onBusyChange }: Props): React.JSX.Element {
   const [entries, setEntries] = useState<Entry[]>([])
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const nextId = useRef(1)
   const listRef = useRef<HTMLOListElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
 
-  const push = (role: Entry['role'], text: string): void => {
-    setEntries((e) => [...e, { id: nextId.current++, role, text }])
-    requestAnimationFrame(() => listRef.current?.scrollTo({ top: listRef.current.scrollHeight }))
-  }
+  useEffect(() => {
+    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' })
+  }, [entries])
 
-  const submit = async (e: FormEvent): Promise<void> => {
-    e.preventDefault()
+  const push = (role: Entry['role'], text: string): void =>
+    setEntries((e) => [...e, { id: nextId.current++, role, text, at: new Date() }])
+
+  const send = async (): Promise<void> => {
     const text = draft.trim()
     if (!text || busy || disabled) return
     setDraft('')
@@ -36,37 +42,69 @@ export function ConversationPanel({ disabled, onBusyChange }: Props): React.JSX.
       const res = await window.jarvis.chat.send(text)
       push(res.ok ? 'assistant' : 'system', res.ok ? res.reply : res.message)
     } catch (err) {
-      push('system', `Request failed: ${String(err)}`)
+      push('system', `The message couldn't be delivered: ${String(err)}`)
     } finally {
       setBusy(false)
       onBusyChange(false)
+      inputRef.current?.focus()
     }
   }
 
-  return (
-    <div className="panel conversation">
-      <div className="panel-head">
-        <h2>Conversation</h2>
-        <span className="pill pill-muted">Text · voice in Sprint 3</span>
-      </div>
+  const onSubmit = (e: FormEvent): void => {
+    e.preventDefault()
+    void send()
+  }
 
-      <ol className="messages" ref={listRef}>
+  return (
+    <section className="conversation glass" aria-label="Conversation">
+      <header className="conv-head">
+        <h2>Conversation</h2>
+        <span className="conv-scope">{workspaceName}</span>
+      </header>
+
+      <ol className="messages" ref={listRef} aria-live="polite">
         {entries.length === 0 && (
-          <li className="empty">No messages yet. Messages go to the main process; replies need an AI provider, which isn't connected yet.</li>
+          <li className="conv-empty">
+            <p>Ask Jarvis something to get started.</p>
+            <p className="fine">
+              Replies need an AI provider, which isn't connected yet — Jarvis will tell you that rather than make
+              something up. Voice arrives in Sprint 3.
+            </p>
+          </li>
         )}
         {entries.map((m) => (
           <li key={m.id} className={`msg msg-${m.role}`}>
-            <span className="msg-who">{m.role === 'user' ? 'You' : m.role === 'assistant' ? 'Jarvis' : 'System'}</span>
+            <div className="msg-meta">
+              <span className="msg-who">{WHO[m.role]}</span>
+              <time dateTime={m.at.toISOString()}>
+                {m.at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+              </time>
+            </div>
             <p>{m.text}</p>
           </li>
         ))}
+        {busy && (
+          <li className="msg msg-pending" aria-label="Waiting for Jarvis">
+            <span />
+            <span />
+            <span />
+          </li>
+        )}
       </ol>
 
-      <form className="composer" onSubmit={submit}>
-        <input
+      <form className="composer" onSubmit={onSubmit}>
+        <textarea
+          ref={inputRef}
+          rows={1}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder={disabled ? 'Unavailable while halted' : 'Message Jarvis…'}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault()
+              void send()
+            }
+          }}
+          placeholder={disabled ? 'Re-arm Jarvis to send messages' : 'Message Jarvis'}
           maxLength={MAX_CHAT_CHARS}
           disabled={disabled}
           aria-label="Message"
@@ -75,6 +113,6 @@ export function ConversationPanel({ disabled, onBusyChange }: Props): React.JSX.
           Send
         </button>
       </form>
-    </div>
+    </section>
   )
 }

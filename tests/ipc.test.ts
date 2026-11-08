@@ -9,6 +9,8 @@ import {
   validateChatMessage,
   validateReason,
   validateSettingsPatch,
+  WORKSPACES,
+  DEFAULT_LIMITS,
 } from '../src/shared/ipc.ts'
 
 test('settings patch: accepts valid keys', () => {
@@ -69,4 +71,19 @@ test('sender verification: packaged file URL must match exactly', () => {
   assert.equal(isTrustedSenderUrl(t.rendererFileUrl + '#x', t), true)
   assert.equal(isTrustedSenderUrl('file:///tmp/evil.html', t), false)
   assert.equal(isTrustedSenderUrl('http://localhost:5173/', t), false)
+})
+
+test('workspace setting: accepts known ids, rejects others', () => {
+  for (const w of WORKSPACES) assert.deepEqual(validateSettingsPatch({ activeWorkspace: w.id }), { activeWorkspace: w.id })
+  assert.throws(() => validateSettingsPatch({ activeWorkspace: 'Personal' }), /invalid workspace/)
+  assert.throws(() => validateSettingsPatch({ activeWorkspace: '../etc' }), /invalid workspace/)
+  assert.equal(normalizeSettings({ activeWorkspace: 'nope' }).activeWorkspace, 'personal')
+  assert.equal(normalizeSettings({ activeWorkspace: 'research' }).activeWorkspace, 'research')
+})
+
+test('workspace ids are unique; default limits forbid recursion', () => {
+  assert.equal(new Set(WORKSPACES.map((w) => w.id)).size, WORKSPACES.length)
+  assert.equal(DEFAULT_LIMITS.maxSubagentDepth, 1)
+  assert.ok(DEFAULT_LIMITS.maxConcurrentAgents <= 2)
+  assert.ok(Object.isFrozen(DEFAULT_LIMITS))
 })

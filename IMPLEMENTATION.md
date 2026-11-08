@@ -1,6 +1,6 @@
 # IMPLEMENTATION
 
-Current phase: Sprint 1 — Desktop Foundation (awaiting first launch on macOS)
+Current phase: Sprint 2 — Dashboard (built; awaiting visual check on macOS)
 
 Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ not started
 
@@ -14,17 +14,25 @@ Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ no
 
 **Acceptance:** docs exist and agree; `npm run sunrise` / `npm run sunset` work; git tree clean after commit.
 
-### Sprint 1 — Desktop Foundation 🟡
-- ✅ electron-vite + React + TS scaffold (install, typecheck, tests verified on macOS 2026-11-08)
-- 🟡 Hardened BrowserWindow (isolation, sandbox, CSP, nav/permission blocking)
-- 🟡 Typed IPC contract with sender + payload validation (unit-tested ✅)
-- 🟡 App shell: header, AI-core state display, conversation panel (honest "no provider" state), system panel, theme switcher, emergency stop
-- 🟡 Settings persisted to JSON in userData
+### Sprint 1 — Desktop Foundation ✅
+- ✅ electron-vite + React + TS scaffold; Electron binary auto-download (`scripts/ensure-electron.mjs`)
+- ✅ Hardened BrowserWindow (isolation, sandbox, CSP, nav/permission blocking)
+- ✅ Typed IPC contract with sender + payload validation (unit-tested)
+- ✅ App shell, settings persisted to JSON in userData, global kill switch
 
-**Acceptance:** `npm install && npm run dev` opens the window on macOS (Apple Silicon); `npm run typecheck` and `npm test` pass; theme choice survives restart; DevTools console shows no CSP violations; `window.require`/`process` are undefined in the renderer.
+**Verified on macOS 2026-11-08:** install, typecheck, tests, launch.
 
-### Sprint 2 — Dashboard ⬜
-Full visual system (frontend-design guidance), 3 themes, animated AI core (6 states), conversation panel, workspace selector, integrations/task/security panels (truthful empty states), settings view. **Acceptance:** all controls either work or state why not; visual check in all themes.
+### Sprint 2 — Dashboard 🟡
+- 🟡 Visual system: navy base, Avenir Next / Avenir Next Condensed, accent + attention colours, 3 themes
+- 🟡 SVG AI core with 6 state signatures (idle, listening, thinking, speaking, executing, halted)
+- 🟡 Navigation rail with always-visible emergency stop; ⌘, settings, Esc back
+- 🟡 Workspace selector (persisted; context separation itself is Phase 2)
+- 🟡 Operations column: tasks, approvals, execution limits, integrations (truthful empty states)
+- 🟡 Conversation panel restyle (Enter sends, Shift+Enter newline, timestamps, pending indicator)
+- 🟡 Settings: appearance (theme, reduce motion, core preview), voice, provider, permissions, notifications, connections, about
+- ✅ Contract: `activeWorkspace` setting + `DEFAULT_LIMITS`, unit-tested (10 tests)
+
+**Acceptance:** typecheck passes; every control either works or says it isn't available yet; all 3 themes and all 6 core states look right on macOS; reduce-motion stops core animation; workspace + theme survive restart.
 
 ### Sprint 3 — Voice ⬜
 Credential vault (safeStorage) + settings UI for OpenAI key; ephemeral token minting; WebRTC session; mic permission flow; live transcripts; start/stop/mute; interruption; voice selection; error states. **Acceptance:** a real spoken round-trip on macOS with the owner's key; key never visible in renderer (verified via DevTools); failures surface as errors, not fake responses.
