@@ -1,0 +1,3 @@
+#!/bin/sh
+# Wrapper so `scripts/sunset` works directly; logic lives in sunset.mjs
+exec node "$(dirname "$0")/sunset.mjs" "$@"

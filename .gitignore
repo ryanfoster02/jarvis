@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+
+# Build output
+out/
+dist/
+release/
+*.tsbuildinfo
+
+# Environment & credentials — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+secrets/
+credentials*.json
+
+# Local data (SQLite, logs)
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+logs/
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Test output
+coverage/
+playwright-report/
+test-results/
+
+# Claude Code local settings (personal)
+.claude/settings.local.json
