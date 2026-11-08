@@ -3,7 +3,7 @@
   "productName": "JARVIS",
   "version": "0.1.0",
   "private": true,
-  "description": "J.A.R.V.I.S. \u2014 local-first, voice-capable desktop assistant",
+  "description": "J.A.R.V.I.S. — local-first, voice-capable desktop assistant",
   "author": "Ryan Foster",
   "license": "UNLICENSED",
   "main": "./out/main/index.js",
@@ -13,6 +13,7 @@
   "scripts": {
     "postinstall": "node scripts/ensure-electron.mjs --soft",
     "setup:electron": "node scripts/ensure-electron.mjs",
+    "setup:env": "node scripts/setup-env.mjs",
     "predev": "node scripts/ensure-electron.mjs",
     "dev": "electron-vite dev",
     "prepreview": "node scripts/ensure-electron.mjs",

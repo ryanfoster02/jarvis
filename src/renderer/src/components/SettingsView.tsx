@@ -59,10 +59,20 @@ function ProviderSection({ creds, onCreds }: { creds: CredentialStatus; onCreds:
       <h2>AI provider</h2>
       <p className="status-line">
         <span className={`dot ${o.configured ? 'dot-on' : 'dot-off'}`} />
-        {o.configured
-          ? `OpenAI connected · key ending ${o.last4 ?? '????'}${o.verifiedAt ? ` · verified ${new Date(o.verifiedAt).toLocaleDateString()}` : ''}`
-          : 'No provider connected.'}
+        {!o.configured
+          ? 'No provider connected.'
+          : o.source === 'env'
+            ? `OpenAI key from .env file · ending ${o.last4 ?? '????'}`
+            : `OpenAI connected · key ending ${o.last4 ?? '????'}${o.verifiedAt ? ` · verified ${new Date(o.verifiedAt).toLocaleDateString()}` : ''}`}
       </p>
+      {o.source === 'env' && (
+        <p className="form-msg is-ok">
+          Using OPENAI_API_KEY from the project's .env file (development only).
+          {o.vaultOverridden ? ' It overrides the key saved below; remove it from .env to use the saved key.' : ''} Edits to
+          .env apply the next time you start voice.
+        </p>
+      )}
+      {o.envError && <p className="form-msg is-error">{o.envError}</p>}
       <p>
         Jarvis uses your OpenAI API key for voice. The key is checked with OpenAI, then encrypted with your Mac's
         keychain. It never leaves the main process: the interface only ever sees its last four characters.
@@ -72,7 +82,7 @@ function ProviderSection({ creds, onCreds }: { creds: CredentialStatus; onCreds:
       )}
       <form className="key-form" onSubmit={save}>
         <label>
-          <span className="field-label">{o.configured ? 'Replace key' : 'OpenAI API key'}</span>
+          <span className="field-label">{o.source === 'vault' ? 'Replace saved key' : 'Save a key in the vault'}</span>
           <input
             type="password"
             value={key}
@@ -86,14 +96,17 @@ function ProviderSection({ creds, onCreds }: { creds: CredentialStatus; onCreds:
         <button type="submit" className="btn" disabled={!key.trim() || saving || !creds.encryptionAvailable}>
           {saving ? 'Verifying…' : 'Verify and save'}
         </button>
-        {o.configured && (
+        {(o.source === 'vault' || o.vaultOverridden) && (
           <button type="button" className="btn btn-quiet" onClick={() => void remove()}>
             Remove key
           </button>
         )}
       </form>
       {message && <p className={`form-msg ${message.tone === 'error' ? 'is-error' : 'is-ok'}`}>{message.text}</p>}
-      <p className="fine">Get a key at platform.openai.com → API keys. Voice usage is billed to that account.</p>
+      <p className="fine">
+        Get a key at platform.openai.com → API keys. Voice usage is billed to that account. For development you can
+        instead put OPENAI_API_KEY in a .env file in the project folder (run npm run setup:env to create it).
+      </p>
     </>
   )
 }

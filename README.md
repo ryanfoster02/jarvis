@@ -36,8 +36,18 @@ npm run dev          # launches the app with hot reload
 ## Configuration
 Settings (theme, reduced motion) are stored in `~/Library/Application Support/jarvis/settings.json`. API keys are **never** stored there — see [SECURITY.md](SECURITY.md). `.env.example` lists dev-only variables.
 
+## API key (.env)
+For development, put your OpenAI key in a local `.env` file:
+```bash
+npm run setup:env     # creates .env from .env.example (never overwrites)
+```
+Open `.env` and paste your key after `OPENAI_API_KEY=`. Then run `npm run dev` and press **Start voice**. Settings → AI provider shows "key from .env file · ending xxxx".
+- `.env` is git-ignored and only read by the main process in development. Packaged builds ignore it.
+- While it's set, it overrides a key saved in Settings. Edits apply the next time you start voice.
+- Never rename it with a `VITE_` prefix: that would bundle the key into the interface.
+
 ## Using the app
-- **Voice:** Settings → AI provider → paste your OpenAI API key → *Verify and save*. Then on the dashboard press **Start voice** and allow the microphone. Talk naturally; talk over Jarvis to interrupt, or press **Interrupt**. **Mute** turns the mic off; **End voice** closes the session. While voice is on you can also type, and Jarvis answers by voice.
+- **Voice:** add your key via `.env` (above) or Settings → AI provider → *Verify and save*. Then on the dashboard press **Start voice** and allow the microphone. Talk naturally; talk over Jarvis to interrupt, or press **Interrupt**. **Mute** turns the mic off; **End voice** closes the session. While voice is on you can also type, and Jarvis answers by voice.
 - **Model & voice:** Settings → Voice (default GPT Realtime 2.1 mini, voice Marin).
 - **Privacy:** the mic is only on during a voice session; the top bar shows **MIC LIVE**. In development macOS lists the app as "Electron" under Privacy & Security → Microphone.
 - **Stop all** (top bar, or ⌘⇧.) ends voice and halts everything until you press **Re-arm**.

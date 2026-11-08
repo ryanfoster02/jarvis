@@ -38,6 +38,7 @@ Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ no
 - ✅ Shared contract: voice/model settings, key + SDP validators, GA session builder, cost estimator, error sanitizer (18 unit tests)
 - ✅ Relay request shape verified with stubbed fetch; real Chrome SDP offer accepted by validator; voice hook type-checks against DOM WebRTC types
 - 🟡 Credential vault (safeStorage) + Settings → AI provider (verify with OpenAI, save, replace, remove)
+- 🟡 Development `.env` key (`npm run setup:env`); overrides vault while set; ignored when packaged
 - 🟡 Mic consent (macOS) + audio-only permission policy
 - 🟡 WebRTC session via main-process relay; live transcripts (you + Jarvis, streaming)
 - 🟡 Mute, Interrupt, End voice; MIC LIVE indicator; Stop all ends voice

@@ -103,7 +103,17 @@ export interface KillSwitchState {
 export interface CredentialStatus {
   /** False if the OS can't encrypt secrets (then keys can't be saved). */
   encryptionAvailable: boolean
-  openai: { configured: boolean; last4: string | null; verifiedAt: string | null }
+  openai: {
+    configured: boolean
+    /** Where the key in use comes from. In development a .env key overrides the saved one. */
+    source: 'env' | 'vault' | null
+    last4: string | null
+    verifiedAt: string | null
+    /** A key is also saved in the vault but is currently overridden by .env. */
+    vaultOverridden: boolean
+    /** Problem with the .env file (bad format etc.), shown in Settings. Never contains the key. */
+    envError: string | null
+  }
 }
 
 export type CredentialResult = { ok: true; status: CredentialStatus } | { ok: false; message: string }

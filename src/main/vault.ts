@@ -1,7 +1,8 @@
 import { app, safeStorage } from 'electron'
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { keyLast4, type CredentialStatus } from '../shared/ipc.ts'
+import { parseEnv } from 'node:util'
+import { IpcValidationError, keyLast4, validateOpenAIKey, type CredentialStatus } from '../shared/ipc.ts'
 
 // Credential vault (SECURITY.md §2). Secrets are encrypted with Electron safeStorage, which on macOS
 // uses a key held in the login Keychain. Plaintext keys exist only in main-process memory, briefly,
@@ -36,11 +37,66 @@ function write(v: VaultFile): void {
 
 export const encryptionAvailable = (): boolean => safeStorage.isEncryptionAvailable()
 
+// ---------- Development .env fallback ----------
+// Development only (ignored in packaged builds). Reads OPENAI_API_KEY from <project>/.env on each use,
+// so edits apply without a restart. The value is kept out of process.env and never reaches the renderer.
+// Never use a VITE_/RENDERER_VITE_ prefix for secrets: electron-vite would bundle those into the UI.
+
+interface EnvKey {
+  key: string | null
+  error: string | null
+}
+
+function envFilePath(): string | null {
+  if (app.isPackaged) return null
+  for (const dir of [app.getAppPath(), process.cwd()]) {
+    const p = join(dir, '.env')
+    if (existsSync(p)) return p
+  }
+  return null
+}
+
+function readEnvKey(): EnvKey {
+  const path = envFilePath()
+  if (!path) return { key: null, error: null }
+  try {
+    const raw = parseEnv(readFileSync(path, 'utf8')).OPENAI_API_KEY
+    if (!raw || !raw.trim()) return { key: null, error: null }
+    return { key: validateOpenAIKey(raw), error: null }
+  } catch (err) {
+    return {
+      key: null,
+      error: err instanceof IpcValidationError ? `OPENAI_API_KEY in .env: ${err.message}` : "The .env file couldn't be read.",
+    }
+  }
+}
+
 export function credentialStatus(): CredentialStatus {
   const o = read().openai
+  const env = readEnvKey()
+  if (env.key) {
+    return {
+      encryptionAvailable: encryptionAvailable(),
+      openai: {
+        configured: true,
+        source: 'env',
+        last4: keyLast4(env.key),
+        verifiedAt: null,
+        vaultOverridden: !!o,
+        envError: null,
+      },
+    }
+  }
   return {
     encryptionAvailable: encryptionAvailable(),
-    openai: { configured: !!o, last4: o?.last4 ?? null, verifiedAt: o?.verifiedAt ?? null },
+    openai: {
+      configured: !!o,
+      source: o ? 'vault' : null,
+      last4: o?.last4 ?? null,
+      verifiedAt: o?.verifiedAt ?? null,
+      vaultOverridden: false,
+      envError: env.error,
+    },
   }
 }
 
@@ -51,8 +107,10 @@ export function saveOpenAIKey(key: string): void {
   write({ ...read(), openai: { ciphertext, last4: keyLast4(key), verifiedAt: new Date().toISOString() } })
 }
 
-/** Decrypt the OpenAI key for a single request. Returns null if none is stored or decryption fails. */
+/** The OpenAI key for a single request: .env (development) first, then the encrypted vault. */
 export function getOpenAIKey(): string | null {
+  const env = readEnvKey()
+  if (env.key) return env.key
   const o = read().openai
   if (!o || !encryptionAvailable()) return null
   try {
