@@ -16,6 +16,8 @@ npm install          # downloads Electron 45 (~100 MB) on first install
 npm run dev          # launches the app with hot reload
 ```
 
+> **npm 12+ note:** npm now blocks dependency install scripts unless they're listed in `allowScripts` in `package.json`. This project allows exactly two: `electron` (downloads the Electron binary) and `esbuild` (installs its platform binary). If you see `Error: Electron uninstall`, the Electron download was skipped — run `npm rebuild electron` (or delete `node_modules` and `npm install` again).
+
 ## Commands
 | Command | What it does |
 |---|---|

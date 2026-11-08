@@ -24,3 +24,6 @@ Versions verified against official sources on 2026-11-08. Re-verify before major
 2. **No Tailwind in Sprint 1** — three themes are cleanest as CSS variables; avoids a dependency before the design system exists.
 3. **Realtime voice via WebRTC + ephemeral client secrets** — the main process holds the real API key and mints short-lived `ek_…` tokens via `POST /v1/realtime/client_secrets`; the renderer only ever sees the ephemeral token.
 4. **Settings as JSON in Sprint 1** — moves to SQLite/Drizzle in Phase 2.
+
+## Install-script policy (npm 12+)
+`allowScripts` in package.json allows install scripts for **electron** (binary download) and **esbuild** (platform binary) only. Every other dependency's install scripts stay blocked. Review before adding entries.

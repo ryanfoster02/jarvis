@@ -15,7 +15,7 @@ Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ no
 **Acceptance:** docs exist and agree; `npm run sunrise` / `npm run sunset` work; git tree clean after commit.
 
 ### Sprint 1 — Desktop Foundation 🟡
-- 🟡 electron-vite + React + TS scaffold
+- ✅ electron-vite + React + TS scaffold (install, typecheck, tests verified on macOS 2026-11-08)
 - 🟡 Hardened BrowserWindow (isolation, sandbox, CSP, nav/permission blocking)
 - 🟡 Typed IPC contract with sender + payload validation (unit-tested ✅)
 - 🟡 App shell: header, AI-core state display, conversation panel (honest "no provider" state), system panel, theme switcher, emergency stop
