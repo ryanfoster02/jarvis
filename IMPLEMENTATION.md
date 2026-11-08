@@ -1,6 +1,6 @@
 # IMPLEMENTATION
 
-Current phase: Sprint 2 — Dashboard (built; awaiting visual check on macOS)
+Current phase: Sprint 3 — Voice (built; awaiting live test with owner's OpenAI key)
 
 Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ not started
 
@@ -22,7 +22,7 @@ Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ no
 
 **Verified on macOS 2026-11-08:** install, typecheck, tests, launch.
 
-### Sprint 2 — Dashboard 🟡
+### Sprint 2 — Dashboard ✅ (owner confirmed working 2026-11-08)
 - 🟡 HUD visual system (owner-requested reference look): warm-black base with amber glow and star dust, corner-bracket frames, Michroma display + JetBrains Mono data (bundled, OFL), Gold default + Cyan/Azure themes
 - 🟡 SVG AI core: dense bezel, segmented rings, counter-rotating triangles, level bars, JARVIS + state in the nucleus; 7 states (standing by, listening, thinking, working, speaking, needs you, stopped)
 - 🟡 Top bar: Dashboard/Settings nav, workspace selector, theme chip, Stop all / Re-arm; ⌘, settings, Esc back
@@ -34,8 +34,17 @@ Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ no
 
 **Acceptance:** `npm install` (new font packages) + typecheck pass; every control works or says it isn't available yet; all 3 themes and all 7 core states look right on macOS; reduce-motion stops core animation; workspace + theme survive restart.
 
-### Sprint 3 — Voice ⬜
-Credential vault (safeStorage) + settings UI for OpenAI key; ephemeral token minting; WebRTC session; mic permission flow; live transcripts; start/stop/mute; interruption; voice selection; error states. **Acceptance:** a real spoken round-trip on macOS with the owner's key; key never visible in renderer (verified via DevTools); failures surface as errors, not fake responses.
+### Sprint 3 — Voice 🟡
+- ✅ Shared contract: voice/model settings, key + SDP validators, GA session builder, cost estimator, error sanitizer (18 unit tests)
+- ✅ Relay request shape verified with stubbed fetch; real Chrome SDP offer accepted by validator; voice hook type-checks against DOM WebRTC types
+- 🟡 Credential vault (safeStorage) + Settings → AI provider (verify with OpenAI, save, replace, remove)
+- 🟡 Mic consent (macOS) + audio-only permission policy
+- 🟡 WebRTC session via main-process relay; live transcripts (you + Jarvis, streaming)
+- 🟡 Mute, Interrupt, End voice; MIC LIVE indicator; Stop all ends voice
+- 🟡 Core states driven by voice events; telemetry: provider, tokens, cost estimate (2.1-mini prices), latency
+- 🟡 Settings → Voice: model + voice selection
+
+**Acceptance:** with the owner's key on macOS — key saves and shows ••••last4; mic prompt appears once; a spoken round-trip works with transcripts; talking over Jarvis interrupts; Mute stops input; Stop all ends the session and turns the mic off; bad key / offline show clear errors; key never appears in DevTools.
 
 ### Sprint 4 — Phase 1 Validation ⬜
 Startup, text chat (needs provider), voice, network-failure and bad-key tests; security review of IPC/credentials; Playwright-Electron smoke test; packaging with electron-builder; README run guide.

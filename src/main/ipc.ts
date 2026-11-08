@@ -1,15 +1,24 @@
-import { app, ipcMain, type IpcMainInvokeEvent } from 'electron'
+import { app, ipcMain, systemPreferences, type IpcMainInvokeEvent } from 'electron'
 import {
   Channels,
   IpcValidationError,
   isTrustedSenderUrl,
   validateChatMessage,
+  validateOpenAIKey,
   validateReason,
+  validateSdpOffer,
   validateSettingsPatch,
+  WORKSPACES,
   type AppInfo,
   type ChatResult,
+  type CredentialResult,
+  type MicAccess,
   type TrustedOrigins,
+  type VoiceConnectResult,
 } from '../shared/ipc.ts'
+import { buildRealtimeSession, isTranscriptionConfigError } from '../shared/realtime.ts'
+import { createRealtimeCall, verifyKey } from './openai.ts'
+import { clearOpenAIKey, credentialStatus, encryptionAvailable, getOpenAIKey, saveOpenAIKey } from './vault.ts'
 import { loadSettings, updateSettings } from './settings.ts'
 import { engage, getKillSwitch, isHalted, rearm } from './killswitch.ts'
 
@@ -72,11 +81,97 @@ export function registerIpc(trusted: TrustedOrigins): void {
         if (err instanceof IpcValidationError) return { ok: false, code: 'invalid_input', message: err.message }
         throw err
       }
+      const hasKey = credentialStatus().openai.configured
       return {
         ok: false,
         code: 'no_provider',
-        message: 'No AI provider is connected yet. Your message reached the main process, but replies arrive once a provider is configured (Sprint 3–4).',
+        message: hasKey
+          ? 'Typed replies without voice arrive in Sprint 4. Start voice in this panel and you can talk or type to Jarvis now.'
+          : 'No AI provider is connected yet. Add your OpenAI key in Settings → AI provider, then start voice.',
       }
+    }),
+  )
+
+  // ---------- Credentials (never returns a key) ----------
+
+  ipcMain.handle(Channels.credentialsStatus, guard(() => credentialStatus()))
+
+  ipcMain.handle(
+    Channels.credentialsSetOpenAI,
+    guard(async (input: unknown): Promise<CredentialResult> => {
+      let key: string
+      try {
+        key = validateOpenAIKey(input)
+      } catch (err) {
+        if (err instanceof IpcValidationError) return { ok: false, message: err.message }
+        throw err
+      }
+      if (!encryptionAvailable()) {
+        return { ok: false, message: 'Secure storage is not available on this Mac, so the key cannot be saved safely.' }
+      }
+      const check = await verifyKey(key)
+      if (!check.ok) return { ok: false, message: check.message }
+      saveOpenAIKey(key)
+      return { ok: true, status: credentialStatus() }
+    }),
+  )
+
+  ipcMain.handle(
+    Channels.credentialsClearOpenAI,
+    guard(() => {
+      clearOpenAIKey()
+      return credentialStatus()
+    }),
+  )
+
+  // ---------- Voice ----------
+
+  // macOS asks the user once; afterwards the choice lives in System Settings → Privacy → Microphone.
+  ipcMain.handle(
+    Channels.voiceMicAccess,
+    guard(async (): Promise<MicAccess> => {
+      if (process.platform !== 'darwin' && process.platform !== 'win32') return 'unknown'
+      const status = systemPreferences.getMediaAccessStatus('microphone')
+      if (status === 'granted') return 'granted'
+      if (status === 'not-determined' && process.platform === 'darwin') {
+        return (await systemPreferences.askForMediaAccess('microphone')) ? 'granted' : 'denied'
+      }
+      return status === 'restricted' ? 'restricted' : status === 'denied' ? 'denied' : 'unknown'
+    }),
+  )
+
+  ipcMain.handle(
+    Channels.voiceConnect,
+    guard(async (offer: unknown): Promise<VoiceConnectResult> => {
+      if (isHalted()) return { ok: false, code: 'halted', message: 'Stop all is engaged. Re-arm Jarvis to start voice.' }
+      let sdp: string
+      try {
+        sdp = validateSdpOffer(offer)
+      } catch (err) {
+        if (err instanceof IpcValidationError) return { ok: false, code: 'invalid_input', message: err.message }
+        throw err
+      }
+      const key = getOpenAIKey()
+      if (!key) {
+        return { ok: false, code: 'no_key', message: 'Add your OpenAI API key in Settings → AI provider to use voice.' }
+      }
+      const settings = loadSettings()
+      const workspaceName = WORKSPACES.find((w) => w.id === settings.activeWorkspace)?.name ?? 'Personal'
+      const base = { model: settings.realtimeModel, voice: settings.voice, workspaceName }
+
+      let transcription = true
+      let res = await createRealtimeCall(key, sdp, buildRealtimeSession({ ...base, transcription }))
+      // Transcription of your speech is optional; if OpenAI rejects that setting, connect without it.
+      if (!res.ok && isTranscriptionConfigError(res.status, res.body)) {
+        transcription = false
+        res = await createRealtimeCall(key, sdp, buildRealtimeSession({ ...base, transcription }))
+      }
+      if (isHalted()) return { ok: false, code: 'halted', message: 'Stop all was engaged while connecting.' }
+      if (!res.ok) {
+        const code = res.status === 0 ? 'network' : res.status === 401 ? 'invalid_key' : 'api_error'
+        return { ok: false, code, message: res.message }
+      }
+      return { ok: true, answerSdp: res.value, model: settings.realtimeModel, voice: settings.voice, transcription }
     }),
   )
 }

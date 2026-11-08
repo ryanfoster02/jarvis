@@ -1,12 +1,20 @@
-interface Props {
-  line: string
-  tone: 'normal' | 'halted'
+export interface Telemetry {
+  provider: string
+  tokens: number
+  costUsd: number | null // null = no published price for this model
+  latencyMs: number | null
 }
 
-/** Status line + telemetry. Values are real: nothing is metered until a provider is connected. */
-export function StatusTerminal({ line, tone }: Props): React.JSX.Element {
+interface Props {
+  line: string
+  tone: 'normal' | 'halted' | 'error'
+  telemetry: Telemetry
+}
+
+/** Status line + session telemetry. Every value is measured from real responses; nothing is simulated. */
+export function StatusTerminal({ line, tone, telemetry }: Props): React.JSX.Element {
   return (
-    <section className={`frame terminal ${tone === 'halted' ? 'is-halted' : ''}`} aria-label="Status">
+    <section className={`frame terminal ${tone !== 'normal' ? 'is-halted' : ''}`} aria-label="Status">
       <p className="terminal-line" role="status" aria-live="polite">
         <span aria-hidden="true">›</span> {line}
         <span className="cursor" aria-hidden="true" />
@@ -14,19 +22,23 @@ export function StatusTerminal({ line, tone }: Props): React.JSX.Element {
       <dl className="telemetry">
         <div>
           <dt>Provider</dt>
-          <dd>None</dd>
+          <dd>{telemetry.provider}</dd>
         </div>
         <div>
           <dt>Tokens</dt>
-          <dd>0</dd>
+          <dd>{telemetry.tokens.toLocaleString()}</dd>
         </div>
         <div>
           <dt>Cost est.</dt>
-          <dd>$0.000</dd>
+          <dd title={telemetry.costUsd === null ? 'No published price for this model' : 'Estimated from token usage this session'}>
+            {telemetry.costUsd === null ? '—' : `$${telemetry.costUsd.toFixed(3)}`}
+          </dd>
         </div>
         <div>
           <dt>Latency</dt>
-          <dd>—</dd>
+          <dd title="Time from the end of your turn to Jarvis's first reply">
+            {telemetry.latencyMs === null ? '—' : `${telemetry.latencyMs} ms`}
+          </dd>
         </div>
       </dl>
     </section>

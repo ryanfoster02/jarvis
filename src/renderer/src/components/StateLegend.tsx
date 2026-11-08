@@ -3,10 +3,10 @@ import { CORE_LABELS, CORE_STATES, type CoreState } from './AiCore.tsx'
 // What each state means today. Honest about which ones can't happen yet.
 const WHEN: Record<CoreState, string> = {
   idle: 'ready for you',
-  listening: 'arrives with voice',
-  processing: 'while a message is sent',
+  listening: 'voice on, mic live',
+  processing: 'working out a reply',
   executing: 'with agent runtime',
-  speaking: 'arrives with voice',
+  speaking: 'jarvis is talking',
   'needs-you': 'when an approval waits',
   error: 'after stop all',
 }

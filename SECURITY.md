@@ -4,13 +4,13 @@
 - `contextIsolation`, `sandbox`, no `nodeIntegration`, `webSecurity` on.
 - Content-Security-Policy: `default-src 'self'`; no remote scripts. `connect-src` widened only for `https://api.openai.com` when voice ships.
 - Navigation away from the app and `window.open` are blocked; `https:` links go to the system browser.
-- Permission requests (camera, mic, geolocation, notifications…) denied by default. Mic is allowlisted in Sprint 3 for the app origin only, and only while a voice session is active.
+- Permission requests denied by default. Exception (Sprint 3): `media` requests that are **audio-only** and come from the app's own origin. Camera, screen capture, notifications, geolocation stay denied. macOS microphone consent is requested via `systemPreferences.askForMediaAccess` when voice starts.
 - IPC: fixed channel allowlist in `src/shared/ipc.ts`; every handler validates the sender frame URL and the payload shape; unknown channels are never exposed.
 - Preload exposes functions, never `ipcRenderer` itself.
 
 ## 2. Credentials
 - Stored only in the main process, encrypted with Electron `safeStorage` (macOS Keychain-backed). Never in: renderer, frontend bundle, logs, SQLite memory tables, Git, session reports.
-- Realtime voice uses short-lived ephemeral client secrets minted by main.
+- Realtime voice uses the WebRTC unified interface: main relays the SDP offer with the key; the renderer never receives a credential. Keys are verified (`GET /v1/models`) before saving; only the last 4 characters are ever shown. OpenAI error bodies stay in main (they can echo key fragments); the renderer gets a sanitized message.
 - `.env` is for local development only and is git-ignored; `.env.example` holds names, never values.
 - Integration OAuth is user-initiated and interactive. No unattended credential capture.
 
@@ -46,7 +46,7 @@ Configurable: max iterations, wall time, tool calls, token/cost budget, subagent
 - No tool can change permissions, scopes, mandates or the allowlist.
 
 ## 8. Voice privacy
-No background listening without explicit opt-in. A visible indicator is shown whenever the mic is live. Wake word ("Hey Jarvis") is a future, opt-in feature.
+The mic is on only between **Start voice** and **End voice**; a red MIC LIVE chip shows whenever it is (MIC MUTED when muted — the track is disabled, not just ignored). Stop all tears down the session and releases the mic immediately. No background listening; wake word ("Hey Jarvis") is a future, opt-in feature.
 
 ## 9. Emergency procedure
 1. Press **Emergency Stop** in the dashboard (or quit the app — all execution is in-process).

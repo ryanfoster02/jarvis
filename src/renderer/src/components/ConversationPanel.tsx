@@ -1,53 +1,56 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { MAX_CHAT_CHARS } from '../../../shared/ipc.ts'
+import type { VoiceActivity, VoicePhase } from '../voice/useVoice.ts'
 
-interface Entry {
-  id: number
+export interface Entry {
+  id: string
   role: 'user' | 'assistant' | 'system'
   text: string
   at: Date
+  via: 'text' | 'voice'
+  streaming?: boolean
+}
+
+export interface VoiceControls {
+  phase: VoicePhase
+  activity: VoiceActivity
+  muted: boolean
+  hasKey: boolean
+  transcription: boolean
+  onStart: () => void
+  onStop: () => void
+  onToggleMute: () => void
+  onInterrupt: () => void
 }
 
 interface Props {
+  entries: Entry[]
+  busy: boolean
   disabled: boolean
   workspaceName: string
-  onBusyChange: (busy: boolean) => void
+  voice: VoiceControls
+  onSend: (text: string) => Promise<void>
+  onOpenSettings: () => void
 }
 
 const WHO: Record<Entry['role'], string> = { user: 'You', assistant: 'Jarvis', system: 'Jarvis system' }
 
-export function ConversationPanel({ disabled, workspaceName, onBusyChange }: Props): React.JSX.Element {
-  const [entries, setEntries] = useState<Entry[]>([])
+export function ConversationPanel({ entries, busy, disabled, workspaceName, voice, onSend, onOpenSettings }: Props): React.JSX.Element {
   const [draft, setDraft] = useState('')
-  const [busy, setBusy] = useState(false)
-  const nextId = useRef(1)
   const listRef = useRef<HTMLOListElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const live = voice.phase === 'live'
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' })
   }, [entries])
 
-  const push = (role: Entry['role'], text: string): void =>
-    setEntries((e) => [...e, { id: nextId.current++, role, text, at: new Date() }])
-
   const send = async (): Promise<void> => {
     const text = draft.trim()
     if (!text || busy || disabled) return
     setDraft('')
-    push('user', text)
-    setBusy(true)
-    onBusyChange(true)
-    try {
-      const res = await window.jarvis.chat.send(text)
-      push(res.ok ? 'assistant' : 'system', res.ok ? res.reply : res.message)
-    } catch (err) {
-      push('system', `The message couldn't be delivered: ${String(err)}`)
-    } finally {
-      setBusy(false)
-      onBusyChange(false)
-      inputRef.current?.focus()
-    }
+    await onSend(text)
+    inputRef.current?.focus()
   }
 
   const onSubmit = (e: FormEvent): void => {
@@ -62,23 +65,58 @@ export function ConversationPanel({ disabled, workspaceName, onBusyChange }: Pro
         <span className="conv-scope">{workspaceName}</span>
       </header>
 
+      <div className="voice-bar">
+        {voice.phase === 'off' || voice.phase === 'error' ? (
+          voice.hasKey ? (
+            <button className="vbtn vbtn-primary" onClick={voice.onStart} disabled={disabled}>
+              <span className="vbtn-dot" aria-hidden="true" />
+              Start voice
+            </button>
+          ) : (
+            <button className="vbtn" onClick={onOpenSettings}>
+              Add OpenAI key to enable voice
+            </button>
+          )
+        ) : voice.phase === 'connecting' ? (
+          <button className="vbtn" disabled>
+            Connecting…
+          </button>
+        ) : (
+          <>
+            <button className="vbtn vbtn-end" onClick={voice.onStop}>
+              End voice
+            </button>
+            <button className="vbtn" aria-pressed={voice.muted} onClick={voice.onToggleMute}>
+              {voice.muted ? 'Unmute' : 'Mute'}
+            </button>
+            <button className="vbtn" onClick={voice.onInterrupt} disabled={voice.activity !== 'speaking'}>
+              Interrupt
+            </button>
+          </>
+        )}
+      </div>
+
       <ol className="messages" ref={listRef} aria-live="polite">
         {entries.length === 0 && (
           <li className="conv-empty">
-            <p>Ask Jarvis something to get started.</p>
-            <p className="fine">
-              Replies need an AI provider, which isn't connected yet — Jarvis will tell you that rather than make
-              something up. Voice arrives in Sprint 3.
-            </p>
+            {voice.hasKey ? (
+              <p>Start voice and say hello, or type once voice is on.</p>
+            ) : (
+              <>
+                <p>Add your OpenAI key in Settings to talk with Jarvis.</p>
+                <p className="fine">Until then, Jarvis can receive messages but can't reply.</p>
+              </>
+            )}
           </li>
         )}
         {entries.map((m) => (
-          <li key={m.id} className={`msg msg-${m.role}`}>
+          <li key={m.id} className={`msg msg-${m.role} ${m.streaming ? 'is-streaming' : ''}`}>
             <div className="msg-meta">
               <span className="msg-who">{WHO[m.role]}</span>
               <time dateTime={m.at.toISOString()}>
                 {m.at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
               </time>
+              {m.via === 'voice' && <span className="msg-via">voice</span>}
             </div>
             <p>{m.text}</p>
           </li>
@@ -92,6 +130,10 @@ export function ConversationPanel({ disabled, workspaceName, onBusyChange }: Pro
         )}
       </ol>
 
+      {live && !voice.transcription && (
+        <p className="fine conv-note">Your spoken words aren't transcribed in this session; Jarvis's replies still are.</p>
+      )}
+
       <form className="composer" onSubmit={onSubmit}>
         <textarea
           ref={inputRef}
@@ -104,7 +146,7 @@ export function ConversationPanel({ disabled, workspaceName, onBusyChange }: Pro
               void send()
             }
           }}
-          placeholder={disabled ? 'Re-arm Jarvis to send messages' : 'Message Jarvis'}
+          placeholder={disabled ? 'Re-arm Jarvis to send messages' : live ? 'Type to Jarvis (replies by voice)' : 'Message Jarvis'}
           maxLength={MAX_CHAT_CHARS}
           disabled={disabled}
           aria-label="Message"

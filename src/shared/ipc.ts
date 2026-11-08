@@ -10,6 +10,11 @@ export const Channels = {
   killSwitchEngage: 'killswitch:engage',
   killSwitchRearm: 'killswitch:rearm',
   chatSend: 'chat:send',
+  credentialsStatus: 'credentials:status',
+  credentialsSetOpenAI: 'credentials:set-openai',
+  credentialsClearOpenAI: 'credentials:clear-openai',
+  voiceMicAccess: 'voice:mic-access',
+  voiceConnect: 'voice:connect',
 } as const
 
 /** Main → renderer push events. */
@@ -34,16 +39,31 @@ export const WORKSPACES = [
 ] as const
 export type WorkspaceId = (typeof WORKSPACES)[number]['id']
 
+/** Realtime voice models (verified against OpenAI docs 2026-11-08; gpt-realtime-mini is deprecated). */
+export const REALTIME_MODELS = [
+  { id: 'gpt-realtime-2.1-mini', name: 'GPT Realtime 2.1 mini (lower cost)' },
+  { id: 'gpt-realtime-2.1', name: 'GPT Realtime 2.1' },
+] as const
+export type RealtimeModelId = (typeof REALTIME_MODELS)[number]['id']
+
+/** Built-in Realtime voices. OpenAI recommends marin and cedar for quality. */
+export const VOICES = ['marin', 'cedar', 'alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse'] as const
+export type VoiceId = (typeof VOICES)[number]
+
 export interface Settings {
   theme: Theme
   reducedMotion: boolean
   activeWorkspace: WorkspaceId
+  voice: VoiceId
+  realtimeModel: RealtimeModelId
 }
 
 export const DEFAULT_SETTINGS: Settings = Object.freeze({
   theme: 'gold',
   reducedMotion: false,
   activeWorkspace: 'personal',
+  voice: 'marin',
+  realtimeModel: 'gpt-realtime-2.1-mini',
 })
 
 /** Execution limits (SECURITY.md §6). Displayed now; enforced by the agent runtime in Phase 2. */
@@ -80,6 +100,24 @@ export interface KillSwitchState {
   reason: string | null
 }
 
+export interface CredentialStatus {
+  /** False if the OS can't encrypt secrets (then keys can't be saved). */
+  encryptionAvailable: boolean
+  openai: { configured: boolean; last4: string | null; verifiedAt: string | null }
+}
+
+export type CredentialResult = { ok: true; status: CredentialStatus } | { ok: false; message: string }
+
+export type MicAccess = 'granted' | 'denied' | 'restricted' | 'unknown'
+
+export type VoiceConnectResult =
+  | { ok: true; answerSdp: string; model: RealtimeModelId; voice: VoiceId; transcription: boolean }
+  | {
+      ok: false
+      code: 'no_key' | 'halted' | 'invalid_key' | 'network' | 'api_error' | 'invalid_input'
+      message: string
+    }
+
 export type ChatResult =
   | { ok: true; reply: string }
   | { ok: false; code: 'no_provider' | 'halted' | 'invalid_input'; message: string }
@@ -107,6 +145,14 @@ export function isWorkspaceId(v: unknown): v is WorkspaceId {
   return typeof v === 'string' && WORKSPACES.some((w) => w.id === v)
 }
 
+export function isVoiceId(v: unknown): v is VoiceId {
+  return typeof v === 'string' && (VOICES as readonly string[]).includes(v)
+}
+
+export function isRealtimeModelId(v: unknown): v is RealtimeModelId {
+  return typeof v === 'string' && REALTIME_MODELS.some((m) => m.id === v)
+}
+
 /** Accepts only known keys with correct types. Unknown keys are rejected, not ignored. */
 export function validateSettingsPatch(input: unknown): Partial<Settings> {
   if (!isPlainObject(input)) throw new IpcValidationError('settings patch must be an object')
@@ -125,6 +171,14 @@ export function validateSettingsPatch(input: unknown): Partial<Settings> {
         if (!isWorkspaceId(value)) throw new IpcValidationError(`invalid workspace: ${String(value)}`)
         out.activeWorkspace = value
         break
+      case 'voice':
+        if (!isVoiceId(value)) throw new IpcValidationError(`invalid voice: ${String(value)}`)
+        out.voice = value
+        break
+      case 'realtimeModel':
+        if (!isRealtimeModelId(value)) throw new IpcValidationError(`invalid realtime model: ${String(value)}`)
+        out.realtimeModel = value
+        break
       default:
         throw new IpcValidationError(`unknown setting: ${key}`)
     }
@@ -139,6 +193,8 @@ export function normalizeSettings(stored: unknown): Settings {
   if (isTheme(stored.theme)) s.theme = stored.theme
   if (typeof stored.reducedMotion === 'boolean') s.reducedMotion = stored.reducedMotion
   if (isWorkspaceId(stored.activeWorkspace)) s.activeWorkspace = stored.activeWorkspace
+  if (isVoiceId(stored.voice)) s.voice = stored.voice
+  if (isRealtimeModelId(stored.realtimeModel)) s.realtimeModel = stored.realtimeModel
   return s
 }
 
@@ -156,6 +212,31 @@ export function validateReason(input: unknown): string {
   const r = input.trim().slice(0, MAX_REASON_CHARS)
   return r.length ? r : 'Manual emergency stop'
 }
+
+export const MAX_KEY_CHARS = 512
+export const MAX_SDP_CHARS = 64 * 1024
+
+/** OpenAI API keys: sk- prefix, URL-safe characters only. Never echoes the key in errors. */
+export function validateOpenAIKey(input: unknown): string {
+  if (typeof input !== 'string') throw new IpcValidationError('API key must be text')
+  const key = input.trim()
+  if (key.length > MAX_KEY_CHARS) throw new IpcValidationError('That API key is too long')
+  if (!/^sk-[A-Za-z0-9_-]{20,}$/.test(key)) {
+    throw new IpcValidationError("That doesn't look like an OpenAI API key. Keys start with sk- and contain no spaces.")
+  }
+  return key
+}
+
+/** A WebRTC SDP offer from our own renderer: must be a plausible audio offer. */
+export function validateSdpOffer(input: unknown): string {
+  if (typeof input !== 'string') throw new IpcValidationError('SDP offer must be text')
+  if (input.length > MAX_SDP_CHARS) throw new IpcValidationError('SDP offer is too large')
+  if (!input.startsWith('v=0') || !/\r?\nm=audio /.test(input)) throw new IpcValidationError('Not an audio SDP offer')
+  return input
+}
+
+/** Safe display hint for a stored key. */
+export const keyLast4 = (key: string): string => key.slice(-4)
 
 // ---------- Sender verification ----------
 

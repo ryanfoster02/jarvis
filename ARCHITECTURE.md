@@ -38,11 +38,13 @@ sessions/      session reports (YYYY-MM-DD_HH-mm.md)
 `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`, `webSecurity: true`; strict CSP; navigation and `window.open` blocked; all permission requests denied by default (microphone allowlisted in Sprint 3 only for the app's own origin); external links open in the system browser only if `https:`.
 
 ## Voice (Sprint 3)
-1. Renderer asks main `voice:createSession`.
-2. Main reads the OpenAI key from the vault, calls `POST /v1/realtime/client_secrets` with the configured model/voice, returns only the ephemeral secret + expiry.
-3. Renderer opens `RTCPeerConnection`, adds mic track, opens `oai-events` data channel, posts SDP to `/v1/realtime/calls` with the ephemeral secret.
-4. Transcripts/events drive the AI-core state machine: idle → listening → processing → speaking (→ executing / error).
-5. Tool calls from the voice model are **not** executed in the renderer; they are forwarded to main's permission engine (Phase 2+).
+1. **Start voice** → renderer asks main for mic consent (`voice:mic-access`, macOS prompt), then `getUserMedia({audio})`.
+2. Renderer builds an `RTCPeerConnection`, adds the mic track, opens the `oai-events` data channel, creates an SDP offer.
+3. `voice:connect(offer)` → main validates the offer, loads the key from the vault, builds the GA session (`src/shared/realtime.ts`: model, voice, instructions, server VAD with interruption, optional input transcription) and POSTs multipart `{sdp, session}` to `/v1/realtime/calls`. Returns only the answer SDP.
+4. Audio flows peer-to-peer; events on the data channel drive state: `speech_started` → listening, `speech_stopped` → thinking, `output_audio_buffer.started/stopped` → speaking/idle, transcripts → conversation, `response.done` usage → tokens/cost, speech-end → first reply → latency.
+5. Typed text during a live session goes over the data channel (`conversation.item.create` + `response.create`).
+6. Mute disables the mic track; Interrupt sends `response.cancel` + `output_audio_buffer.clear`; server VAD also interrupts when you talk over Jarvis.
+7. Stop all / End voice closes the peer connection and stops all tracks. Tool calls are **not** enabled in the session yet (Phase 2 permission engine first).
 
 ## AI runtime & tools (Phase 2)
 `Provider` interface (`complete`, `stream`) with OpenAI first, Anthropic later. `ToolRegistry` entries declare: name, schema, risk level (low/medium/high), required scopes. Every call goes through `PermissionEngine.check(tool, args, workspace, mandate)` → `approve | needsApproval | deny`, and is bounded by `ExecutionLimits` (iterations, time, tool calls, cost, depth, concurrency).

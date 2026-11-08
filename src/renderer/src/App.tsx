@@ -1,45 +1,127 @@
-import { useCallback, useEffect, useState } from 'react'
-import { WORKSPACES, type AppInfo, type KillSwitchState, type Settings } from '../../shared/ipc.ts'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { WORKSPACES, type AppInfo, type CredentialStatus, type KillSwitchState, type Settings } from '../../shared/ipc.ts'
+import { estimateCostUsd, totalTokens } from '../../shared/realtime.ts'
 import { AiCore, type CoreState } from './components/AiCore.tsx'
-import { ConversationPanel } from './components/ConversationPanel.tsx'
+import { ConversationPanel, type Entry } from './components/ConversationPanel.tsx'
 import { OpsColumn } from './components/OpsColumn.tsx'
 import { SettingsView } from './components/SettingsView.tsx'
 import { StateLegend } from './components/StateLegend.tsx'
-import { StatusTerminal } from './components/StatusTerminal.tsx'
+import { StatusTerminal, type Telemetry } from './components/StatusTerminal.tsx'
 import { TopBar, type View } from './components/TopBar.tsx'
+import { useVoice, type VoiceActivity, type VoicePhase } from './voice/useVoice.ts'
 
-function statusLine(state: CoreState, kill: KillSwitchState | null, bridgeError: string | null): string {
-  if (bridgeError) return bridgeError
-  if (kill?.engaged) {
-    const at = kill.engagedAt ? new Date(kill.engagedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''
+const ACTIVITY_TO_CORE: Record<VoiceActivity, CoreState> = {
+  idle: 'listening', // mic is live and waiting
+  listening: 'listening',
+  thinking: 'processing',
+  speaking: 'speaking',
+}
+
+function statusLine(o: {
+  kill: KillSwitchState | null
+  bridgeError: string | null
+  voiceError: string | null
+  phase: VoicePhase
+  activity: VoiceActivity
+  muted: boolean
+  busy: boolean
+}): string {
+  if (o.bridgeError) return o.bridgeError
+  if (o.kill?.engaged) {
+    const at = o.kill.engagedAt ? new Date(o.kill.engagedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''
     return `Stopped${at ? ` at ${at}` : ''}. Nothing runs until you re-arm.`
   }
-  if (state === 'processing') return 'Delivering your message to the main process…'
+  if (o.voiceError) return o.voiceError
+  if (o.phase === 'connecting') return 'Connecting to OpenAI Realtime…'
+  if (o.phase === 'live') {
+    if (o.activity === 'speaking') return 'Speaking. Talk over me or press Interrupt to cut in.'
+    if (o.activity === 'thinking') return 'Thinking…'
+    if (o.muted) return 'Microphone muted. Unmute to talk, or type.'
+    if (o.activity === 'listening') return 'Listening…'
+    return 'Voice is on. Go ahead.'
+  }
+  if (o.busy) return 'Delivering your message to the main process…'
   return 'Nothing needs you.'
 }
+
+let entrySeq = 0
+const newId = (): string => `e${++entrySeq}`
 
 export function App(): React.JSX.Element {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [info, setInfo] = useState<AppInfo | null>(null)
   const [kill, setKill] = useState<KillSwitchState | null>(null)
+  const [creds, setCreds] = useState<CredentialStatus | null>(null)
   const [busy, setBusy] = useState(false)
   const [view, setView] = useState<View>('dashboard')
   const [bridgeError, setBridgeError] = useState<string | null>(null)
+  const [entries, setEntries] = useState<Entry[]>([])
+  const [usage, setUsage] = useState({ tokens: 0, costUsd: 0 as number | null, latencyMs: null as number | null })
+  const assistantIds = useRef(new Map<string, string>()) // realtime item/response id → entry id
+
+  const push = useCallback((role: Entry['role'], text: string, via: Entry['via']) => {
+    setEntries((e) => [...e, { id: newId(), role, text, at: new Date(), via }])
+  }, [])
+
+  const voice = useVoice({
+    onUserText: (text) => push('user', text, 'voice'),
+    onAssistantDelta: (key, delta) => {
+      const existing = assistantIds.current.get(key)
+      if (existing) {
+        setEntries((es) => es.map((e) => (e.id === existing ? { ...e, text: e.text + delta } : e)))
+      } else {
+        const id = newId()
+        assistantIds.current.set(key, id)
+        setEntries((es) => [...es, { id, role: 'assistant', text: delta, at: new Date(), via: 'voice', streaming: true }])
+      }
+    },
+    onAssistantDone: (key, text) => {
+      const existing = assistantIds.current.get(key)
+      if (existing) {
+        setEntries((es) => es.map((e) => (e.id === existing ? { ...e, text: text || e.text, streaming: false } : e)))
+      } else if (text) {
+        push('assistant', text, 'voice')
+      }
+      assistantIds.current.delete(key)
+    },
+    onUsage: (model, u) =>
+      setUsage((prev) => {
+        const cost = estimateCostUsd(model, u)
+        return {
+          ...prev,
+          tokens: prev.tokens + totalTokens(u),
+          costUsd: cost === null || prev.costUsd === null ? null : prev.costUsd + cost,
+        }
+      }),
+    onLatency: (ms) => setUsage((prev) => ({ ...prev, latencyMs: ms })),
+  })
 
   useEffect(() => {
     if (!window.jarvis) {
       setBridgeError("Jarvis can't reach its main process: the secure bridge didn't load. Restart the app.")
       return
     }
-    Promise.all([window.jarvis.settings.get(), window.jarvis.app.info(), window.jarvis.killSwitch.get()])
-      .then(([s, i, k]) => {
+    Promise.all([
+      window.jarvis.settings.get(),
+      window.jarvis.app.info(),
+      window.jarvis.killSwitch.get(),
+      window.jarvis.credentials.status(),
+    ])
+      .then(([s, i, k, c]) => {
         setSettings(s)
         setInfo(i)
         setKill(k)
+        setCreds(c)
       })
       .catch((err: unknown) => setBridgeError(`Jarvis couldn't load its settings: ${String(err)}`))
     return window.jarvis.killSwitch.onChange(setKill)
   }, [])
+
+  // Stop all: tear down voice immediately (mic off, connection closed).
+  const stopVoice = voice.stop
+  useEffect(() => {
+    if (kill?.engaged) stopVoice()
+  }, [kill?.engaged, stopVoice])
 
   useEffect(() => {
     if (!settings) return
@@ -48,7 +130,6 @@ export function App(): React.JSX.Element {
     root.dataset.reducedMotion = String(settings.reducedMotion)
   }, [settings])
 
-  // ⌘, opens settings; Esc returns to the dashboard.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if ((e.metaKey || e.ctrlKey) && e.key === ',') {
@@ -70,9 +151,51 @@ export function App(): React.JSX.Element {
     }
   }, [])
 
+  const onSend = useCallback(
+    async (text: string) => {
+      if (voice.phase === 'live') {
+        push('user', text, 'text')
+        if (!voice.sendText(text)) push('system', 'Voice is not ready yet. Try again in a moment.', 'text')
+        return
+      }
+      push('user', text, 'text')
+      setBusy(true)
+      try {
+        const res = await window.jarvis.chat.send(text)
+        push(res.ok ? 'assistant' : 'system', res.ok ? res.reply : res.message, 'text')
+      } catch (err) {
+        push('system', `The message couldn't be delivered: ${String(err)}`, 'text')
+      } finally {
+        setBusy(false)
+      }
+    },
+    [voice, push],
+  )
+
   const halted = !!bridgeError || !!kill?.engaged
-  const coreState: CoreState = halted ? 'error' : busy ? 'processing' : 'idle'
+  const coreState: CoreState = halted
+    ? 'error'
+    : voice.phase === 'live'
+      ? ACTIVITY_TO_CORE[voice.activity]
+      : voice.phase === 'connecting' || busy
+        ? 'processing'
+        : 'idle'
   const workspace = WORKSPACES.find((w) => w.id === settings?.activeWorkspace) ?? WORKSPACES[0]
+  const telemetry: Telemetry = {
+    provider: creds?.openai.configured ? 'OpenAI' : 'None',
+    tokens: usage.tokens,
+    costUsd: usage.costUsd,
+    latencyMs: usage.latencyMs,
+  }
+  const line = statusLine({
+    kill,
+    bridgeError,
+    voiceError: voice.error,
+    phase: voice.phase,
+    activity: voice.activity,
+    muted: voice.muted,
+    busy,
+  })
 
   return (
     <div className="shell" data-halted={halted ? 'true' : undefined}>
@@ -84,6 +207,7 @@ export function App(): React.JSX.Element {
         kill={kill}
         onWorkspace={(w) => void update({ activeWorkspace: w })}
         onTheme={(t) => void update({ theme: t })}
+        mic={voice.phase === 'live' ? (voice.muted ? 'muted' : 'live') : 'off'}
       />
 
       <main className="stage">
@@ -96,17 +220,40 @@ export function App(): React.JSX.Element {
 
             <section className="core-stage" aria-label="Jarvis core">
               <AiCore state={coreState} />
-              <StatusTerminal line={statusLine(coreState, kill, bridgeError)} tone={halted ? 'halted' : 'normal'} />
+              <StatusTerminal
+                line={line}
+                tone={halted ? 'halted' : voice.error ? 'error' : 'normal'}
+                telemetry={telemetry}
+              />
             </section>
 
-            <ConversationPanel disabled={halted} workspaceName={workspace.name} onBusyChange={setBusy} />
+            <ConversationPanel
+              entries={entries}
+              busy={busy}
+              disabled={halted}
+              workspaceName={workspace.name}
+              onSend={onSend}
+              onOpenSettings={() => setView('settings')}
+              voice={{
+                phase: voice.phase,
+                activity: voice.activity,
+                muted: voice.muted,
+                hasKey: !!creds?.openai.configured,
+                transcription: voice.transcription,
+                onStart: () => void voice.start(),
+                onStop: voice.stop,
+                onToggleMute: () => voice.setMuted(!voice.muted),
+                onInterrupt: voice.interrupt,
+              }}
+            />
           </div>
-        ) : settings ? (
+        ) : settings && creds ? (
           <SettingsView
             settings={settings}
             info={info}
-            onTheme={(t) => void update({ theme: t })}
-            onReducedMotion={(v) => void update({ reducedMotion: v })}
+            creds={creds}
+            onCreds={setCreds}
+            onUpdate={(patch) => void update(patch)}
           />
         ) : (
           <p className="loading">Loading settings…</p>

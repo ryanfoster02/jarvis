@@ -4,6 +4,10 @@ import {
   Events,
   type AppInfo,
   type ChatResult,
+  type CredentialResult,
+  type CredentialStatus,
+  type MicAccess,
+  type VoiceConnectResult,
   type KillSwitchState,
   type Settings,
 } from '../shared/ipc.ts'
@@ -30,6 +34,16 @@ const api = {
   },
   chat: {
     send: (message: string): Promise<ChatResult> => ipcRenderer.invoke(Channels.chatSend, message),
+  },
+  // Keys go in, never come out: only status (configured, last 4 characters, verified time) is readable.
+  credentials: {
+    status: (): Promise<CredentialStatus> => ipcRenderer.invoke(Channels.credentialsStatus),
+    setOpenAIKey: (key: string): Promise<CredentialResult> => ipcRenderer.invoke(Channels.credentialsSetOpenAI, key),
+    clearOpenAIKey: (): Promise<CredentialStatus> => ipcRenderer.invoke(Channels.credentialsClearOpenAI),
+  },
+  voice: {
+    micAccess: (): Promise<MicAccess> => ipcRenderer.invoke(Channels.voiceMicAccess),
+    connect: (offerSdp: string): Promise<VoiceConnectResult> => ipcRenderer.invoke(Channels.voiceConnect, offerSdp),
   },
 } as const
 

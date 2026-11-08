@@ -10,6 +10,7 @@ interface Props {
   kill: KillSwitchState | null
   onWorkspace: (w: WorkspaceId) => void
   onTheme: (t: Theme) => void
+  mic: 'off' | 'live' | 'muted'
 }
 
 const Mark = (): React.JSX.Element => (
@@ -20,7 +21,7 @@ const Mark = (): React.JSX.Element => (
   </svg>
 )
 
-export function TopBar({ view, onNavigate, settings, kill, onWorkspace, onTheme }: Props): React.JSX.Element {
+export function TopBar({ view, onNavigate, settings, kill, onWorkspace, onTheme, mic }: Props): React.JSX.Element {
   const halted = !!kill?.engaged
   const nextTheme = (t: Theme): Theme => THEMES[(THEMES.indexOf(t) + 1) % THEMES.length] ?? 'gold'
 
@@ -46,6 +47,13 @@ export function TopBar({ view, onNavigate, settings, kill, onWorkspace, onTheme 
         </nav>
 
         <div className="topbar-spacer" />
+
+        {mic !== 'off' && (
+          <span className={`chip chip-mic ${mic === 'live' ? 'is-live' : ''}`} role="status">
+            <span className="mic-dot" aria-hidden="true" />
+            {mic === 'live' ? 'Mic live' : 'Mic muted'}
+          </span>
+        )}
 
         {settings && (
           <>

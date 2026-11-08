@@ -40,6 +40,17 @@ function isAppUrl(url: string): boolean {
   }
 }
 
+function isAppOrigin(origin: string): boolean {
+  if (devServerUrl) {
+    try {
+      return new URL(origin).origin === new URL(devServerUrl).origin
+    } catch {
+      return false
+    }
+  }
+  return origin === 'file://' || origin.startsWith('file:')
+}
+
 function openExternalSafely(url: string): void {
   try {
     if (new URL(url).protocol === 'https:') void shell.openExternal(url)
@@ -139,10 +150,20 @@ app.on('second-instance', () => {
 })
 
 void app.whenReady().then(() => {
-  // Deny every permission (mic, camera, notifications, geolocation…) by default.
-  // Sprint 3 will allow 'media' (audio only) for the app origin during an active voice session.
-  session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false))
-  session.defaultSession.setPermissionCheckHandler(() => false)
+  // Deny every permission by default. The single exception is microphone-only media access
+  // requested by our own renderer (voice). Camera, screen capture, notifications, etc. stay denied.
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback, details) => {
+    if (permission === 'media') {
+      const d = details as Electron.MediaAccessPermissionRequest
+      const types = d.mediaTypes ?? []
+      callback(types.length > 0 && types.every((t) => t === 'audio') && isAppUrl(d.requestingUrl))
+      return
+    }
+    callback(false)
+  })
+  session.defaultSession.setPermissionCheckHandler((_wc, permission, requestingOrigin) => {
+    return permission === 'media' && isAppOrigin(requestingOrigin)
+  })
 
   if (devServerUrl) {
     session.defaultSession.webRequest.onHeadersReceived((details, callback) => {

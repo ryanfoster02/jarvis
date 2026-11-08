@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import type { AppInfo, Settings, Theme } from '../../../shared/ipc.ts'
+import { useState, type FormEvent } from 'react'
+import { REALTIME_MODELS, VOICES, type AppInfo, type CredentialStatus, type RealtimeModelId, type Settings, type VoiceId } from '../../../shared/ipc.ts'
 import { AiCore, CORE_LABELS, CORE_STATES, type CoreState } from './AiCore.tsx'
 import { ThemeSwitcher } from './ThemeSwitcher.tsx'
 
@@ -20,13 +20,89 @@ const PLATFORM: Record<string, string> = { darwin: 'macOS', win32: 'Windows', li
 interface Props {
   settings: Settings
   info: AppInfo | null
-  onTheme: (t: Theme) => void
-  onReducedMotion: (v: boolean) => void
+  creds: CredentialStatus
+  onCreds: (c: CredentialStatus) => void
+  onUpdate: (patch: Partial<Settings>) => void
 }
 
-export function SettingsView({ settings, info, onTheme, onReducedMotion }: Props): React.JSX.Element {
+const cap = (v: string): string => v.charAt(0).toUpperCase() + v.slice(1)
+
+function ProviderSection({ creds, onCreds }: { creds: CredentialStatus; onCreds: (c: CredentialStatus) => void }): React.JSX.Element {
+  const [key, setKey] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
+  const o = creds.openai
+
+  const save = async (e: FormEvent): Promise<void> => {
+    e.preventDefault()
+    if (!key.trim() || saving) return
+    setSaving(true)
+    setMessage(null)
+    const res = await window.jarvis.credentials.setOpenAIKey(key)
+    setSaving(false)
+    if (res.ok) {
+      setKey('')
+      onCreds(res.status)
+      setMessage({ tone: 'ok', text: 'Key verified with OpenAI and saved to your keychain-protected vault.' })
+    } else {
+      setMessage({ tone: 'error', text: res.message })
+    }
+  }
+
+  const remove = async (): Promise<void> => {
+    onCreds(await window.jarvis.credentials.clearOpenAIKey())
+    setMessage({ tone: 'ok', text: 'Key removed from this Mac.' })
+  }
+
+  return (
+    <>
+      <h2>AI provider</h2>
+      <p className="status-line">
+        <span className={`dot ${o.configured ? 'dot-on' : 'dot-off'}`} />
+        {o.configured
+          ? `OpenAI connected · key ending ${o.last4 ?? '????'}${o.verifiedAt ? ` · verified ${new Date(o.verifiedAt).toLocaleDateString()}` : ''}`
+          : 'No provider connected.'}
+      </p>
+      <p>
+        Jarvis uses your OpenAI API key for voice. The key is checked with OpenAI, then encrypted with your Mac's
+        keychain. It never leaves the main process: the interface only ever sees its last four characters.
+      </p>
+      {!creds.encryptionAvailable && (
+        <p className="form-msg is-error">Secure storage isn't available on this system, so keys can't be saved.</p>
+      )}
+      <form className="key-form" onSubmit={save}>
+        <label>
+          <span className="field-label">{o.configured ? 'Replace key' : 'OpenAI API key'}</span>
+          <input
+            type="password"
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            placeholder="sk-…"
+            autoComplete="off"
+            spellCheck={false}
+            disabled={!creds.encryptionAvailable || saving}
+          />
+        </label>
+        <button type="submit" className="btn" disabled={!key.trim() || saving || !creds.encryptionAvailable}>
+          {saving ? 'Verifying…' : 'Verify and save'}
+        </button>
+        {o.configured && (
+          <button type="button" className="btn btn-quiet" onClick={() => void remove()}>
+            Remove key
+          </button>
+        )}
+      </form>
+      {message && <p className={`form-msg ${message.tone === 'error' ? 'is-error' : 'is-ok'}`}>{message.text}</p>}
+      <p className="fine">Get a key at platform.openai.com → API keys. Voice usage is billed to that account.</p>
+    </>
+  )
+}
+
+export function SettingsView({ settings, info, creds, onCreds, onUpdate }: Props): React.JSX.Element {
   const [section, setSection] = useState<Section>('appearance')
   const [preview, setPreview] = useState<CoreState>('idle')
+  const onTheme = (theme: Settings['theme']): void => onUpdate({ theme })
+  const onReducedMotion = (reducedMotion: boolean): void => onUpdate({ reducedMotion })
 
   return (
     <div className="settings">
@@ -87,28 +163,47 @@ export function SettingsView({ settings, info, onTheme, onReducedMotion }: Props
           <>
             <h2>Voice</h2>
             <p className="status-line">
-              <span className="dot dot-pending" /> Not available yet — arriving in Sprint 3.
+              <span className={`dot ${creds.openai.configured ? 'dot-on' : 'dot-off'}`} />
+              {creds.openai.configured ? 'Ready. Start voice from the Conversation panel.' : 'Needs an OpenAI key (AI provider).'}
             </p>
-            <p>
-              Jarvis will talk through OpenAI's realtime voice model (gpt-realtime-mini during development). You'll
-              choose a voice, mute the microphone, and interrupt Jarvis mid-sentence. The microphone is only on
-              while you've started a conversation, and a visible indicator shows when it is.
+            <div className="field">
+              <div className="field-text">
+                <h3>Model</h3>
+                <p>The mini model costs less and suits everyday conversation.</p>
+              </div>
+              <select
+                className="select"
+                value={settings.realtimeModel}
+                onChange={(e) => onUpdate({ realtimeModel: e.target.value as RealtimeModelId })}
+              >
+                {REALTIME_MODELS.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <div className="field-text">
+                <h3>Voice</h3>
+                <p>OpenAI recommends Marin and Cedar. Changes apply the next time you start voice.</p>
+              </div>
+              <select className="select" value={settings.voice} onChange={(e) => onUpdate({ voice: e.target.value as VoiceId })}>
+                {VOICES.map((v) => (
+                  <option key={v} value={v}>
+                    {cap(v)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <p className="fine">
+              The microphone is only on while voice is running, and the top bar shows MIC LIVE whenever it is. Stop all
+              ends voice immediately. Jarvis can talk but can't take actions or read your data yet.
             </p>
           </>
         )}
 
-        {section === 'provider' && (
-          <>
-            <h2>AI provider</h2>
-            <p className="status-line">
-              <span className="dot dot-off" /> No provider connected.
-            </p>
-            <p>
-              You'll add your OpenAI API key here in Sprint 3. It's stored encrypted in your Mac's keychain and never
-              shown to the interface. Anthropic Claude can be added as a second provider later.
-            </p>
-          </>
-        )}
+        {section === 'provider' && <ProviderSection creds={creds} onCreds={onCreds} />}
 
         {section === 'permissions' && (
           <>

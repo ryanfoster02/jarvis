@@ -36,10 +36,13 @@ npm run dev          # launches the app with hot reload
 ## Configuration
 Settings (theme, reduced motion) are stored in `~/Library/Application Support/jarvis/settings.json`. API keys are **never** stored there — see [SECURITY.md](SECURITY.md). `.env.example` lists dev-only variables.
 
-## Using the app (Sprint 1)
-- **Theme:** the three dots top-right (Gold / Azure / Cyan). Persists across restarts.
-- **Emergency Stop:** button in the Security panel or **⌘⇧.** — halts execution until you re-arm.
-- **Conversation:** messages go to the main process; until an AI provider is connected you'll get an explicit "no provider" notice instead of a reply.
+## Using the app
+- **Voice:** Settings → AI provider → paste your OpenAI API key → *Verify and save*. Then on the dashboard press **Start voice** and allow the microphone. Talk naturally; talk over Jarvis to interrupt, or press **Interrupt**. **Mute** turns the mic off; **End voice** closes the session. While voice is on you can also type, and Jarvis answers by voice.
+- **Model & voice:** Settings → Voice (default GPT Realtime 2.1 mini, voice Marin).
+- **Privacy:** the mic is only on during a voice session; the top bar shows **MIC LIVE**. In development macOS lists the app as "Electron" under Privacy & Security → Microphone.
+- **Stop all** (top bar, or ⌘⇧.) ends voice and halts everything until you press **Re-arm**.
+- **Theme:** the THEME chip cycles Gold / Cyan / Azure. **Workspace** selector is in the top bar.
+- **Telemetry** under the core: provider, tokens used this session, estimated cost, and reply latency — all measured, nothing simulated.
 
 ## Docs
 [VISION](VISION.md) · [STACK](STACK.md) · [ARCHITECTURE](ARCHITECTURE.md) · [IMPLEMENTATION](IMPLEMENTATION.md) · [SECURITY](SECURITY.md) · [CLAUDE](CLAUDE.md)
