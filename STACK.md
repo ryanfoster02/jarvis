@@ -25,5 +25,8 @@ Versions verified against official sources on 2026-11-08. Re-verify before major
 3. **Realtime voice via WebRTC + ephemeral client secrets** — the main process holds the real API key and mints short-lived `ek_…` tokens via `POST /v1/realtime/client_secrets`; the renderer only ever sees the ephemeral token.
 4. **Settings as JSON in Sprint 1** — moves to SQLite/Drizzle in Phase 2.
 
+## Electron binary download
+Electron 45 has no install script; its binary is fetched by its own `install-electron` bin. electron-vite 5 only checks `node_modules/electron/path.txt` and doesn't download it. `scripts/ensure-electron.mjs` runs Electron's installer when the binary is missing (hooked to `postinstall` in soft mode, plus `predev` / `prepreview`).
+
 ## Install-script policy (npm 12+)
-`allowScripts` in package.json allows install scripts for **electron** (binary download) and **esbuild** (platform binary) only. Every other dependency's install scripts stay blocked. Review before adding entries.
+`allowScripts` in package.json allows dependency install scripts for **esbuild** only (platform binary). Every other dependency's install scripts stay blocked. Review before adding entries.
