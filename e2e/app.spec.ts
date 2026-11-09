@@ -51,8 +51,13 @@ test('renderer is isolated: no Node globals, only the narrow jarvis bridge', asy
   expect(globals.module).toBe('undefined')
   expect(globals.bridge).toEqual(['app', 'chat', 'credentials', 'killSwitch', 'settings', 'tts', 'voice'])
 
+  // getLastWebPreferences() exists at runtime but is missing from Electron's TypeScript definitions,
+  // so it's reached through a narrow cast. If Electron ever removes it, this test fails loudly.
   const prefs = await app.evaluate(({ BrowserWindow }: typeof import('electron')) => {
-    const p = BrowserWindow.getAllWindows()[0]?.webContents.getLastWebPreferences()
+    type Prefs = { contextIsolation?: boolean; sandbox?: boolean; nodeIntegration?: boolean; webviewTag?: boolean }
+    const wc = BrowserWindow.getAllWindows()[0]?.webContents as unknown as { getLastWebPreferences?: () => Prefs | null } | undefined
+    if (typeof wc?.getLastWebPreferences !== 'function') return 'getLastWebPreferences unavailable'
+    const p = wc.getLastWebPreferences()
     return { contextIsolation: p?.contextIsolation, sandbox: p?.sandbox, nodeIntegration: p?.nodeIntegration, webviewTag: p?.webviewTag }
   })
   expect(prefs).toEqual({ contextIsolation: true, sandbox: true, nodeIntegration: false, webviewTag: false })
