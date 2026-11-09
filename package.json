@@ -41,6 +41,7 @@
     "vite": "^7.0.0"
   },
   "allowScripts": {
-    "esbuild": true
+    "esbuild": true,
+    "electron": true
   }
 }
