@@ -15,10 +15,11 @@ Versions verified against official sources on 2026-11-08. Re-verify before major
 | Tests | `node:test` (built in) | — | Zero-dependency unit tests for shared logic. Playwright/Electron E2E added in Sprint 4. |
 | Packaging | electron-builder | added in Sprint 4 | Not needed to run in dev. |
 | Database | SQLite 3 + Drizzle ORM | Phase 2 | Likely `better-sqlite3` (native, main process only). |
-| Voice | OpenAI Realtime API (GA) over WebRTC | Sprint 3 | Default `gpt-realtime-2.1-mini`; `gpt-realtime-2.1` selectable. `gpt-realtime-mini` is **deprecated** (verified 2026-11-08) and not used. Voices: marin (default), cedar, alloy, ash, ballad, coral, echo, sage, shimmer, verse. User speech transcribed with `gpt-4o-mini-transcribe` (optional; session retries without it if rejected). |
+| Voice | OpenAI Realtime API (GA) over WebRTC | Sprint 3 | Default `gpt-realtime-2.1-mini`; `gpt-realtime-2.1` selectable. `gpt-realtime-mini` is **deprecated** (verified 2026-11-08) and not used. Voices: ballad (default — closest to British English), marin, cedar, alloy, ash, ballad, coral, echo, sage, shimmer, verse. User speech transcribed with `gpt-4o-mini-transcribe` (optional; session retries without it if rejected). |
 | AI reasoning | Provider interface | Phase 2 | OpenAI first; Anthropic Claude pluggable. |
 | Credentials | Electron `safeStorage` (macOS Keychain-backed) | Sprint 3 ✅ | `userData/vault.json` (mode 600), ciphertext only; main process only. |
 | Integrations | MCP + official APIs | Phase 3 | Allowlisted. |
+| Voice persona | Instructions (`src/shared/realtime.ts`) | Sprint 3 | British butler persona per OpenAI's realtime prompting guide: labelled sections, explicit RP accent rules, original sample phrases. No voice cloning; original character, not an imitation of any actor. |
 
 ## Key decisions
 1. **electron-vite over Electron Forge** — simpler single config for three targets, well-documented React-TS template. Forge's Vite plugin is fine too; switching cost is low.
