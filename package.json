@@ -21,8 +21,9 @@
     "preview": "electron-vite preview",
     "dist:mac": "npm run build && electron-builder --mac",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "typecheck:e2e": "tsc --noEmit -p tsconfig.e2e.json",
     "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"tests/**/*.test.ts\"",
-    "test:e2e": "electron-vite build && playwright test",
+    "test:e2e": "npm run typecheck:e2e && electron-vite build && playwright test",
     "sunrise": "node scripts/sunrise.mjs",
     "sunset": "node scripts/sunset.mjs"
   },

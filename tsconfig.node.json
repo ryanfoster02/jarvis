@@ -27,8 +27,6 @@
     "src/main/**/*",
     "src/preload/**/*",
     "src/shared/**/*",
-    "tests/**/*",
-    "e2e/**/*",
-    "playwright.config.ts"
+    "tests/**/*"
   ]
 }

@@ -51,7 +51,7 @@ test('renderer is isolated: no Node globals, only the narrow jarvis bridge', asy
   expect(globals.module).toBe('undefined')
   expect(globals.bridge).toEqual(['app', 'chat', 'credentials', 'killSwitch', 'settings', 'tts', 'voice'])
 
-  const prefs = await app.evaluate(({ BrowserWindow }) => {
+  const prefs = await app.evaluate(({ BrowserWindow }: typeof import('electron')) => {
     const p = BrowserWindow.getAllWindows()[0]?.webContents.getLastWebPreferences()
     return { contextIsolation: p?.contextIsolation, sandbox: p?.sandbox, nodeIntegration: p?.nodeIntegration, webviewTag: p?.webviewTag }
   })

@@ -56,6 +56,7 @@ Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ no
 - 🟡 Playwright end-to-end suite (8 tests: launch, isolation/bridge surface, CSP, navigation/window blocking, theme persistence, Stop all/Re-arm, honest no-key reply, settings + key validation) — written, not yet run (needs the owner's Mac)
 - 🟡 Packaging: `npm run dist:mac` → ad-hoc signed DMG/ZIP with icon, mic usage string, security fuses — not yet built
 - ✅ README run guide (dev, tests, e2e, packaging, installed-app key setup)
+- ✅ Fix (owner report): e2e files no longer part of the app build's type check; own `tsconfig.e2e.json` with DOM types (`npm run typecheck:e2e`)
 - ✅ 37 unit tests
 
 **Acceptance:** `npm install && npm run typecheck && npm test && npm run test:e2e` all pass on macOS; `npm run dist:mac` produces a DMG; installed JARVIS launches, asks for the mic as "JARVIS", and voice works after entering keys in Settings.
