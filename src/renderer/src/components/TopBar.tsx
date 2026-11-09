@@ -10,7 +10,7 @@ interface Props {
   kill: KillSwitchState | null
   onWorkspace: (w: WorkspaceId) => void
   onTheme: (t: Theme) => void
-  mic: 'off' | 'live' | 'muted'
+  mic: 'off' | 'live' | 'muted' | 'paused'
 }
 
 const Mark = (): React.JSX.Element => (
@@ -51,7 +51,7 @@ export function TopBar({ view, onNavigate, settings, kill, onWorkspace, onTheme,
         {mic !== 'off' && (
           <span className={`chip chip-mic ${mic === 'live' ? 'is-live' : ''}`} role="status">
             <span className="mic-dot" aria-hidden="true" />
-            {mic === 'live' ? 'Mic live' : 'Mic muted'}
+            {mic === 'live' ? 'Mic live' : mic === 'paused' ? 'Mic paused' : 'Mic muted'}
           </span>
         )}
 

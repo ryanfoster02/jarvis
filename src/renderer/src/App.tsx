@@ -24,6 +24,7 @@ function statusLine(o: {
   phase: VoicePhase
   activity: VoiceActivity
   muted: boolean
+  micPaused: boolean
   busy: boolean
 }): string {
   if (o.bridgeError) return o.bridgeError
@@ -34,7 +35,8 @@ function statusLine(o: {
   if (o.voiceError) return o.voiceError
   if (o.phase === 'connecting') return 'Connecting to OpenAI Realtime…'
   if (o.phase === 'live') {
-    if (o.activity === 'speaking') return 'Speaking. Talk over me or press Interrupt to cut in.'
+    if (o.activity === 'speaking')
+      return o.micPaused ? 'Speaking. Press Interrupt to cut in (mic paused so I don\'t hear myself).' : 'Speaking. Talk over me or press Interrupt to cut in.'
     if (o.activity === 'thinking') return 'Thinking…'
     if (o.muted) return 'Microphone muted. Unmute to talk, or type.'
     if (o.activity === 'listening') return 'Listening…'
@@ -56,7 +58,7 @@ export function App(): React.JSX.Element {
   const [view, setView] = useState<View>('dashboard')
   const [bridgeError, setBridgeError] = useState<string | null>(null)
   const [entries, setEntries] = useState<Entry[]>([])
-  const [usage, setUsage] = useState({ tokens: 0, costUsd: 0 as number | null, latencyMs: null as number | null })
+  const [usage, setUsage] = useState({ tokens: 0, costUsd: 0 as number | null, latencyMs: null as number | null, ttsChars: 0 })
   const assistantIds = useRef(new Map<string, string>()) // realtime item/response id → entry id
 
   const push = useCallback((role: Entry['role'], text: string, via: Entry['via']) => {
@@ -94,6 +96,7 @@ export function App(): React.JSX.Element {
         }
       }),
     onLatency: (ms) => setUsage((prev) => ({ ...prev, latencyMs: ms })),
+    onTtsCharacters: (n) => setUsage((prev) => ({ ...prev, ttsChars: prev.ttsChars + n })),
   })
 
   useEffect(() => {
@@ -181,11 +184,13 @@ export function App(): React.JSX.Element {
         ? 'processing'
         : 'idle'
   const workspace = WORKSPACES.find((w) => w.id === settings?.activeWorkspace) ?? WORKSPACES[0]
+  const elevenActive = voice.engine === 'elevenlabs' || (voice.engine === null && settings?.speechEngine === 'elevenlabs')
   const telemetry: Telemetry = {
-    provider: creds?.openai.configured ? 'OpenAI' : 'None',
+    provider: !creds?.openai.configured ? 'None' : elevenActive && creds.elevenlabs.configured ? 'OpenAI + 11L' : 'OpenAI',
     tokens: usage.tokens,
     costUsd: usage.costUsd,
     latencyMs: usage.latencyMs,
+    ttsChars: usage.ttsChars,
   }
   const line = statusLine({
     kill,
@@ -194,6 +199,7 @@ export function App(): React.JSX.Element {
     phase: voice.phase,
     activity: voice.activity,
     muted: voice.muted,
+    micPaused: voice.micPaused,
     busy,
   })
 
@@ -207,7 +213,7 @@ export function App(): React.JSX.Element {
         kill={kill}
         onWorkspace={(w) => void update({ activeWorkspace: w })}
         onTheme={(t) => void update({ theme: t })}
-        mic={voice.phase === 'live' ? (voice.muted ? 'muted' : 'live') : 'off'}
+        mic={voice.phase === 'live' ? (voice.muted ? 'muted' : voice.micPaused ? 'paused' : 'live') : 'off'}
       />
 
       <main className="stage">
@@ -239,6 +245,7 @@ export function App(): React.JSX.Element {
                 activity: voice.activity,
                 muted: voice.muted,
                 hasKey: !!creds?.openai.configured,
+                needsTtsKey: settings?.speechEngine === 'elevenlabs' && !creds?.elevenlabs.configured,
                 transcription: voice.transcription,
                 onStart: () => void voice.start(),
                 onStop: voice.stop,

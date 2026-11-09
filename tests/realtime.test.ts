@@ -23,7 +23,7 @@ import {
 } from '../src/shared/ipc.ts'
 
 test('session: GA shape with voice, model, instructions, optional transcription', () => {
-  const s = buildRealtimeSession({ model: 'gpt-realtime-2.1-mini', voice: 'cedar', workspaceName: 'Research', transcription: true, persona: 'neutral', honorific: 'none' })
+  const s = buildRealtimeSession({ model: 'gpt-realtime-2.1-mini', voice: 'cedar', workspaceName: 'Research', transcription: true, persona: 'neutral', honorific: 'none', output: 'audio' })
   assert.equal(s.type, 'realtime')
   assert.equal(s.model, 'gpt-realtime-2.1-mini')
   const audio = s.audio as { input: Record<string, unknown>; output: Record<string, unknown> }
@@ -34,7 +34,7 @@ test('session: GA shape with voice, model, instructions, optional transcription'
   assert.match(String(s.instructions), /Never pretend/)
   assert.equal('format' in audio.output, false, 'WebRTC negotiates format; none set')
 
-  const noTx = buildRealtimeSession({ model: 'gpt-realtime-2.1', voice: 'marin', workspaceName: 'Personal', transcription: false, persona: 'neutral', honorific: 'none' })
+  const noTx = buildRealtimeSession({ model: 'gpt-realtime-2.1', voice: 'marin', workspaceName: 'Personal', transcription: false, persona: 'neutral', honorific: 'none', output: 'audio' })
   assert.equal('transcription' in (noTx.audio as { input: object }).input, false)
 })
 
@@ -117,7 +117,7 @@ test('voice settings: validated and normalized', () => {
 })
 
 test('british butler persona: accent rules, sample phrases, honorific handling, limits kept', () => {
-  const sir = buildInstructions({ workspaceName: 'Personal', persona: 'british-butler', honorific: 'sir' })
+  const sir = buildInstructions({ workspaceName: 'Personal', persona: 'british-butler', honorific: 'sir', output: 'audio' })
   assert.match(sir, /Received Pronunciation/)
   assert.match(sir, /Non-rhotic/)
   assert.match(sir, /# Sample phrases/)
@@ -126,15 +126,15 @@ test('british butler persona: accent rules, sample phrases, honorific handling, 
   assert.match(sir, /Never pretend to have done something/)
   assert.match(sir, /do not claim to be a character from a film/)
 
-  const none = buildInstructions({ workspaceName: 'Personal', persona: 'british-butler', honorific: 'none' })
+  const none = buildInstructions({ workspaceName: 'Personal', persona: 'british-butler', honorific: 'none', output: 'audio' })
   assert.match(none, /Do not use "sir"/)
   assert.doesNotMatch(none, /Certainly, sir/)
   assert.match(none, /"Certainly\. One moment\."/)
 
-  const maam = buildInstructions({ workspaceName: 'X', persona: 'british-butler', honorific: 'maam' })
+  const maam = buildInstructions({ workspaceName: 'X', persona: 'british-butler', honorific: 'maam', output: 'audio' })
   assert.match(maam, /Good morning, ma'am\./)
 
-  const neutral = buildInstructions({ workspaceName: 'X', persona: 'neutral', honorific: 'none' })
+  const neutral = buildInstructions({ workspaceName: 'X', persona: 'neutral', honorific: 'none', output: 'audio' })
   assert.doesNotMatch(neutral, /Received Pronunciation/)
   assert.match(neutral, /Never pretend/)
 })

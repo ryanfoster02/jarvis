@@ -2,7 +2,15 @@ import { app, safeStorage } from 'electron'
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseEnv } from 'node:util'
-import { IpcValidationError, keyLast4, validateOpenAIKey, type CredentialStatus } from '../shared/ipc.ts'
+import {
+  IpcValidationError,
+  keyLast4,
+  PROVIDER_ENV,
+  validateProviderKey,
+  type CredentialStatus,
+  type ProviderId,
+  type ProviderKeyStatus,
+} from '../shared/ipc.ts'
 
 // Credential vault (SECURITY.md §2). Secrets are encrypted with Electron safeStorage, which on macOS
 // uses a key held in the login Keychain. Plaintext keys exist only in main-process memory, briefly,
@@ -13,9 +21,7 @@ interface StoredSecret {
   last4: string
   verifiedAt: string
 }
-interface VaultFile {
-  openai?: StoredSecret
-}
+type VaultFile = Partial<Record<ProviderId, StoredSecret>>
 
 const vaultPath = (): string => join(app.getPath('userData'), 'vault.json')
 
@@ -38,9 +44,10 @@ function write(v: VaultFile): void {
 export const encryptionAvailable = (): boolean => safeStorage.isEncryptionAvailable()
 
 // ---------- Development .env fallback ----------
-// Development only (ignored in packaged builds). Reads OPENAI_API_KEY from <project>/.env on each use,
-// so edits apply without a restart. The value is kept out of process.env and never reaches the renderer.
-// Never use a VITE_/RENDERER_VITE_ prefix for secrets: electron-vite would bundle those into the UI.
+// Development only (ignored in packaged builds). Reads OPENAI_API_KEY / ELEVENLABS_API_KEY from
+// <project>/.env on each use, so edits apply without a restart. Values are kept out of process.env
+// and never reach the renderer. Never use a VITE_-style prefix for secrets: electron-vite would
+// bundle those into the UI.
 
 interface EnvKey {
   key: string | null
@@ -56,73 +63,77 @@ function envFilePath(): string | null {
   return null
 }
 
-function readEnvKey(): EnvKey {
+function readEnvKey(provider: ProviderId): EnvKey {
   const path = envFilePath()
   if (!path) return { key: null, error: null }
+  const name = PROVIDER_ENV[provider]
   try {
-    const raw = parseEnv(readFileSync(path, 'utf8')).OPENAI_API_KEY
+    const raw = parseEnv(readFileSync(path, 'utf8'))[name]
     if (!raw || !raw.trim()) return { key: null, error: null }
-    return { key: validateOpenAIKey(raw), error: null }
+    return { key: validateProviderKey(provider, raw), error: null }
   } catch (err) {
     return {
       key: null,
-      error: err instanceof IpcValidationError ? `OPENAI_API_KEY in .env: ${err.message}` : "The .env file couldn't be read.",
+      error: err instanceof IpcValidationError ? `${name} in .env: ${err.message}` : "The .env file couldn't be read.",
     }
+  }
+}
+
+function providerStatus(provider: ProviderId, vault: VaultFile): ProviderKeyStatus {
+  const saved = vault[provider]
+  const env = readEnvKey(provider)
+  if (env.key) {
+    return {
+      configured: true,
+      source: 'env',
+      last4: keyLast4(env.key),
+      verifiedAt: null,
+      vaultOverridden: !!saved,
+      envError: null,
+    }
+  }
+  return {
+    configured: !!saved,
+    source: saved ? 'vault' : null,
+    last4: saved?.last4 ?? null,
+    verifiedAt: saved?.verifiedAt ?? null,
+    vaultOverridden: false,
+    envError: env.error,
   }
 }
 
 export function credentialStatus(): CredentialStatus {
-  const o = read().openai
-  const env = readEnvKey()
-  if (env.key) {
-    return {
-      encryptionAvailable: encryptionAvailable(),
-      openai: {
-        configured: true,
-        source: 'env',
-        last4: keyLast4(env.key),
-        verifiedAt: null,
-        vaultOverridden: !!o,
-        envError: null,
-      },
-    }
-  }
+  const v = read()
   return {
     encryptionAvailable: encryptionAvailable(),
-    openai: {
-      configured: !!o,
-      source: o ? 'vault' : null,
-      last4: o?.last4 ?? null,
-      verifiedAt: o?.verifiedAt ?? null,
-      vaultOverridden: false,
-      envError: env.error,
-    },
+    openai: providerStatus('openai', v),
+    elevenlabs: providerStatus('elevenlabs', v),
   }
 }
 
 /** Store an already-verified key. Throws if the OS can't encrypt. */
-export function saveOpenAIKey(key: string): void {
+export function saveKey(provider: ProviderId, key: string): void {
   if (!encryptionAvailable()) throw new Error('Secure storage is not available on this system, so the key was not saved.')
   const ciphertext = safeStorage.encryptString(key).toString('base64')
-  write({ ...read(), openai: { ciphertext, last4: keyLast4(key), verifiedAt: new Date().toISOString() } })
+  write({ ...read(), [provider]: { ciphertext, last4: keyLast4(key), verifiedAt: new Date().toISOString() } })
 }
 
-/** The OpenAI key for a single request: .env (development) first, then the encrypted vault. */
-export function getOpenAIKey(): string | null {
-  const env = readEnvKey()
+/** The key for a single request: .env (development) first, then the encrypted vault. */
+export function getKey(provider: ProviderId): string | null {
+  const env = readEnvKey(provider)
   if (env.key) return env.key
-  const o = read().openai
-  if (!o || !encryptionAvailable()) return null
+  const saved = read()[provider]
+  if (!saved || !encryptionAvailable()) return null
   try {
-    return safeStorage.decryptString(Buffer.from(o.ciphertext, 'base64'))
+    return safeStorage.decryptString(Buffer.from(saved.ciphertext, 'base64'))
   } catch {
     return null
   }
 }
 
-export function clearOpenAIKey(): void {
+export function clearKey(provider: ProviderId): void {
   const v = read()
-  delete v.openai
+  delete v[provider]
   if (Object.keys(v).length === 0) {
     if (existsSync(vaultPath())) rmSync(vaultPath())
   } else {

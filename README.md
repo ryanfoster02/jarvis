@@ -41,14 +41,16 @@ For development, put your OpenAI key in a local `.env` file:
 ```bash
 npm run setup:env     # creates .env from .env.example (never overwrites)
 ```
-Open `.env` and paste your key after `OPENAI_API_KEY=`. Then run `npm run dev` and press **Start voice**. Settings → AI provider shows "key from .env file · ending xxxx".
+Open `.env` and paste your keys after `OPENAI_API_KEY=` and `ELEVENLABS_API_KEY=`. Then run `npm run dev` and press **Start voice**. Settings → AI provider shows "key from .env file · ending xxxx".
 - `.env` is git-ignored and only read by the main process in development. Packaged builds ignore it.
 - While it's set, it overrides a key saved in Settings. Edits apply the next time you start voice.
 - Never rename it with a `VITE_` prefix: that would bundle the key into the interface.
 
 ## Using the app
 - **Voice:** add your key via `.env` (above) or Settings → AI provider → *Verify and save*. Then on the dashboard press **Start voice** and allow the microphone. Talk naturally; talk over Jarvis to interrupt, or press **Interrupt**. **Mute** turns the mic off; **End voice** closes the session. While voice is on you can also type, and Jarvis answers by voice.
-- **Model & voice:** Settings → Voice. Default: GPT Realtime 2.1 mini, voice **Ballad**, **British butler** personality. Press **Use JARVIS preset** to switch an existing install. OpenAI has no official British voice: Ballad is the closest built-in voice, and the Received Pronunciation accent, pace and dry wit come from the personality instructions (strong, but can occasionally drift). Choose *Form of address* (none / Sir / Ma'am).
+- **Jarvis's voice (default: ElevenLabs).** OpenAI listens and thinks; ElevenLabs speaks with a real British voice. Default voice **Eldrin** (crisp British baritone); **Finley**, and legacy **George** / **Daniel** (retired by ElevenLabs on Dec 31 2026, older accounts only) are selectable, or paste any voice ID from your own ElevenLabs account. Use **Test voice** in Settings → Voice to hear it. Library voices may need *Add to My Voices* in ElevenLabs first.
+- **Talking over Jarvis:** with ElevenLabs on speakers, the mic pauses while Jarvis speaks (chip shows MIC PAUSED) so it doesn't hear itself — press **Interrupt** to cut in. Turn on *Talk over Jarvis (headphones)* to interrupt by voice.
+- **OpenAI voices** remain available (Settings → Voice → Speech engine): Ballad + British butler personality as a fallback.
 - **Privacy:** the mic is only on during a voice session; the top bar shows **MIC LIVE**. In development macOS lists the app as "Electron" under Privacy & Security → Microphone.
 - **Stop all** (top bar, or ⌘⇧.) ends voice and halts everything until you press **Re-arm**.
 - **Theme:** the THEME chip cycles Gold / Cyan / Azure. **Workspace** selector is in the top bar.

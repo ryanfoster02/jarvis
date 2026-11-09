@@ -44,6 +44,8 @@ Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ no
 - 🟡 Mute, Interrupt, End voice; MIC LIVE indicator; Stop all ends voice
 - 🟡 Core states driven by voice events; telemetry: provider, tokens, cost estimate (2.1-mini prices), latency
 - 🟡 Settings → Voice: model + voice selection, JARVIS preset (Ballad + British butler persona), form of address
+- 🟡 ElevenLabs speech engine (default): British voices (Eldrin default), custom voice ID, Flash v2.5 / v4 Turbo, sentence-chunked TTS, ordered playback, half-duplex or barge-in, Test voice
+- ✅ ElevenLabs request shape + error handling verified with stubbed fetch; SpeechQueue ordering/stop verified in headless Chrome; 31 unit tests
 
 **Acceptance:** with the owner's key on macOS — key saves and shows ••••last4; mic prompt appears once; a spoken round-trip works with transcripts; talking over Jarvis interrupts; Mute stops input; Stop all ends the session and turns the mic off; bad key / offline show clear errors; key never appears in DevTools.
 

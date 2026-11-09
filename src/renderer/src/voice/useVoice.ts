@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { RealtimeModelId } from '../../../shared/ipc.ts'
+import type { RealtimeModelId, SpeechEngineId } from '../../../shared/ipc.ts'
 import { EV, isOneOf, type RealtimeUsage } from '../../../shared/realtime.ts'
+import { cleanForSpeech, takeSpeakable } from '../../../shared/speech.ts'
+import { SpeechQueue } from './speechQueue.ts'
 
 export type VoicePhase = 'off' | 'connecting' | 'live' | 'error'
 export type VoiceActivity = 'idle' | 'listening' | 'thinking' | 'speaking'
@@ -11,6 +13,7 @@ export interface VoiceHandlers {
   onAssistantDone: (key: string, text: string) => void
   onUsage: (model: RealtimeModelId, usage: RealtimeUsage | undefined) => void
   onLatency: (ms: number) => void
+  onTtsCharacters: (n: number) => void
 }
 
 interface ServerEvent {
@@ -30,14 +33,20 @@ const MIC_DENIED =
 /**
  * Realtime voice over WebRTC. The SDP offer goes to the main process, which relays it to OpenAI
  * with the stored key and returns the answer — this renderer never holds a credential.
- * Audio flows directly between the peer connection and OpenAI; events use the "oai-events" channel.
+ *
+ * Two speech engines:
+ *  - openai:     OpenAI speaks; audio arrives as a WebRTC track.
+ *  - elevenlabs: OpenAI replies in text; sentences are sent (via main) to ElevenLabs and played in order.
+ *                Unless barge-in is on, the mic pauses while Jarvis speaks so it doesn't hear itself.
  */
 export function useVoice(handlers: VoiceHandlers) {
   const [phase, setPhase] = useState<VoicePhase>('off')
   const [activity, setActivity] = useState<VoiceActivity>('idle')
   const [muted, setMutedState] = useState(false)
+  const [micPaused, setMicPaused] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [transcription, setTranscription] = useState(true)
+  const [engine, setEngine] = useState<SpeechEngineId | null>(null)
 
   const h = useRef(handlers)
   h.current = handlers
@@ -46,11 +55,55 @@ export function useVoice(handlers: VoiceHandlers) {
   const streamRef = useRef<MediaStream | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const modelRef = useRef<RealtimeModelId>('gpt-realtime-2.1-mini')
+  const engineRef = useRef<SpeechEngineId>('openai')
+  const bargeInRef = useRef(false)
+  const userMuted = useRef(false)
+  const autoPaused = useRef(false)
+  const textBuffers = useRef(new Map<string, string>())
   const turnStart = useRef<number | null>(null)
   const generation = useRef(0) // invalidates late callbacks from a previous session
 
+  const applyMic = (): void => {
+    const enabled = !userMuted.current && !autoPaused.current
+    streamRef.current?.getAudioTracks().forEach((t) => (t.enabled = enabled))
+  }
+
+  const markLatency = (): void => {
+    if (turnStart.current !== null) {
+      h.current.onLatency(Math.round(performance.now() - turnStart.current))
+      turnStart.current = null
+    }
+  }
+
+  const speechRef = useRef<SpeechQueue | null>(null)
+  if (!speechRef.current) {
+    speechRef.current = new SpeechQueue({
+      onStart: () => {
+        markLatency()
+        setActivity('speaking')
+        if (!bargeInRef.current) {
+          autoPaused.current = true
+          setMicPaused(true)
+          applyMic()
+        }
+      },
+      onIdle: () => {
+        setActivity((a) => (a === 'speaking' ? 'idle' : a))
+        if (autoPaused.current) {
+          autoPaused.current = false
+          setMicPaused(false)
+          applyMic()
+        }
+      },
+      onError: (m) => setError(m),
+      onCharacters: (n) => h.current.onTtsCharacters(n),
+    })
+  }
+  const speech = speechRef.current
+
   const teardown = useCallback(() => {
     generation.current++
+    speech.stop()
     dcRef.current?.close()
     pcRef.current?.getSenders().forEach((s) => s.track?.stop())
     pcRef.current?.close()
@@ -64,9 +117,14 @@ export function useVoice(handlers: VoiceHandlers) {
     streamRef.current = null
     audioRef.current = null
     turnStart.current = null
+    textBuffers.current.clear()
+    userMuted.current = false
+    autoPaused.current = false
     setActivity('idle')
     setMutedState(false)
-  }, [])
+    setMicPaused(false)
+    setEngine(null)
+  }, [speech])
 
   const fail = useCallback(
     (message: string) => {
@@ -77,30 +135,48 @@ export function useVoice(handlers: VoiceHandlers) {
     [teardown],
   )
 
-  const markLatency = (): void => {
-    if (turnStart.current !== null) {
-      h.current.onLatency(Math.round(performance.now() - turnStart.current))
-      turnStart.current = null
+  /** Feed streamed reply text to ElevenLabs sentence by sentence. */
+  const speakText = (key: string, delta: string, final: boolean): void => {
+    if (engineRef.current !== 'elevenlabs') return
+    const buf = (textBuffers.current.get(key) ?? '') + delta
+    const { chunks, rest } = takeSpeakable(buf, final)
+    for (const c of chunks) {
+      const clean = cleanForSpeech(c)
+      if (clean) speech.enqueue(clean)
     }
+    if (final) textBuffers.current.delete(key)
+    else textBuffers.current.set(key, rest)
   }
 
   const onEvent = useCallback(
     (ev: ServerEvent) => {
       const key = ev.item_id ?? ev.response_id ?? 'response'
       if (ev.type === EV.speechStarted) {
+        // You started talking: if Jarvis is speaking through ElevenLabs, cut it off (barge-in).
+        if (engineRef.current === 'elevenlabs' && speech.active) {
+          speech.stop()
+          textBuffers.current.clear()
+        }
         setActivity('listening')
       } else if (ev.type === EV.speechStopped) {
         turnStart.current = performance.now()
         setActivity('thinking')
       } else if (ev.type === EV.userTranscript) {
         if (ev.transcript?.trim()) h.current.onUserText(ev.transcript.trim())
-      } else if (isOneOf(ev.type, EV.assistantTranscriptDelta) || isOneOf(ev.type, EV.assistantTextDelta)) {
+      } else if (isOneOf(ev.type, EV.assistantTranscriptDelta)) {
         markLatency()
         if (ev.delta) h.current.onAssistantDelta(key, ev.delta)
+      } else if (isOneOf(ev.type, EV.assistantTextDelta)) {
+        if (engineRef.current === 'openai') markLatency() // with ElevenLabs, latency = first audio
+        if (ev.delta) {
+          h.current.onAssistantDelta(key, ev.delta)
+          speakText(key, ev.delta, false)
+        }
       } else if (isOneOf(ev.type, EV.assistantTranscriptDone)) {
         h.current.onAssistantDone(key, ev.transcript ?? '')
       } else if (isOneOf(ev.type, EV.assistantTextDone)) {
         h.current.onAssistantDone(key, ev.text ?? '')
+        speakText(key, '', true)
       } else if (ev.type === EV.audioStarted) {
         markLatency()
         setActivity('speaking')
@@ -111,12 +187,14 @@ export function useVoice(handlers: VoiceHandlers) {
         if (ev.response?.status === 'failed') {
           setError(ev.response.status_details?.error?.message ?? 'The response failed.')
         }
-        setActivity((a) => (a === 'thinking' ? 'idle' : a))
+        setActivity((a) => (a === 'thinking' && !speech.active ? 'idle' : a))
       } else if (ev.type === EV.error) {
         setError(ev.error?.message ?? 'OpenAI reported an error.')
       }
     },
-    [],
+    // speakText/markLatency only touch refs and stable setters
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [speech],
   )
 
   const start = useCallback(async () => {
@@ -136,7 +214,13 @@ export function useVoice(handlers: VoiceHandlers) {
       })
     } catch (err) {
       const name = err instanceof DOMException ? err.name : ''
-      return fail(name === 'NotAllowedError' ? MIC_DENIED : name === 'NotFoundError' ? 'No microphone was found.' : `Couldn't open the microphone: ${String(err)}`)
+      return fail(
+        name === 'NotAllowedError'
+          ? MIC_DENIED
+          : name === 'NotFoundError'
+            ? 'No microphone was found.'
+            : `Couldn't open the microphone: ${String(err)}`,
+      )
     }
     if (gen !== generation.current) {
       stream.getTracks().forEach((t) => t.stop())
@@ -171,10 +255,6 @@ export function useVoice(handlers: VoiceHandlers) {
     pc.onconnectionstatechange = () => {
       if (gen !== generation.current) return
       if (pc.connectionState === 'failed') fail('The voice connection dropped. Start voice again.')
-      if (pc.connectionState === 'closed' || pc.connectionState === 'disconnected') {
-        // 'disconnected' can recover; only treat it as fatal if it persists.
-        if (pc.connectionState === 'closed') fail('The voice connection closed.')
-      }
     }
 
     try {
@@ -184,6 +264,9 @@ export function useVoice(handlers: VoiceHandlers) {
       if (gen !== generation.current) return
       if (!res.ok) return fail(res.message)
       modelRef.current = res.model
+      engineRef.current = res.speechEngine
+      bargeInRef.current = res.bargeIn
+      setEngine(res.speechEngine)
       setTranscription(res.transcription)
       await pc.setRemoteDescription({ type: 'answer', sdp: res.answerSdp })
     } catch (err) {
@@ -198,8 +281,10 @@ export function useVoice(handlers: VoiceHandlers) {
   }, [teardown])
 
   const setMuted = useCallback((m: boolean) => {
-    streamRef.current?.getAudioTracks().forEach((t) => (t.enabled = !m))
+    userMuted.current = m
     setMutedState(m)
+    applyMic()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const send = (event: Record<string, unknown>): boolean => {
@@ -211,10 +296,13 @@ export function useVoice(handlers: VoiceHandlers) {
 
   /** Cut Jarvis off mid-sentence. */
   const interrupt = useCallback(() => {
+    speech.stop()
+    textBuffers.current.clear()
     send({ type: 'response.cancel' })
-    send({ type: 'output_audio_buffer.clear' })
+    if (engineRef.current === 'openai') send({ type: 'output_audio_buffer.clear' })
     setActivity('idle')
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [speech])
 
   /** Typed message into the live voice session; Jarvis answers by voice. */
   const sendText = useCallback((text: string): boolean => {
@@ -230,7 +318,26 @@ export function useVoice(handlers: VoiceHandlers) {
     return ok
   }, [])
 
-  useEffect(() => teardown, [teardown])
+  useEffect(
+    () => () => {
+      teardown()
+      void speech.close()
+    },
+    [teardown, speech],
+  )
 
-  return { phase, activity, muted, error, transcription, start, stop, setMuted, interrupt, sendText, clearError: () => setError(null) }
+  return {
+    phase,
+    activity,
+    muted,
+    micPaused,
+    error,
+    transcription,
+    engine,
+    start,
+    stop,
+    setMuted,
+    interrupt,
+    sendText,
+  }
 }

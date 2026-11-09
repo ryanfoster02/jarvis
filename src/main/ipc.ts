@@ -3,22 +3,26 @@ import {
   Channels,
   IpcValidationError,
   isTrustedSenderUrl,
+  isProviderId,
   validateChatMessage,
-  validateOpenAIKey,
+  validateProviderKey,
   validateReason,
   validateSdpOffer,
   validateSettingsPatch,
+  validateTtsText,
   WORKSPACES,
   type AppInfo,
   type ChatResult,
   type CredentialResult,
   type MicAccess,
   type TrustedOrigins,
+  type TtsResult,
   type VoiceConnectResult,
 } from '../shared/ipc.ts'
 import { buildRealtimeSession, isTranscriptionConfigError } from '../shared/realtime.ts'
 import { createRealtimeCall, verifyKey } from './openai.ts'
-import { clearOpenAIKey, credentialStatus, encryptionAvailable, getOpenAIKey, saveOpenAIKey } from './vault.ts'
+import { synthesize, verifyElevenLabsKey } from './elevenlabs.ts'
+import { clearKey, credentialStatus, encryptionAvailable, getKey, saveKey } from './vault.ts'
 import { loadSettings, updateSettings } from './settings.ts'
 import { engage, getKillSwitch, isHalted, rearm } from './killswitch.ts'
 
@@ -97,11 +101,12 @@ export function registerIpc(trusted: TrustedOrigins): void {
   ipcMain.handle(Channels.credentialsStatus, guard(() => credentialStatus()))
 
   ipcMain.handle(
-    Channels.credentialsSetOpenAI,
-    guard(async (input: unknown): Promise<CredentialResult> => {
+    Channels.credentialsSet,
+    guard(async (provider: unknown, input: unknown): Promise<CredentialResult> => {
+      if (!isProviderId(provider)) return { ok: false, message: 'Unknown provider.' }
       let key: string
       try {
-        key = validateOpenAIKey(input)
+        key = validateProviderKey(provider, input)
       } catch (err) {
         if (err instanceof IpcValidationError) return { ok: false, message: err.message }
         throw err
@@ -109,18 +114,41 @@ export function registerIpc(trusted: TrustedOrigins): void {
       if (!encryptionAvailable()) {
         return { ok: false, message: 'Secure storage is not available on this Mac, so the key cannot be saved safely.' }
       }
-      const check = await verifyKey(key)
+      const check = provider === 'openai' ? await verifyKey(key) : await verifyElevenLabsKey(key)
       if (!check.ok) return { ok: false, message: check.message }
-      saveOpenAIKey(key)
+      saveKey(provider, key)
       return { ok: true, status: credentialStatus() }
     }),
   )
 
   ipcMain.handle(
-    Channels.credentialsClearOpenAI,
-    guard(() => {
-      clearOpenAIKey()
+    Channels.credentialsClear,
+    guard((provider: unknown) => {
+      if (isProviderId(provider)) clearKey(provider)
       return credentialStatus()
+    }),
+  )
+
+  // ---------- Speech (ElevenLabs) ----------
+  // One chunk of Jarvis's reply → MP3 bytes. Text is validated and length-capped; the key stays here.
+  ipcMain.handle(
+    Channels.ttsSpeak,
+    guard(async (input: unknown): Promise<TtsResult> => {
+      if (isHalted()) return { ok: false, code: 'halted', message: 'Stop all is engaged.' }
+      let text: string
+      try {
+        text = validateTtsText(input)
+      } catch (err) {
+        if (err instanceof IpcValidationError) return { ok: false, code: 'invalid_input', message: err.message }
+        throw err
+      }
+      const key = getKey('elevenlabs')
+      if (!key) return { ok: false, code: 'no_key', message: 'Add your ElevenLabs key in Settings → AI provider.' }
+      const settings = loadSettings()
+      const res = await synthesize(key, settings.elevenVoiceId, settings.elevenModel, text)
+      if (isHalted()) return { ok: false, code: 'halted', message: 'Stop all is engaged.' }
+      if (!res.ok) return { ok: false, code: res.status === 0 ? 'network' : 'api_error', message: res.message }
+      return { ok: true, audio: res.value, characters: text.length }
     }),
   )
 
@@ -151,11 +179,19 @@ export function registerIpc(trusted: TrustedOrigins): void {
         if (err instanceof IpcValidationError) return { ok: false, code: 'invalid_input', message: err.message }
         throw err
       }
-      const key = getOpenAIKey()
+      const key = getKey('openai')
       if (!key) {
         return { ok: false, code: 'no_key', message: 'Add your OpenAI API key in Settings → AI provider to use voice.' }
       }
       const settings = loadSettings()
+      const eleven = settings.speechEngine === 'elevenlabs'
+      if (eleven && !getKey('elevenlabs')) {
+        return {
+          ok: false,
+          code: 'no_tts_key',
+          message: 'Add your ElevenLabs key in Settings → AI provider, or switch Settings → Voice → Speech engine to OpenAI.',
+        }
+      }
       const workspaceName = WORKSPACES.find((w) => w.id === settings.activeWorkspace)?.name ?? 'Personal'
       const base = {
         model: settings.realtimeModel,
@@ -163,6 +199,7 @@ export function registerIpc(trusted: TrustedOrigins): void {
         workspaceName,
         persona: settings.persona,
         honorific: settings.honorific,
+        output: eleven ? ('text' as const) : ('audio' as const),
       }
 
       let transcription = true
@@ -177,7 +214,14 @@ export function registerIpc(trusted: TrustedOrigins): void {
         const code = res.status === 0 ? 'network' : res.status === 401 ? 'invalid_key' : 'api_error'
         return { ok: false, code, message: res.message }
       }
-      return { ok: true, answerSdp: res.value, model: settings.realtimeModel, voice: settings.voice, transcription }
+      return {
+        ok: true,
+        answerSdp: res.value,
+        model: settings.realtimeModel,
+        speechEngine: settings.speechEngine,
+        transcription,
+        bargeIn: settings.bargeIn,
+      }
     }),
   )
 }

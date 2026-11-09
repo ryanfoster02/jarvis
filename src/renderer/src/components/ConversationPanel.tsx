@@ -16,6 +16,8 @@ export interface VoiceControls {
   activity: VoiceActivity
   muted: boolean
   hasKey: boolean
+  /** ElevenLabs is the chosen speech engine but its key is missing. */
+  needsTtsKey: boolean
   transcription: boolean
   onStart: () => void
   onStop: () => void
@@ -67,7 +69,11 @@ export function ConversationPanel({ entries, busy, disabled, workspaceName, voic
 
       <div className="voice-bar">
         {voice.phase === 'off' || voice.phase === 'error' ? (
-          voice.hasKey ? (
+          voice.hasKey && voice.needsTtsKey ? (
+            <button className="vbtn" onClick={onOpenSettings}>
+              Add ElevenLabs key for Jarvis&apos;s voice
+            </button>
+          ) : voice.hasKey ? (
             <button className="vbtn vbtn-primary" onClick={voice.onStart} disabled={disabled}>
               <span className="vbtn-dot" aria-hidden="true" />
               Start voice

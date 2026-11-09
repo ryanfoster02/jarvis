@@ -11,8 +11,9 @@ export const Channels = {
   killSwitchRearm: 'killswitch:rearm',
   chatSend: 'chat:send',
   credentialsStatus: 'credentials:status',
-  credentialsSetOpenAI: 'credentials:set-openai',
-  credentialsClearOpenAI: 'credentials:clear-openai',
+  credentialsSet: 'credentials:set',
+  credentialsClear: 'credentials:clear',
+  ttsSpeak: 'tts:speak',
   voiceMicAccess: 'voice:mic-access',
   voiceConnect: 'voice:connect',
 } as const
@@ -67,6 +68,38 @@ export type HonorificId = (typeof HONORIFICS)[number]['id']
 /** One-click preset for the JARVIS feel (voice + persona; leaves form of address to the owner). */
 export const JARVIS_PRESET = { voice: 'ballad', persona: 'british-butler' } as const satisfies Partial<Settings>
 
+/** ElevenLabs JARVIS-style preset: British baritone + butler persona. */
+export const ELEVEN_PRESET = {
+  speechEngine: 'elevenlabs',
+  elevenVoiceId: '6WwXjDDEMyNmFG95zycZ',
+  persona: 'british-butler',
+} as const satisfies Partial<Settings>
+
+/** Who speaks Jarvis's replies. ElevenLabs gives real British voices; OpenAI is the built-in fallback. */
+export const SPEECH_ENGINES = [
+  { id: 'elevenlabs', name: 'ElevenLabs (British voices)' },
+  { id: 'openai', name: 'OpenAI built-in voices' },
+] as const
+export type SpeechEngineId = (typeof SPEECH_ENGINES)[number]['id']
+
+/**
+ * British male ElevenLabs voices (IDs from elevenlabs.io docs, checked 2026-11-08).
+ * ElevenLabs' legacy Default voices (George, Daniel) expire 2026-12-31 and only work on accounts
+ * created before March 2026; Eldrin and Finley are ElevenLabs' named replacements (Voice Library).
+ */
+export const ELEVEN_VOICES = [
+  { id: '6WwXjDDEMyNmFG95zycZ', name: 'Eldrin', note: 'Crisp British baritone (replaces George)' },
+  { id: 'fnYMz3F5gMEDGMWcH1ex', name: 'Finley', note: 'Articulate British anchor (replaces Daniel)' },
+  { id: 'JBFqnCBsd6RMkjVDRZzb', name: 'George', note: 'Warm, refined British (legacy, ends Dec 31 2026)' },
+  { id: 'onwK4e9ZLuTAKqWW03F9', name: 'Daniel', note: 'Authoritative British newsreader (legacy, ends Dec 31 2026)' },
+] as const
+
+export const ELEVEN_MODELS = [
+  { id: 'eleven_flash_v2_5', name: 'Flash v2.5 (fast, lower cost)' },
+  { id: 'eleven_v4_turbo', name: 'v4 Turbo (fast, newest)' },
+] as const
+export type ElevenModelId = (typeof ELEVEN_MODELS)[number]['id']
+
 export interface Settings {
   theme: Theme
   reducedMotion: boolean
@@ -75,6 +108,12 @@ export interface Settings {
   realtimeModel: RealtimeModelId
   persona: PersonaId
   honorific: HonorificId
+  speechEngine: SpeechEngineId
+  /** ElevenLabs voice ID: one of ELEVEN_VOICES or any voice ID from the owner's ElevenLabs account. */
+  elevenVoiceId: string
+  elevenModel: ElevenModelId
+  /** Let the owner talk over Jarvis while it speaks through ElevenLabs. Off = mic pauses during speech (avoids echo on speakers). */
+  bargeIn: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = Object.freeze({
@@ -85,6 +124,10 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   realtimeModel: 'gpt-realtime-2.1-mini',
   persona: 'british-butler',
   honorific: 'none',
+  speechEngine: 'elevenlabs',
+  elevenVoiceId: '6WwXjDDEMyNmFG95zycZ',
+  elevenModel: 'eleven_flash_v2_5',
+  bargeIn: false,
 })
 
 /** Execution limits (SECURITY.md §6). Displayed now; enforced by the agent runtime in Phase 2. */
@@ -121,20 +164,27 @@ export interface KillSwitchState {
   reason: string | null
 }
 
+export const PROVIDERS = ['openai', 'elevenlabs'] as const
+export type ProviderId = (typeof PROVIDERS)[number]
+export const PROVIDER_ENV: Record<ProviderId, string> = { openai: 'OPENAI_API_KEY', elevenlabs: 'ELEVENLABS_API_KEY' }
+
+export interface ProviderKeyStatus {
+  configured: boolean
+  /** Where the key in use comes from. In development a .env key overrides the saved one. */
+  source: 'env' | 'vault' | null
+  last4: string | null
+  verifiedAt: string | null
+  /** A key is also saved in the vault but is currently overridden by .env. */
+  vaultOverridden: boolean
+  /** Problem with the .env entry (bad format etc.), shown in Settings. Never contains the key. */
+  envError: string | null
+}
+
 export interface CredentialStatus {
   /** False if the OS can't encrypt secrets (then keys can't be saved). */
   encryptionAvailable: boolean
-  openai: {
-    configured: boolean
-    /** Where the key in use comes from. In development a .env key overrides the saved one. */
-    source: 'env' | 'vault' | null
-    last4: string | null
-    verifiedAt: string | null
-    /** A key is also saved in the vault but is currently overridden by .env. */
-    vaultOverridden: boolean
-    /** Problem with the .env file (bad format etc.), shown in Settings. Never contains the key. */
-    envError: string | null
-  }
+  openai: ProviderKeyStatus
+  elevenlabs: ProviderKeyStatus
 }
 
 export type CredentialResult = { ok: true; status: CredentialStatus } | { ok: false; message: string }
@@ -142,12 +192,23 @@ export type CredentialResult = { ok: true; status: CredentialStatus } | { ok: fa
 export type MicAccess = 'granted' | 'denied' | 'restricted' | 'unknown'
 
 export type VoiceConnectResult =
-  | { ok: true; answerSdp: string; model: RealtimeModelId; voice: VoiceId; transcription: boolean }
+  | {
+      ok: true
+      answerSdp: string
+      model: RealtimeModelId
+      speechEngine: SpeechEngineId
+      transcription: boolean
+      bargeIn: boolean
+    }
   | {
       ok: false
-      code: 'no_key' | 'halted' | 'invalid_key' | 'network' | 'api_error' | 'invalid_input'
+      code: 'no_key' | 'no_tts_key' | 'halted' | 'invalid_key' | 'network' | 'api_error' | 'invalid_input'
       message: string
     }
+
+export type TtsResult =
+  | { ok: true; audio: Uint8Array; characters: number }
+  | { ok: false; code: 'no_key' | 'halted' | 'invalid_input' | 'network' | 'api_error'; message: string }
 
 export type ChatResult =
   | { ok: true; reply: string }
@@ -188,6 +249,23 @@ export function isHonorificId(v: unknown): v is HonorificId {
   return typeof v === 'string' && HONORIFICS.some((h) => h.id === v)
 }
 
+export function isSpeechEngineId(v: unknown): v is SpeechEngineId {
+  return typeof v === 'string' && SPEECH_ENGINES.some((e) => e.id === v)
+}
+
+export function isElevenModelId(v: unknown): v is ElevenModelId {
+  return typeof v === 'string' && ELEVEN_MODELS.some((m) => m.id === v)
+}
+
+/** ElevenLabs voice IDs are short alphanumeric strings (e.g. 6WwXjDDEMyNmFG95zycZ). */
+export function isElevenVoiceId(v: unknown): v is string {
+  return typeof v === 'string' && /^[A-Za-z0-9]{16,32}$/.test(v)
+}
+
+export function isProviderId(v: unknown): v is ProviderId {
+  return typeof v === 'string' && (PROVIDERS as readonly string[]).includes(v)
+}
+
 export function isRealtimeModelId(v: unknown): v is RealtimeModelId {
   return typeof v === 'string' && REALTIME_MODELS.some((m) => m.id === v)
 }
@@ -226,6 +304,22 @@ export function validateSettingsPatch(input: unknown): Partial<Settings> {
         if (!isHonorificId(value)) throw new IpcValidationError(`invalid form of address: ${String(value)}`)
         out.honorific = value
         break
+      case 'speechEngine':
+        if (!isSpeechEngineId(value)) throw new IpcValidationError(`invalid speech engine: ${String(value)}`)
+        out.speechEngine = value
+        break
+      case 'elevenVoiceId':
+        if (!isElevenVoiceId(value)) throw new IpcValidationError('That ElevenLabs voice ID looks wrong. Copy it from the voice in ElevenLabs.')
+        out.elevenVoiceId = value
+        break
+      case 'elevenModel':
+        if (!isElevenModelId(value)) throw new IpcValidationError(`invalid ElevenLabs model: ${String(value)}`)
+        out.elevenModel = value
+        break
+      case 'bargeIn':
+        if (typeof value !== 'boolean') throw new IpcValidationError('bargeIn must be boolean')
+        out.bargeIn = value
+        break
       default:
         throw new IpcValidationError(`unknown setting: ${key}`)
     }
@@ -244,6 +338,10 @@ export function normalizeSettings(stored: unknown): Settings {
   if (isRealtimeModelId(stored.realtimeModel)) s.realtimeModel = stored.realtimeModel
   if (isPersonaId(stored.persona)) s.persona = stored.persona
   if (isHonorificId(stored.honorific)) s.honorific = stored.honorific
+  if (isSpeechEngineId(stored.speechEngine)) s.speechEngine = stored.speechEngine
+  if (isElevenVoiceId(stored.elevenVoiceId)) s.elevenVoiceId = stored.elevenVoiceId
+  if (isElevenModelId(stored.elevenModel)) s.elevenModel = stored.elevenModel
+  if (typeof stored.bargeIn === 'boolean') s.bargeIn = stored.bargeIn
   return s
 }
 
@@ -274,6 +372,32 @@ export function validateOpenAIKey(input: unknown): string {
     throw new IpcValidationError("That doesn't look like an OpenAI API key. Keys start with sk- and contain no spaces.")
   }
   return key
+}
+
+/** ElevenLabs API keys: URL-safe characters, no spaces. Never echoes the key in errors. */
+export function validateElevenLabsKey(input: unknown): string {
+  if (typeof input !== 'string') throw new IpcValidationError('API key must be text')
+  const key = input.trim()
+  if (key.length > MAX_KEY_CHARS) throw new IpcValidationError('That API key is too long')
+  if (!/^[A-Za-z0-9_-]{24,}$/.test(key)) {
+    throw new IpcValidationError("That doesn't look like an ElevenLabs API key. Copy it from ElevenLabs → Developers → API keys.")
+  }
+  return key
+}
+
+export function validateProviderKey(provider: ProviderId, input: unknown): string {
+  return provider === 'openai' ? validateOpenAIKey(input) : validateElevenLabsKey(input)
+}
+
+export const MAX_TTS_CHARS = 1000
+
+/** One chunk of speech for ElevenLabs. */
+export function validateTtsText(input: unknown): string {
+  if (typeof input !== 'string') throw new IpcValidationError('Speech text must be text')
+  const text = input.trim()
+  if (!text) throw new IpcValidationError('Nothing to say')
+  if (text.length > MAX_TTS_CHARS) throw new IpcValidationError(`Speech chunk exceeds ${MAX_TTS_CHARS} characters`)
+  return text
 }
 
 /** A WebRTC SDP offer from our own renderer: must be a plausible audio offer. */

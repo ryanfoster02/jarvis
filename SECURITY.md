@@ -11,8 +11,11 @@
 ## 2. Credentials
 - Stored only in the main process, encrypted with Electron `safeStorage` (macOS Keychain-backed). Never in: renderer, frontend bundle, logs, SQLite memory tables, Git, session reports.
 - Realtime voice uses the WebRTC unified interface: main relays the SDP offer with the key; the renderer never receives a credential. Keys are verified (`GET /v1/models`) before saving; only the last 4 characters are ever shown. OpenAI error bodies stay in main (they can echo key fragments); the renderer gets a sanitized message.
-- `.env` (development only, git-ignored, created with mode 600 by `npm run setup:env`) may hold `OPENAI_API_KEY`. It is read by the main process on each use, never copied into `process.env`, ignored when packaged, and overrides the vault key while set. Secrets must never use a `VITE_`-style prefix (electron-vite would bundle them into the renderer). `.env.example` holds names, never values.
+- `.env` (development only, git-ignored, created with mode 600 by `npm run setup:env`) may hold `OPENAI_API_KEY` and `ELEVENLABS_API_KEY`. It is read by the main process on each use, never copied into `process.env`, ignored when packaged, and overrides the vault key while set. Secrets must never use a `VITE_`-style prefix (electron-vite would bundle them into the renderer). `.env.example` holds names, never values.
 - Integration OAuth is user-initiated and interactive. No unattended credential capture.
+
+- ElevenLabs: key used only in main (`src/main/elevenlabs.ts`). The renderer sends text chunks (validated, ≤1000 chars, refused while halted) over `tts:speak` and receives MP3 bytes. Keys restricted to Text to Speech are accepted (verification treats `missing_permissions` as authenticated).
+- Voices: only provider-owned or the owner's own consented voices. JARVIS does not integrate clones of real people's voices.
 
 ## 3. Risk classification
 | Level | Examples | Default policy |

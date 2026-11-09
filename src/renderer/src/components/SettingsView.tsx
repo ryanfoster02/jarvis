@@ -1,18 +1,28 @@
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import {
+  ELEVEN_MODELS,
+  ELEVEN_PRESET,
+  ELEVEN_VOICES,
   HONORIFICS,
+  isElevenVoiceId,
   JARVIS_PRESET,
+  PROVIDER_ENV,
+  SPEECH_ENGINES,
   PERSONAS,
   REALTIME_MODELS,
   VOICES,
   type AppInfo,
   type CredentialStatus,
+  type ElevenModelId,
   type HonorificId,
+  type ProviderId,
+  type SpeechEngineId,
   type PersonaId,
   type RealtimeModelId,
   type Settings,
   type VoiceId,
 } from '../../../shared/ipc.ts'
+import { SpeechQueue } from '../voice/speechQueue.ts'
 import { AiCore, CORE_LABELS, CORE_STATES, type CoreState } from './AiCore.tsx'
 import { ThemeSwitcher } from './ThemeSwitcher.tsx'
 
@@ -41,59 +51,74 @@ interface Props {
 const cap = (v: string): string => v.charAt(0).toUpperCase() + v.slice(1)
 const voiceLabel = (v: VoiceId): string => (v === 'ballad' ? 'Ballad (closest to British)' : cap(v))
 
-function ProviderSection({ creds, onCreds }: { creds: CredentialStatus; onCreds: (c: CredentialStatus) => void }): React.JSX.Element {
+const PROVIDER_INFO: Record<ProviderId, { name: string; purpose: string; where: string }> = {
+  openai: {
+    name: 'OpenAI',
+    purpose: 'Listens and thinks: speech recognition and replies for voice.',
+    where: 'platform.openai.com → API keys',
+  },
+  elevenlabs: {
+    name: 'ElevenLabs',
+    purpose: "Speaks: Jarvis's British voice when the speech engine is ElevenLabs.",
+    where: 'elevenlabs.io → Developers → API keys (needs the Text to Speech permission)',
+  },
+}
+
+function KeyForm({
+  provider,
+  creds,
+  onCreds,
+}: {
+  provider: ProviderId
+  creds: CredentialStatus
+  onCreds: (c: CredentialStatus) => void
+}): React.JSX.Element {
   const [key, setKey] = useState('')
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
-  const o = creds.openai
+  const o = creds[provider]
+  const info = PROVIDER_INFO[provider]
 
   const save = async (e: FormEvent): Promise<void> => {
     e.preventDefault()
     if (!key.trim() || saving) return
     setSaving(true)
     setMessage(null)
-    const res = await window.jarvis.credentials.setOpenAIKey(key)
+    const res = await window.jarvis.credentials.set(provider, key)
     setSaving(false)
     if (res.ok) {
       setKey('')
       onCreds(res.status)
-      setMessage({ tone: 'ok', text: 'Key verified with OpenAI and saved to your keychain-protected vault.' })
+      setMessage({ tone: 'ok', text: `Key verified with ${info.name} and saved to your keychain-protected vault.` })
     } else {
       setMessage({ tone: 'error', text: res.message })
     }
   }
 
   const remove = async (): Promise<void> => {
-    onCreds(await window.jarvis.credentials.clearOpenAIKey())
+    onCreds(await window.jarvis.credentials.clear(provider))
     setMessage({ tone: 'ok', text: 'Key removed from this Mac.' })
   }
 
   return (
-    <>
-      <h2>AI provider</h2>
+    <div className="provider">
+      <h3>{info.name}</h3>
+      <p className="fine">{info.purpose}</p>
       <p className="status-line">
         <span className={`dot ${o.configured ? 'dot-on' : 'dot-off'}`} />
         {!o.configured
-          ? 'No provider connected.'
+          ? 'Not connected.'
           : o.source === 'env'
-            ? `OpenAI key from .env file · ending ${o.last4 ?? '????'}`
-            : `OpenAI connected · key ending ${o.last4 ?? '????'}${o.verifiedAt ? ` · verified ${new Date(o.verifiedAt).toLocaleDateString()}` : ''}`}
+            ? `Key from .env file · ending ${o.last4 ?? '????'}`
+            : `Connected · key ending ${o.last4 ?? '????'}${o.verifiedAt ? ` · verified ${new Date(o.verifiedAt).toLocaleDateString()}` : ''}`}
       </p>
       {o.source === 'env' && (
         <p className="form-msg is-ok">
-          Using OPENAI_API_KEY from the project's .env file (development only).
-          {o.vaultOverridden ? ' It overrides the key saved below; remove it from .env to use the saved key.' : ''} Edits to
-          .env apply the next time you start voice.
+          Using {PROVIDER_ENV[provider]} from the project&apos;s .env file (development only).
+          {o.vaultOverridden ? ' It overrides the saved key; remove it from .env to use the saved key.' : ''}
         </p>
       )}
       {o.envError && <p className="form-msg is-error">{o.envError}</p>}
-      <p>
-        Jarvis uses your OpenAI API key for voice. The key is checked with OpenAI, then encrypted with your Mac's
-        keychain. It never leaves the main process: the interface only ever sees its last four characters.
-      </p>
-      {!creds.encryptionAvailable && (
-        <p className="form-msg is-error">Secure storage isn't available on this system, so keys can't be saved.</p>
-      )}
       <form className="key-form" onSubmit={save}>
         <label>
           <span className="field-label">{o.source === 'vault' ? 'Replace saved key' : 'Save a key in the vault'}</span>
@@ -101,7 +126,7 @@ function ProviderSection({ creds, onCreds }: { creds: CredentialStatus; onCreds:
             type="password"
             value={key}
             onChange={(e) => setKey(e.target.value)}
-            placeholder="sk-…"
+            placeholder={provider === 'openai' ? 'sk-…' : 'sk_…'}
             autoComplete="off"
             spellCheck={false}
             disabled={!creds.encryptionAvailable || saving}
@@ -118,16 +143,181 @@ function ProviderSection({ creds, onCreds }: { creds: CredentialStatus; onCreds:
       </form>
       {message && <p className={`form-msg ${message.tone === 'error' ? 'is-error' : 'is-ok'}`}>{message.text}</p>}
       <p className="fine">
-        Get a key at platform.openai.com → API keys. Voice usage is billed to that account. For development you can
-        instead put OPENAI_API_KEY in a .env file in the project folder (run npm run setup:env to create it).
+        Get a key at {info.where}. Or, for development, put {PROVIDER_ENV[provider]} in .env (npm run setup:env).
       </p>
+    </div>
+  )
+}
+
+function ProviderSection({ creds, onCreds }: { creds: CredentialStatus; onCreds: (c: CredentialStatus) => void }): React.JSX.Element {
+  return (
+    <>
+      <h2>AI provider</h2>
+      <p>
+        Keys are checked with the provider, then encrypted with your Mac&apos;s keychain. They never leave the main
+        process: the interface only ever sees the last four characters.
+      </p>
+      {!creds.encryptionAvailable && (
+        <p className="form-msg is-error">Secure storage isn&apos;t available on this system, so keys can&apos;t be saved.</p>
+      )}
+      <KeyForm provider="openai" creds={creds} onCreds={onCreds} />
+      <KeyForm provider="elevenlabs" creds={creds} onCreds={onCreds} />
     </>
+  )
+}
+
+function ElevenLabsVoice({
+  settings,
+  creds,
+  onUpdate,
+}: {
+  settings: Settings
+  creds: CredentialStatus
+  onUpdate: (patch: Partial<Settings>) => void
+}): React.JSX.Element {
+  const preset = ELEVEN_VOICES.find((v) => v.id === settings.elevenVoiceId)
+  const [custom, setCustom] = useState(preset ? '' : settings.elevenVoiceId)
+  const presetActive = settings.elevenVoiceId === ELEVEN_PRESET.elevenVoiceId && settings.persona === ELEVEN_PRESET.persona
+  return (
+    <>
+      <div className="preset">
+        <div className="field-text">
+          <h3>JARVIS preset</h3>
+          <p>Eldrin, a crisp British baritone from ElevenLabs, with the British butler personality.</p>
+        </div>
+        <button className="btn" disabled={presetActive} onClick={() => onUpdate({ ...ELEVEN_PRESET })}>
+          {presetActive ? 'Preset active' : 'Use JARVIS preset'}
+        </button>
+      </div>
+      <div className="field">
+        <div className="field-text">
+          <h3>ElevenLabs voice</h3>
+          <p>{preset ? preset.note : 'Custom voice from your ElevenLabs account.'}</p>
+        </div>
+        <select
+          className="select"
+          value={preset ? preset.id : 'custom'}
+          onChange={(e) => {
+            if (e.target.value !== 'custom') onUpdate({ elevenVoiceId: e.target.value })
+          }}
+        >
+          {ELEVEN_VOICES.map((v) => (
+            <option key={v.id} value={v.id}>
+              {v.name}
+            </option>
+          ))}
+          <option value="custom">Custom voice ID…</option>
+        </select>
+      </div>
+      <form
+        className="key-form"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (isElevenVoiceId(custom.trim())) onUpdate({ elevenVoiceId: custom.trim() })
+        }}
+      >
+        <label>
+          <span className="field-label">Custom voice ID (from a voice in your ElevenLabs account)</span>
+          <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="e.g. 6WwXjDDEMyNmFG95zycZ" spellCheck={false} />
+        </label>
+        <button type="submit" className="btn btn-quiet" disabled={!isElevenVoiceId(custom.trim())}>
+          Use this voice
+        </button>
+      </form>
+      <p className="fine">
+        Library voices like Eldrin may need adding to My Voices in ElevenLabs first. George and Daniel are legacy voices
+        that ElevenLabs retires on December 31, 2026 and only work on accounts created before March 2026.
+      </p>
+      <div className="field">
+        <div className="field-text">
+          <h3>ElevenLabs model</h3>
+          <p>Both are built for real-time speech.</p>
+        </div>
+        <select
+          className="select"
+          value={settings.elevenModel}
+          onChange={(e) => onUpdate({ elevenModel: e.target.value as ElevenModelId })}
+        >
+          {ELEVEN_MODELS.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="field">
+        <div className="field-text">
+          <h3>Talk over Jarvis (headphones)</h3>
+          <p>
+            Off: the mic pauses while Jarvis speaks so it doesn&apos;t hear itself through your speakers; use Interrupt
+            to cut in. On: talk over Jarvis any time — best with headphones.
+          </p>
+        </div>
+        <button
+          role="switch"
+          aria-checked={settings.bargeIn}
+          className="switch"
+          onClick={() => onUpdate({ bargeIn: !settings.bargeIn })}
+        >
+          <span className="sr-only">Talk over Jarvis</span>
+        </button>
+      </div>
+      <div className="field">
+        <div className="field-text">
+          <h3>Hear it</h3>
+          <p>Plays a short line in the selected voice (uses a few ElevenLabs characters).</p>
+        </div>
+        <TestVoice disabled={!creds.elevenlabs.configured} />
+      </div>
+    </>
+  )
+}
+
+const TEST_LINE = 'Good evening. All systems are running smoothly, and nothing needs your attention.'
+
+function TestVoice({ disabled }: { disabled: boolean }): React.JSX.Element {
+  const [state, setState] = useState<'idle' | 'loading' | 'playing'>('idle')
+  const [err, setErr] = useState<string | null>(null)
+  const q = useRef<SpeechQueue | null>(null)
+  if (!q.current) {
+    q.current = new SpeechQueue({
+      onStart: () => setState('playing'),
+      onIdle: () => setState('idle'),
+      onError: (m) => {
+        setErr(m)
+        setState('idle')
+      },
+      onCharacters: () => undefined,
+    })
+  }
+  return (
+    <div className="test-voice">
+      <button
+        className="btn"
+        disabled={disabled || state !== 'idle'}
+        onClick={() => {
+          setErr(null)
+          setState('loading')
+          q.current?.enqueue(TEST_LINE)
+        }}
+      >
+        {state === 'loading' ? 'Generating…' : state === 'playing' ? 'Playing…' : 'Test voice'}
+      </button>
+      {state === 'playing' && (
+        <button className="btn btn-quiet" onClick={() => q.current?.stop()}>
+          Stop
+        </button>
+      )}
+      {err && <p className="form-msg is-error">{err}</p>}
+    </div>
   )
 }
 
 export function SettingsView({ settings, info, creds, onCreds, onUpdate }: Props): React.JSX.Element {
   const [section, setSection] = useState<Section>('appearance')
   const [preview, setPreview] = useState<CoreState>('idle')
+  const voiceReady =
+    creds.openai.configured && (settings.speechEngine === 'openai' || creds.elevenlabs.configured)
   const onTheme = (theme: Settings['theme']): void => onUpdate({ theme })
   const onReducedMotion = (reducedMotion: boolean): void => onUpdate({ reducedMotion })
 
@@ -190,26 +380,69 @@ export function SettingsView({ settings, info, creds, onCreds, onUpdate }: Props
           <>
             <h2>Voice</h2>
             <p className="status-line">
-              <span className={`dot ${creds.openai.configured ? 'dot-on' : 'dot-off'}`} />
-              {creds.openai.configured ? 'Ready. Start voice from the Conversation panel.' : 'Needs an OpenAI key (AI provider).'}
+              <span className={`dot ${voiceReady ? 'dot-on' : 'dot-off'}`} />
+              {voiceReady
+                ? 'Ready. Start voice from the Conversation panel.'
+                : settings.speechEngine === 'elevenlabs' && creds.openai.configured
+                  ? 'Needs an ElevenLabs key (AI provider).'
+                  : 'Needs an OpenAI key (AI provider).'}
             </p>
-            <div className="preset">
+
+            <div className="field">
               <div className="field-text">
-                <h3>JARVIS preset</h3>
-                <p>Ballad voice with the British butler personality: Received Pronunciation, measured pace, dry wit.</p>
+                <h3>Speech engine</h3>
+                <p>ElevenLabs gives Jarvis a real British voice. OpenAI&apos;s built-in voices are the fallback.</p>
               </div>
-              <button
-                className="btn"
-                disabled={settings.voice === JARVIS_PRESET.voice && settings.persona === JARVIS_PRESET.persona}
-                onClick={() => onUpdate({ ...JARVIS_PRESET })}
+              <select
+                className="select"
+                value={settings.speechEngine}
+                onChange={(e) => onUpdate({ speechEngine: e.target.value as SpeechEngineId })}
               >
-                {settings.voice === JARVIS_PRESET.voice && settings.persona === JARVIS_PRESET.persona ? 'Preset active' : 'Use JARVIS preset'}
-              </button>
+                {SPEECH_ENGINES.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.name}
+                  </option>
+                ))}
+              </select>
             </div>
+
+            {settings.speechEngine === 'elevenlabs' ? (
+              <ElevenLabsVoice settings={settings} creds={creds} onUpdate={onUpdate} />
+            ) : (
+              <>
+                <div className="preset">
+                  <div className="field-text">
+                    <h3>JARVIS preset (OpenAI)</h3>
+                    <p>Ballad voice with the British butler personality. The accent comes from instructions and can drift.</p>
+                  </div>
+                  <button
+                    className="btn"
+                    disabled={settings.voice === JARVIS_PRESET.voice && settings.persona === JARVIS_PRESET.persona}
+                    onClick={() => onUpdate({ ...JARVIS_PRESET })}
+                  >
+                    {settings.voice === JARVIS_PRESET.voice && settings.persona === JARVIS_PRESET.persona ? 'Preset active' : 'Use JARVIS preset'}
+                  </button>
+                </div>
+                <div className="field">
+                  <div className="field-text">
+                    <h3>OpenAI voice</h3>
+                    <p>OpenAI has no official British voice; Ballad sounds closest.</p>
+                  </div>
+                  <select className="select" value={settings.voice} onChange={(e) => onUpdate({ voice: e.target.value as VoiceId })}>
+                    {VOICES.map((v) => (
+                      <option key={v} value={v}>
+                        {voiceLabel(v)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
+
             <div className="field">
               <div className="field-text">
                 <h3>Personality</h3>
-                <p>How Jarvis speaks. The British accent is shaped by instructions, so it's strong but can occasionally drift.</p>
+                <p>How Jarvis words its replies (and, with OpenAI voices, its accent).</p>
               </div>
               <select className="select" value={settings.persona} onChange={(e) => onUpdate({ persona: e.target.value as PersonaId })}>
                 {PERSONAS.map((p) => (
@@ -234,8 +467,8 @@ export function SettingsView({ settings, info, creds, onCreds, onUpdate }: Props
             </div>
             <div className="field">
               <div className="field-text">
-                <h3>Model</h3>
-                <p>The mini model costs less and suits everyday conversation.</p>
+                <h3>Conversation model (OpenAI)</h3>
+                <p>Listens and thinks in both engines. The mini model costs less.</p>
               </div>
               <select
                 className="select"
@@ -249,22 +482,10 @@ export function SettingsView({ settings, info, creds, onCreds, onUpdate }: Props
                 ))}
               </select>
             </div>
-            <div className="field">
-              <div className="field-text">
-                <h3>Voice</h3>
-                <p>OpenAI has no official British voice; Ballad sounds closest. Marin and Cedar are OpenAI's highest-quality voices.</p>
-              </div>
-              <select className="select" value={settings.voice} onChange={(e) => onUpdate({ voice: e.target.value as VoiceId })}>
-                {VOICES.map((v) => (
-                  <option key={v} value={v}>
-                    {voiceLabel(v)}
-                  </option>
-                ))}
-              </select>
-            </div>
             <p className="fine">
-              Voice changes apply the next time you start voice. The microphone is only on while voice is running, and the top bar shows MIC LIVE whenever it is. Stop all
-              ends voice immediately. Jarvis can talk but can't take actions or read your data yet.
+              Changes apply the next time you start voice. The microphone is only on while voice is running, and the top
+              bar shows MIC LIVE whenever it is. Stop all ends voice immediately. Jarvis can talk but can&apos;t take
+              actions or read your data yet.
             </p>
           </>
         )}
