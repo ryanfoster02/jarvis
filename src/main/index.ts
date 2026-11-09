@@ -1,7 +1,8 @@
 import { app, BrowserWindow, Menu, session, shell, type MenuItemConstructorOptions } from 'electron'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { registerIpc } from './ipc.ts'
+import { registerIpc, type HistoryStore } from './ipc.ts'
+import { openDatabase } from './db/client.ts'
 import { engage } from './killswitch.ts'
 
 // ---- Process-wide hardening (must run before 'ready') ----
@@ -178,7 +179,18 @@ void app.whenReady().then(() => {
     })
   }
 
-  registerIpc({ devServerUrl, rendererFileUrl })
+  // Local database (conversations; memory in later sprints). If it can't open, Jarvis still runs
+  // and the UI says history is unavailable.
+  const history: HistoryStore = { database: null, error: null }
+  try {
+    history.database = openDatabase(join(app.getPath('userData'), 'jarvis.db'))
+  } catch (err) {
+    history.error = err instanceof Error ? err.message : String(err)
+    console.error('[db] could not open database:', history.error)
+  }
+  app.on('will-quit', () => history.database?.close())
+
+  registerIpc({ devServerUrl, rendererFileUrl }, history)
   buildMenu()
   createWindow()
 

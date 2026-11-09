@@ -133,3 +133,36 @@ test('settings open with ⌘, and close with Esc; bad key is rejected before any
   await expect(page.getByRole('heading', { name: 'Conversation' })).toBeVisible()
   await app.close()
 })
+
+test('conversations persist across restarts, stay in their workspace, and delete cleanly', async () => {
+  let { app, page } = await launch(profile)
+  // Store a turn through the same bridge voice transcripts use (typed replies need a real API key).
+  const saved = await page.evaluate(async () => {
+    const j = (window as unknown as { jarvis: { conversations: { append: (id: string | null, m: object) => Promise<{ ok: boolean }> } } }).jarvis
+    return (await j.conversations.append(null, { role: 'user', text: 'Remember the Acme follow-up', via: 'voice' })).ok
+  })
+  expect(saved).toBe(true)
+  await app.close()
+
+  ;({ app, page } = await launch(profile))
+  const picker = page.getByRole('combobox', { name: 'Conversation' })
+  await expect(picker.locator('option', { hasText: 'Remember the Acme follow-up' })).toHaveCount(1)
+  await expect(page.locator('.msg-user')).toContainText('Remember the Acme follow-up')
+
+  // Another workspace sees none of it.
+  await page.getByRole('combobox', { name: 'Workspace' }).selectOption('research')
+  await expect(page.locator('.msg-user')).toHaveCount(0)
+  await expect(picker.locator('option')).toHaveCount(1) // only "New conversation"
+
+  // Back to Personal, delete with confirmation.
+  await page.getByRole('combobox', { name: 'Workspace' }).selectOption('personal')
+  await expect(page.locator('.msg-user')).toContainText('Remember the Acme follow-up')
+  await page.getByRole('button', { name: 'Delete', exact: true }).click()
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Delete' }).click()
+  await expect(page.locator('.msg-user')).toHaveCount(0)
+  await app.close()
+
+  ;({ app, page } = await launch(profile))
+  await expect(page.getByRole('combobox', { name: 'Conversation' }).locator('option')).toHaveCount(1)
+  await app.close()
+})

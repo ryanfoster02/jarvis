@@ -1,6 +1,6 @@
 # IMPLEMENTATION
 
-Current phase: Sprint 4 — Phase 1 Validation
+Current phase: Phase 2 / Sprint 5 — Database + persistent conversations
 
 Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ not started
 
@@ -49,20 +49,38 @@ Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ no
 
 **Acceptance:** with the owner's key on macOS — key saves and shows ••••last4; mic prompt appears once; a spoken round-trip works with transcripts; talking over Jarvis interrupts; Mute stops input; Stop all ends the session and turns the mic off; bad key / offline show clear errors; key never appears in DevTools.
 
-### Sprint 4 — Phase 1 Validation 🟡
+### Sprint 4 — Phase 1 Validation ✅ (owner verified e2e + packaging 2026-11-09)
 - ✅ Typed replies without voice: Responses API (`gpt-5.4-mini` / `gpt-5-mini`), recent history, same persona, usage + cost + latency telemetry, optional read-aloud via ElevenLabs (request shape verified with stubbed fetch)
 - ✅ Security review recorded (SECURITY.md §11); fixes: per-minute spend caps on paid channels, voice connection-drop handling, fuses for packaged builds
 - ✅ Test isolation: `JARVIS_USER_DATA` profile override and no `.env` during tests (dev only)
-- 🟡 Playwright end-to-end suite (8 tests: launch, isolation/bridge surface, CSP, navigation/window blocking, theme persistence, Stop all/Re-arm, honest no-key reply, settings + key validation) — written, not yet run (needs the owner's Mac)
-- 🟡 Packaging: `npm run dist:mac` → ad-hoc signed DMG/ZIP with icon, mic usage string, security fuses — not yet built
+- ✅ Playwright end-to-end suite (8 tests: launch, isolation/bridge surface, CSP, navigation/window blocking, theme persistence, Stop all/Re-arm, honest no-key reply, settings + key validation) — written, not yet run (needs the owner's Mac)
+- ✅ Packaging: `npm run dist:mac` → ad-hoc signed DMG/ZIP with icon, mic usage string, security fuses — not yet built
 - ✅ README run guide (dev, tests, e2e, packaging, installed-app key setup)
 - ✅ Fix (owner report): e2e files no longer part of the app build's type check; own `tsconfig.e2e.json` with DOM types (`npm run typecheck:e2e`)
 - ✅ 37 unit tests
 
 **Acceptance:** `npm install && npm run typecheck && npm test && npm run test:e2e` all pass on macOS; `npm run dist:mac` produces a DMG; installed JARVIS launches, asks for the mic as "JARVIS", and voice works after entering keys in Settings.
 
-## Phase 2 — Intelligence & Memory ⬜
-SQLite + Drizzle · persistent conversations · global knowledge · workspace memory (view/edit/export/delete) · provider interface (OpenAI, Anthropic) · tool registry · permission engine · execution limits.
+## Phase 2 — Intelligence & Memory
+
+### Sprint 5 — Database + persistent conversations 🟡
+- ✅ SQLite via `node:sqlite` + Drizzle ORM 0.45 (sqlite-proxy); executor + migrations tested on real node:sqlite here (7 tests)
+- ✅ Tables: workspaces (seeded), conversations, messages; WAL, foreign keys, CHECK constraints, cascade delete
+- 🟡 Workspace-scoped repository (list/create/messages/append/recentTurns/delete) — 5 Drizzle tests written; run with `npm test` after `npm install` (Drizzle not installable in the build sandbox)
+- 🟡 IPC: conversations list/messages/append/delete; chat:send stores both turns and loads history from the DB
+- 🟡 UI: conversation picker, New, Delete (inline confirmation), history error notice; voice transcripts saved in order; workspace switch reloads history and ends voice
+- 🟡 e2e: persistence across restart, workspace isolation, delete via UI
+
+**Acceptance:** messages survive restart; switching workspace shows only that workspace's conversations; deleting removes messages; `npm test` (incl. Drizzle tests) and `npm run test:e2e` pass on macOS.
+
+### Sprint 6 — Memory ⬜
+Global knowledge + workspace memories (facts Jarvis should know), explicit "remember this", view/edit/export/delete UI, injected into prompts as labelled data. No credentials in memory (enforced).
+
+### Sprint 7 — Provider interface ⬜
+`Provider` abstraction for typed replies; OpenAI + Anthropic Claude; per-workspace or global choice; key in vault.
+
+### Sprint 8 — Tools, permissions, limits ⬜
+Tool registry with risk levels and scopes; permission engine (permissions → scopes → mandates, high-risk always asks); execution limits enforced; approvals queue UI; execution log; first low-risk tools (time/date, memory read/write).
 
 ## Phase 3 — Integrations & Automation ⬜
 First integration (GitHub, read-only) · allowlist & scopes UI · tool execution with approvals · scheduler (runs only while app is open — stated in UI) · reminders · execution log · worker/workflow kill levels.

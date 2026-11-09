@@ -87,3 +87,18 @@ test('workspace ids are unique; default limits forbid recursion', () => {
   assert.ok(DEFAULT_LIMITS.maxConcurrentAgents <= 2)
   assert.ok(Object.isFrozen(DEFAULT_LIMITS))
 })
+
+test('conversation ids, new messages and titles', async () => {
+  const { validateConversationId, validateOptionalConversationId, validateNewMessage, titleFrom } = await import('../src/shared/ipc.ts')
+  const id = '3f2b8c1e-9d4a-4b6f-8e2a-1c3d5e7f9a0b'
+  assert.equal(validateConversationId(id.toUpperCase()), id)
+  assert.equal(validateOptionalConversationId(null), null)
+  assert.throws(() => validateConversationId("1' OR '1'='1"), IpcValidationError)
+  assert.deepEqual(validateNewMessage({ role: 'assistant', text: ' Hello ', via: 'voice' }), { role: 'assistant', text: 'Hello', via: 'voice' })
+  assert.throws(() => validateNewMessage({ role: 'system', text: 'x', via: 'text' }), /role/)
+  assert.throws(() => validateNewMessage({ role: 'user', text: 'x', via: 'text', conversationId: 'y' }), /unknown field/)
+  assert.throws(() => validateNewMessage({ role: 'user', text: '   ', via: 'text' }), /empty/)
+  assert.equal(titleFrom('  Remind   me\nabout Acme  '), 'Remind me about Acme')
+  assert.equal(titleFrom('x'.repeat(100)).length, 58)
+  assert.equal(titleFrom('   '), 'New conversation')
+})

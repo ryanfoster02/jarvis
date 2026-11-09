@@ -4,7 +4,10 @@ import {
   Events,
   type AppInfo,
   type ChatResult,
-  type ChatTurn,
+  type ConversationSummary,
+  type HistoryResult,
+  type NewMessage,
+  type StoredMessage,
   type CredentialResult,
   type CredentialStatus,
   type MicAccess,
@@ -36,8 +39,16 @@ const api = {
     },
   },
   chat: {
-    send: (message: string, history: ChatTurn[]): Promise<ChatResult> =>
-      ipcRenderer.invoke(Channels.chatSend, message, history),
+    /** conversationId null = start a new conversation (main returns its id). */
+    send: (conversationId: string | null, message: string): Promise<ChatResult> =>
+      ipcRenderer.invoke(Channels.chatSend, conversationId, message),
+  },
+  conversations: {
+    list: (): Promise<HistoryResult<ConversationSummary[]>> => ipcRenderer.invoke(Channels.conversationsList),
+    messages: (id: string): Promise<HistoryResult<StoredMessage[]>> => ipcRenderer.invoke(Channels.conversationsMessages, id),
+    append: (conversationId: string | null, message: NewMessage): Promise<HistoryResult<StoredMessage>> =>
+      ipcRenderer.invoke(Channels.conversationsAppend, conversationId, message),
+    delete: (id: string): Promise<HistoryResult<boolean>> => ipcRenderer.invoke(Channels.conversationsDelete, id),
   },
   // Keys go in, never come out: only status (configured, last 4 characters, verified time) is readable.
   credentials: {

@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { WORKSPACES, type AppInfo, type CredentialStatus, type KillSwitchState, type Settings } from '../../shared/ipc.ts'
+import {
+  WORKSPACES,
+  type AppInfo,
+  type ConversationSummary,
+  type CredentialStatus,
+  type KillSwitchState,
+  type NewMessage,
+  type Settings,
+  type StoredMessage,
+} from '../../shared/ipc.ts'
 import { estimateCostUsd, totalTokens } from '../../shared/realtime.ts'
 import { estimateTextCostUsd } from '../../shared/text.ts'
 import { cleanForSpeech, takeSpeakable } from '../../shared/speech.ts'
@@ -63,6 +72,76 @@ export function App(): React.JSX.Element {
   const [entries, setEntries] = useState<Entry[]>([])
   const [usage, setUsage] = useState({ tokens: 0, costUsd: 0 as number | null, latencyMs: null as number | null, ttsChars: 0 })
   const assistantIds = useRef(new Map<string, string>()) // realtime item/response id → entry id
+  const assistantText = useRef(new Map<string, string>()) // realtime id → text so far (for saving)
+
+  // ---- Conversation history (stored in main, scoped to the active workspace) ----
+  const [conversations, setConversations] = useState<ConversationSummary[]>([])
+  const [conversationId, setConversationIdState] = useState<string | null>(null)
+  const [historyError, setHistoryError] = useState<string | null>(null)
+  const convIdRef = useRef<string | null>(null)
+  const saveChain = useRef<Promise<void>>(Promise.resolve()) // keeps saves in order
+  const setConversationId = (id: string | null): void => {
+    convIdRef.current = id
+    setConversationIdState(id)
+  }
+  const toEntry = (m: StoredMessage): Entry => ({ id: m.id, role: m.role, text: m.text, at: new Date(m.createdAt), via: m.via })
+
+  const refreshList = useCallback(async (): Promise<ConversationSummary[]> => {
+    const r = await window.jarvis.conversations.list()
+    if (!r.ok) {
+      setHistoryError(r.message)
+      return []
+    }
+    setHistoryError(null)
+    setConversations(r.value)
+    return r.value
+  }, [])
+
+  const openConversation = useCallback(async (id: string | null) => {
+    assistantIds.current.clear()
+    assistantText.current.clear()
+    if (id === null) {
+      setConversationId(null)
+      setEntries([])
+      return
+    }
+    const r = await window.jarvis.conversations.messages(id)
+    if (!r.ok) {
+      setHistoryError(r.message)
+      return
+    }
+    setConversationId(id)
+    setEntries(r.value.map(toEntry))
+  }, [])
+
+  /** Save a turn (voice transcripts); creates the conversation on first save. Saves run in order. */
+  const persist = useCallback(
+    (m: NewMessage): void => {
+      saveChain.current = saveChain.current.then(async () => {
+        const r = await window.jarvis.conversations.append(convIdRef.current, m)
+        if (r.ok) {
+          if (convIdRef.current !== r.value.conversationId) setConversationId(r.value.conversationId)
+          await refreshList()
+        } else {
+          setHistoryError(r.message)
+        }
+      })
+    },
+    [refreshList],
+  )
+
+  const deleteConversation = useCallback(
+    async (id: string) => {
+      const r = await window.jarvis.conversations.delete(id)
+      if (!r.ok) {
+        setHistoryError(r.message)
+        return
+      }
+      const list = await refreshList()
+      if (convIdRef.current === id) await openConversation(list[0]?.id ?? null)
+    },
+    [refreshList, openConversation],
+  )
   const [typedSpeaking, setTypedSpeaking] = useState(false)
   const typedSpeech = useRef<SpeechQueue | null>(null)
   if (!typedSpeech.current) {
@@ -80,8 +159,12 @@ export function App(): React.JSX.Element {
   }, [])
 
   const voice = useVoice({
-    onUserText: (text) => push('user', text, 'voice'),
+    onUserText: (text) => {
+      push('user', text, 'voice')
+      persist({ role: 'user', text, via: 'voice' })
+    },
     onAssistantDelta: (key, delta) => {
+      assistantText.current.set(key, (assistantText.current.get(key) ?? '') + delta)
       const existing = assistantIds.current.get(key)
       if (existing) {
         setEntries((es) => es.map((e) => (e.id === existing ? { ...e, text: e.text + delta } : e)))
@@ -98,7 +181,10 @@ export function App(): React.JSX.Element {
       } else if (text) {
         push('assistant', text, 'voice')
       }
+      const final = (text || assistantText.current.get(key) || '').trim()
+      if (final) persist({ role: 'assistant', text: final, via: 'voice' })
       assistantIds.current.delete(key)
+      assistantText.current.delete(key)
     },
     onUsage: (model, u) =>
       setUsage((prev) => {
@@ -143,6 +229,18 @@ export function App(): React.JSX.Element {
     }
   }, [kill?.engaged, stopVoice])
 
+  // Load this workspace's conversations and open the most recent one. Switching workspace
+  // ends any voice session (it was started with the old workspace's context).
+  const activeWs = settings?.activeWorkspace
+  useEffect(() => {
+    if (!activeWs) return
+    stopVoice()
+    void (async () => {
+      const list = await refreshList()
+      await openConversation(list[0]?.id ?? null)
+    })()
+  }, [activeWs, refreshList, openConversation, stopVoice])
+
   useEffect(() => {
     if (!settings) return
     const root = document.documentElement
@@ -175,21 +273,20 @@ export function App(): React.JSX.Element {
     async (text: string) => {
       if (voice.phase === 'live') {
         push('user', text, 'text')
-        if (!voice.sendText(text)) push('system', 'Voice is not ready yet. Try again in a moment.', 'text')
+        if (voice.sendText(text)) persist({ role: 'user', text, via: 'text' })
+        else push('system', 'Voice is not ready yet. Try again in a moment.', 'text')
         return
       }
-      // Recent turns for context (typed and spoken), oldest first, excluding system notices.
-      const history = entries
-        .filter((e) => (e.role === 'user' || e.role === 'assistant') && !e.streaming)
-        .slice(-20)
-        .map((e) => ({ role: e.role as 'user' | 'assistant', text: e.text }))
       push('user', text, 'text')
       typedSpeech.current?.stop()
       setBusy(true)
       const started = performance.now()
       try {
-        const res = await window.jarvis.chat.send(text, history)
+        await saveChain.current // any pending voice saves first, so the conversation id is current
+        const res = await window.jarvis.chat.send(convIdRef.current, text)
         if (res.ok) {
+          if (res.conversationId && res.conversationId !== convIdRef.current) setConversationId(res.conversationId)
+          void refreshList()
           push('assistant', res.reply, 'text')
           setUsage((prev) => ({
             ...prev,
@@ -212,7 +309,7 @@ export function App(): React.JSX.Element {
         setBusy(false)
       }
     },
-    [voice, push, entries, settings, creds],
+    [voice, push, persist, refreshList, settings, creds],
   )
 
   const halted = !!bridgeError || !!kill?.engaged
@@ -277,6 +374,14 @@ export function App(): React.JSX.Element {
 
             <ConversationPanel
               entries={entries}
+              history={{
+                conversations,
+                currentId: conversationId,
+                error: historyError,
+                onSelect: (id) => void openConversation(id),
+                onNew: () => void openConversation(null),
+                onDelete: (id) => void deleteConversation(id),
+              }}
               busy={busy}
               disabled={halted}
               workspaceName={workspace.name}

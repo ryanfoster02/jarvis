@@ -22,7 +22,7 @@
     "dist:mac": "npm run build && electron-builder --mac",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "typecheck:e2e": "tsc --noEmit -p tsconfig.e2e.json",
-    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"tests/**/*.test.ts\"",
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning --test \"tests/**/*.test.ts\"",
     "test:e2e": "npm run typecheck:e2e && electron-vite build && playwright test",
     "sunrise": "node scripts/sunrise.mjs",
     "sunset": "node scripts/sunset.mjs"
@@ -35,6 +35,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "drizzle-orm": "^0.45.4",
     "electron": "^45.0.0",
     "electron-builder": "^26.18.0",
     "electron-vite": "^5.0.0",

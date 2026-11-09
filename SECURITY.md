@@ -78,3 +78,9 @@ Scope: Electron window/session config, preload bridge, all IPC handlers, credent
 | 12 | **Fixed for packaging:** Electron fuses — RunAsNode, NODE_OPTIONS, `--inspect` disabled; app loads only from verified asar (`electron-builder.yml`). | ✅ |
 | 13 | Accepted risk: a compromised renderer could open arbitrary `https:` links in the browser via navigation. Low impact; revisit with a link allowlist in Phase 3. | ⚠️ accepted |
 | 14 | Accepted risk: packaged build is ad-hoc signed, not notarized — fine for personal use; Developer ID signing + notarization + hardened runtime before distributing (Phase 4). | ⚠️ accepted |
+
+## 12. Data & memory (Sprint 5, 2026-11-09)
+- Conversation history is stored locally in `userData/jarvis.db` (never synced anywhere). Delete a conversation from the Conversation panel (confirmation required; removes its messages).
+- Workspace isolation is enforced in main's data layer, not the UI; the renderer cannot choose the workspace for a query (unit-tested + e2e).
+- The model's context for typed replies is loaded from the database by main — the renderer can no longer inject fabricated "assistant" history.
+- Only user/assistant turns are stored (schema CHECK constraints); system notices and errors are not.

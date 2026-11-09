@@ -51,7 +51,11 @@ sessions/      session reports (YYYY-MM-DD_HH-mm.md)
 `Provider` interface (`complete`, `stream`) with OpenAI first, Anthropic later. `ToolRegistry` entries declare: name, schema, risk level (low/medium/high), required scopes. Every call goes through `PermissionEngine.check(tool, args, workspace, mandate)` → `approve | needsApproval | deny`, and is bounded by `ExecutionLimits` (iterations, time, tool calls, cost, depth, concurrency).
 
 ## Data (Phase 2)
-SQLite via Drizzle in main only. Tables: workspaces, conversations, messages, memories (global | workspace-scoped), integrations, permissions, mandates, tasks, execution_log. Workspace scoping enforced in the repository layer, not the UI. No credentials in these tables.
+`userData/jarvis.db` opened in main at startup (`src/main/db/client.ts`): `node:sqlite` → executor → Drizzle sqlite-proxy. WAL, foreign keys on, migrations by `PRAGMA user_version` (atomic; refuses a newer schema). If it can't open, Jarvis runs without history and the UI says so.
+
+Tables (Sprint 5): `workspaces` (seeded), `conversations` (workspace_id, title, timestamps), `messages` (role user|assistant, via text|voice, cascade delete). Planned: memories (global | workspace), integrations, permissions, mandates, tasks, execution_log.
+
+**Workspace isolation is enforced in the repository layer** (`src/main/db/conversations.ts`): every function takes the workspace and scopes every query to it; a conversation from another workspace behaves as not found. Main supplies the active workspace from its own settings; the renderer never passes a workspace id. Typed replies load history from the database, not from the renderer. No credentials in these tables.
 
 ## Integration boundary (Phase 3)
 Each integration: allowlist entry, status, scopes, credential reference (vault key), tools exposed, revoke action, execution history. External content is tagged untrusted and passed to the model as data, never as instructions.

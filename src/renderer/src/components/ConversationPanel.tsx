@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { MAX_CHAT_CHARS } from '../../../shared/ipc.ts'
+import { MAX_CHAT_CHARS, type ConversationSummary } from '../../../shared/ipc.ts'
 import type { VoiceActivity, VoicePhase } from '../voice/useVoice.ts'
 
 export interface Entry {
@@ -25,8 +25,18 @@ export interface VoiceControls {
   onInterrupt: () => void
 }
 
+export interface HistoryControls {
+  conversations: ConversationSummary[]
+  currentId: string | null
+  error: string | null
+  onSelect: (id: string) => void
+  onNew: () => void
+  onDelete: (id: string) => void
+}
+
 interface Props {
   entries: Entry[]
+  history: HistoryControls
   busy: boolean
   disabled: boolean
   workspaceName: string
@@ -37,7 +47,66 @@ interface Props {
 
 const WHO: Record<Entry['role'], string> = { user: 'You', assistant: 'Jarvis', system: 'Jarvis system' }
 
-export function ConversationPanel({ entries, busy, disabled, workspaceName, voice, onSend, onOpenSettings }: Props): React.JSX.Element {
+const shortDate = (ms: number): string => {
+  const d = new Date(ms)
+  const today = new Date()
+  return d.toDateString() === today.toDateString()
+    ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    : d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+}
+
+function HistoryBar({ h, disabled }: { h: HistoryControls; disabled: boolean }): React.JSX.Element {
+  const [confirming, setConfirming] = useState(false)
+  const current = h.conversations.find((c) => c.id === h.currentId)
+  if (confirming && current) {
+    return (
+      <div className="history-bar is-confirming" role="alertdialog" aria-label="Delete conversation">
+        <span className="history-confirm">
+          Delete “{current.title}” and its {current.messageCount} message{current.messageCount === 1 ? '' : 's'}? This can&apos;t be undone.
+        </span>
+        <button
+          className="vbtn vbtn-end"
+          onClick={() => {
+            setConfirming(false)
+            h.onDelete(current.id)
+          }}
+        >
+          Delete
+        </button>
+        <button className="vbtn" onClick={() => setConfirming(false)}>
+          Keep
+        </button>
+      </div>
+    )
+  }
+  return (
+    <div className="history-bar">
+      <label className="history-select">
+        <span className="sr-only">Conversation</span>
+        <select
+          value={h.currentId ?? ''}
+          onChange={(e) => (e.target.value ? h.onSelect(e.target.value) : h.onNew())}
+          disabled={disabled}
+        >
+          <option value="">New conversation</option>
+          {h.conversations.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.title} · {shortDate(c.updatedAt)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <button className="vbtn" onClick={h.onNew} disabled={disabled || h.currentId === null} title="Start a new conversation">
+        New
+      </button>
+      <button className="vbtn" onClick={() => setConfirming(true)} disabled={disabled || !current} title="Delete this conversation">
+        Delete
+      </button>
+    </div>
+  )
+}
+
+export function ConversationPanel({ entries, history, busy, disabled, workspaceName, voice, onSend, onOpenSettings }: Props): React.JSX.Element {
   const [draft, setDraft] = useState('')
   const listRef = useRef<HTMLOListElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -66,6 +135,9 @@ export function ConversationPanel({ entries, busy, disabled, workspaceName, voic
         <h2 className="label">Conversation</h2>
         <span className="conv-scope">{workspaceName}</span>
       </header>
+
+      <HistoryBar h={history} disabled={voice.phase === 'connecting' || voice.phase === 'live' || busy} />
+      {history.error && <p className="form-msg is-error">{history.error}</p>}
 
       <div className="voice-bar">
         {voice.phase === 'off' || voice.phase === 'error' ? (

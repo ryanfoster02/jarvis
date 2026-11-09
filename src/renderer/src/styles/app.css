@@ -1211,3 +1211,46 @@ select {
   align-items: center;
   flex-wrap: wrap;
 }
+
+/* Conversation history (Sprint 5) */
+.history-bar {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+  align-items: center;
+}
+.history-select {
+  flex: 1;
+  min-width: 0;
+}
+.history-select select {
+  width: 100%;
+  height: 32px;
+  padding: 0 28px 0 10px;
+  appearance: none;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font: 400 var(--t-sm) var(--font-ui);
+  text-overflow: ellipsis;
+  cursor: pointer;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M.5.5l3.5 3.5L7.5.5' fill='none' stroke='%23b09c7f'/%3E%3C/svg%3E")
+      no-repeat right 10px center,
+    color-mix(in srgb, var(--bg) 60%, transparent);
+}
+.history-select select:disabled,
+.history-bar .vbtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.history-bar.is-confirming {
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--danger) 50%, transparent);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+.history-confirm {
+  flex: 1 1 100%;
+  font-size: var(--t-sm);
+  color: #ffc2c8;
+}

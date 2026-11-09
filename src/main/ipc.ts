@@ -4,8 +4,10 @@ import {
   IpcValidationError,
   isTrustedSenderUrl,
   isProviderId,
-  validateChatHistory,
   validateChatMessage,
+  validateConversationId,
+  validateNewMessage,
+  validateOptionalConversationId,
   validateProviderKey,
   validateReason,
   validateSdpOffer,
@@ -15,6 +17,9 @@ import {
   type AppInfo,
   type ChatResult,
   type ChatTurn,
+  type ConversationSummary,
+  type HistoryResult,
+  type StoredMessage,
   type CredentialResult,
   type MicAccess,
   type TrustedOrigins,
@@ -28,6 +33,8 @@ import { createRealtimeCall, createTextResponse, verifyKey } from './openai.ts'
 import { synthesize, verifyElevenLabsKey } from './elevenlabs.ts'
 import { clearKey, credentialStatus, encryptionAvailable, getKey, saveKey } from './vault.ts'
 import { loadSettings, updateSettings } from './settings.ts'
+import type { Database } from './db/client.ts'
+import { appendMessage, deleteConversation, getMessages, listConversations, NotFoundError, recentTurns } from './db/conversations.ts'
 import { engage, getKillSwitch, isHalted, rearm } from './killswitch.ts'
 
 /**
@@ -45,7 +52,21 @@ const limits = {
 }
 const SLOW_DOWN = 'Too many requests in the last minute. Wait a moment and try again.'
 
-export function registerIpc(trusted: TrustedOrigins): void {
+export interface HistoryStore {
+  database: Database | null
+  /** Why the database couldn't open (shown in the UI), or null. */
+  error: string | null
+}
+
+export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): void {
+  const unavailable = (): { ok: false; code: 'unavailable'; message: string } => ({
+    ok: false,
+    code: 'unavailable',
+    message: `Conversation history is unavailable: ${history.error ?? 'database not open'}.`,
+  })
+  // The workspace always comes from main's own settings — never from the renderer.
+  const activeWorkspace = () => loadSettings().activeWorkspace
+
   const guard =
     <A extends unknown[], R>(fn: (...args: A) => R) =>
     (event: IpcMainInvokeEvent, ...args: A): R => {
@@ -87,15 +108,15 @@ export function registerIpc(trusted: TrustedOrigins): void {
   // Typed conversation (voice off): OpenAI Responses API with recent history and the same persona.
   ipcMain.handle(
     Channels.chatSend,
-    guard(async (message: unknown, history: unknown): Promise<ChatResult> => {
+    guard(async (conversationId: unknown, message: unknown): Promise<ChatResult> => {
       if (isHalted()) {
         return { ok: false, code: 'halted', message: 'Stop all is engaged. Re-arm Jarvis to continue.' }
       }
       let text: string
-      let turns: ChatTurn[]
+      let convId: string | null
       try {
         text = validateChatMessage(message)
-        turns = validateChatHistory(history)
+        convId = validateOptionalConversationId(conversationId)
       } catch (err) {
         if (err instanceof IpcValidationError) return { ok: false, code: 'invalid_input', message: err.message }
         throw err
@@ -110,7 +131,23 @@ export function registerIpc(trusted: TrustedOrigins): void {
       }
       if (!limits.chat.take()) return { ok: false, code: 'rate_limited', message: SLOW_DOWN }
       const settings = loadSettings()
-      const workspaceName = WORKSPACES.find((w) => w.id === settings.activeWorkspace)?.name ?? 'Personal'
+      const ws = settings.activeWorkspace
+      const db = history.database?.db ?? null
+
+      // History comes from the database (scoped to the active workspace), not from the renderer.
+      let turns: ChatTurn[] = []
+      if (db) {
+        try {
+          if (convId) turns = await recentTurns(db, ws, convId)
+          const stored = await appendMessage(db, ws, convId, { role: 'user', text, via: 'text' })
+          convId = stored.conversationId
+        } catch (err) {
+          if (err instanceof NotFoundError) return { ok: false, code: 'invalid_input', message: err.message }
+          throw err
+        }
+      }
+
+      const workspaceName = WORKSPACES.find((w) => w.id === ws)?.name ?? 'Personal'
       const body = buildTextRequest({
         model: settings.textModel,
         workspaceName,
@@ -127,7 +164,66 @@ export function registerIpc(trusted: TrustedOrigins): void {
         return { ok: false, code: 'api_error', message: 'OpenAI returned an empty reply. Try rephrasing.' }
       }
       const reply = parsed.incomplete ? `${parsed.text} …(reply cut short)` : parsed.text
-      return { ok: true, reply, model: settings.textModel, usage: parsed.usage }
+      if (db && convId) await appendMessage(db, ws, convId, { role: 'assistant', text: reply, via: 'text' })
+      return { ok: true, reply, model: settings.textModel, usage: parsed.usage, conversationId: convId }
+    }),
+  )
+
+  // ---------- Conversation history (scoped to the active workspace) ----------
+
+  ipcMain.handle(
+    Channels.conversationsList,
+    guard(async (): Promise<HistoryResult<ConversationSummary[]>> => {
+      const db = history.database?.db
+      if (!db) return unavailable()
+      return { ok: true, value: await listConversations(db, activeWorkspace()) }
+    }),
+  )
+
+  ipcMain.handle(
+    Channels.conversationsMessages,
+    guard(async (conversationId: unknown): Promise<HistoryResult<StoredMessage[]>> => {
+      const db = history.database?.db
+      if (!db) return unavailable()
+      try {
+        return { ok: true, value: await getMessages(db, activeWorkspace(), validateConversationId(conversationId)) }
+      } catch (err) {
+        if (err instanceof IpcValidationError) return { ok: false, code: 'invalid_input', message: err.message }
+        if (err instanceof NotFoundError) return { ok: false, code: 'not_found', message: err.message }
+        throw err
+      }
+    }),
+  )
+
+  // Voice transcripts are produced in the renderer, so it asks main to store them.
+  ipcMain.handle(
+    Channels.conversationsAppend,
+    guard(async (conversationId: unknown, message: unknown): Promise<HistoryResult<StoredMessage>> => {
+      const db = history.database?.db
+      if (!db) return unavailable()
+      try {
+        const id = validateOptionalConversationId(conversationId)
+        const m = validateNewMessage(message)
+        return { ok: true, value: await appendMessage(db, activeWorkspace(), id, m) }
+      } catch (err) {
+        if (err instanceof IpcValidationError) return { ok: false, code: 'invalid_input', message: err.message }
+        if (err instanceof NotFoundError) return { ok: false, code: 'not_found', message: err.message }
+        throw err
+      }
+    }),
+  )
+
+  ipcMain.handle(
+    Channels.conversationsDelete,
+    guard(async (conversationId: unknown): Promise<HistoryResult<boolean>> => {
+      const db = history.database?.db
+      if (!db) return unavailable()
+      try {
+        return { ok: true, value: await deleteConversation(db, activeWorkspace(), validateConversationId(conversationId)) }
+      } catch (err) {
+        if (err instanceof IpcValidationError) return { ok: false, code: 'invalid_input', message: err.message }
+        throw err
+      }
     }),
   )
 

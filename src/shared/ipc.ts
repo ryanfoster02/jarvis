@@ -14,6 +14,10 @@ export const Channels = {
   credentialsSet: 'credentials:set',
   credentialsClear: 'credentials:clear',
   ttsSpeak: 'tts:speak',
+  conversationsList: 'conversations:list',
+  conversationsMessages: 'conversations:messages',
+  conversationsAppend: 'conversations:append',
+  conversationsDelete: 'conversations:delete',
   voiceMicAccess: 'voice:mic-access',
   voiceConnect: 'voice:connect',
 } as const
@@ -234,8 +238,28 @@ export interface TextUsage {
   cachedTokens: number
 }
 
+export interface ConversationSummary {
+  id: string
+  title: string
+  createdAt: number
+  updatedAt: number
+  messageCount: number
+}
+
+export interface StoredMessage {
+  id: string
+  conversationId: string
+  role: 'user' | 'assistant'
+  text: string
+  via: 'text' | 'voice'
+  createdAt: number
+}
+
+/** Errors from history calls. 'unavailable' = database couldn't open; Jarvis still works without history. */
+export type HistoryResult<T> = { ok: true; value: T } | { ok: false; code: 'unavailable' | 'not_found' | 'invalid_input'; message: string }
+
 export type ChatResult =
-  | { ok: true; reply: string; model: TextModelId; usage: TextUsage }
+  | { ok: true; reply: string; model: TextModelId; usage: TextUsage; conversationId: string | null }
   | {
       ok: false
       code: 'no_provider' | 'halted' | 'invalid_input' | 'rate_limited' | 'network' | 'api_error'
@@ -413,6 +437,47 @@ export function validateChatHistory(input: unknown): ChatTurn[] {
   let total = turns.reduce((n, t) => n + t.text.length, 0)
   while (total > MAX_HISTORY_CHARS && turns.length > 0) total -= turns.shift()!.text.length
   return turns
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** Conversation IDs are UUIDs generated in main. */
+export function validateConversationId(input: unknown): string {
+  if (typeof input !== 'string' || !UUID.test(input)) throw new IpcValidationError('invalid conversation id')
+  return input.toLowerCase()
+}
+
+/** null = start a new conversation. */
+export function validateOptionalConversationId(input: unknown): string | null {
+  return input === null || input === undefined ? null : validateConversationId(input)
+}
+
+export interface NewMessage {
+  role: 'user' | 'assistant'
+  text: string
+  via: 'text' | 'voice'
+}
+
+/** A message the renderer asks main to store (voice transcripts). */
+export function validateNewMessage(input: unknown): NewMessage {
+  if (!isPlainObject(input)) throw new IpcValidationError('message must be an object')
+  const { role, text, via } = input
+  if (role !== 'user' && role !== 'assistant') throw new IpcValidationError('role must be user or assistant')
+  if (via !== 'text' && via !== 'voice') throw new IpcValidationError('via must be text or voice')
+  if (typeof text !== 'string') throw new IpcValidationError('text must be text')
+  const t = text.trim()
+  if (!t) throw new IpcValidationError('message is empty')
+  if (t.length > MAX_CHAT_CHARS) throw new IpcValidationError(`message exceeds ${MAX_CHAT_CHARS} characters`)
+  for (const k of Object.keys(input)) {
+    if (k !== 'role' && k !== 'text' && k !== 'via') throw new IpcValidationError(`unknown field: ${k}`)
+  }
+  return { role, text: t, via }
+}
+
+/** Title for a new conversation from its first message. */
+export function titleFrom(text: string): string {
+  const one = text.replace(/\s+/g, ' ').trim()
+  return one.length > 60 ? `${one.slice(0, 57).trimEnd()}…` : one || 'New conversation'
 }
 
 export function validateReason(input: unknown): string {
