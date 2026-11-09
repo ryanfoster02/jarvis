@@ -16,12 +16,13 @@
 - TypeScript strict. No `any` in IPC or security code.
 - `src/shared` is pure (no Electron/Node imports) and unit-tested with `node:test` (`npm test`). Use explicit `.ts` import extensions there.
 - Renderer is untrusted: no Node, no secrets, no direct network to integrations.
+- Paid or sensitive IPC gets a rate limit (`src/shared/ratelimit.ts`).
 - New IPC = add channel to `src/shared/ipc.ts` contract + validator + test, handler in `src/main/ipc.ts`, method in `src/preload/index.ts`. Nothing else.
 - Every tool/action gets a risk level (SECURITY.md §3). High-risk always requires explicit approval.
 - UI shows real state only; unavailable features say "not available yet".
 
 ## Commands
-`npm run dev` · `npm run typecheck` · `npm test` · `npm run build` · `npm run sunrise` · `npm run sunset`
+`npm run dev` · `npm run typecheck` · `npm test` · `npm run test:e2e` · `npm run build` · `npm run dist:mac` · `npm run sunrise` · `npm run sunset`
 
 ## Git
 Commit per meaningful change. Never commit `.env`, keys, DBs, `out/`, `node_modules/`.

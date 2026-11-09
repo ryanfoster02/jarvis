@@ -59,3 +59,24 @@ export async function createRealtimeCall(
     return networkFailure(err)
   }
 }
+
+/** Typed reply via the Responses API. Returns the raw JSON for parsing by shared/text.ts. */
+export async function createTextResponse(key: string, body: Record<string, unknown>): Promise<OpenAIResult<unknown>> {
+  try {
+    const res = await fetch(`${OPENAI_API}/responses`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(45_000),
+    })
+    const text = await res.text()
+    if (!res.ok) return { ok: false, status: res.status, body: text, message: describeOpenAIError(res.status, text) }
+    try {
+      return { ok: true, value: JSON.parse(text) as unknown }
+    } catch {
+      return { ok: false, status: res.status, body: '', message: 'OpenAI sent a reply Jarvis could not read.' }
+    }
+  } catch (err) {
+    return networkFailure(err)
+  }
+}

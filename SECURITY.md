@@ -58,3 +58,23 @@ The mic is on only between **Start voice** and **End voice**; a red MIC LIVE chi
 
 ## 10. Reporting
 Security-sensitive changes (IPC, credentials, filesystem, integrations) get a focused review before merge.
+
+## 11. Security review — Sprint 4 (2026-11-09)
+Scope: Electron window/session config, preload bridge, all IPC handlers, credential vault and `.env`, OpenAI/ElevenLabs clients, renderer voice code.
+
+| # | Check | Result |
+|---|---|---|
+| 1 | Every `ipcMain.handle` wrapped in `guard` (top frame + trusted origin) | ✅ 13/13 |
+| 2 | Channels in preload ↔ main match one-to-one; `ipcRenderer` never exposed | ✅ |
+| 3 | Payload validation: settings (allowlisted keys), chat (≤8 000 chars; history ≤20 turns/40 000 chars, roles user/assistant only — no injected system turns), TTS (≤1 000 chars), SDP (audio offer, ≤64 KB), keys (format) | ✅ unit-tested |
+| 4 | Keys never reach renderer, logs, settings or Git; provider error bodies stay in main; messages sanitized | ✅ unit-tested |
+| 5 | No `eval`, `new Function`, `innerHTML`, `dangerouslySetInnerHTML` | ✅ none |
+| 6 | Navigation, redirects, `window.open`, `<webview>` blocked; external links `https:` only | ✅ |
+| 7 | Permissions: only audio-only `media` from app origin | ✅ |
+| 8 | Env overrides (`ELECTRON_RENDERER_URL`, `JARVIS_USER_DATA`, `.env`) ignored when packaged | ✅ |
+| 9 | Settings and vault files written with mode 600, atomic rename | ✅ |
+| 10 | **Fixed:** paid channels had no spend cap — a compromised renderer could loop requests. Added per-minute limits: chat 30, TTS 15 000 chars, voice connects 10, key checks 10 (`src/shared/ratelimit.ts`, unit-tested). | ✅ fixed |
+| 11 | **Fixed:** voice `disconnected` state never ended the session; now fails cleanly after 8 s or on data-channel close. | ✅ fixed |
+| 12 | **Fixed for packaging:** Electron fuses — RunAsNode, NODE_OPTIONS, `--inspect` disabled; app loads only from verified asar (`electron-builder.yml`). | ✅ |
+| 13 | Accepted risk: a compromised renderer could open arbitrary `https:` links in the browser via navigation. Low impact; revisit with a link allowlist in Phase 3. | ⚠️ accepted |
+| 14 | Accepted risk: packaged build is ad-hoc signed, not notarized — fine for personal use; Developer ID signing + notarization + hardened runtime before distributing (Phase 4). | ⚠️ accepted |

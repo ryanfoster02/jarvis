@@ -4,6 +4,7 @@ import {
   Events,
   type AppInfo,
   type ChatResult,
+  type ChatTurn,
   type CredentialResult,
   type CredentialStatus,
   type MicAccess,
@@ -35,7 +36,8 @@ const api = {
     },
   },
   chat: {
-    send: (message: string): Promise<ChatResult> => ipcRenderer.invoke(Channels.chatSend, message),
+    send: (message: string, history: ChatTurn[]): Promise<ChatResult> =>
+      ipcRenderer.invoke(Channels.chatSend, message, history),
   },
   // Keys go in, never come out: only status (configured, last 4 characters, verified time) is readable.
   credentials: {

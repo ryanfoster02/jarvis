@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { WORKSPACES, type AppInfo, type CredentialStatus, type KillSwitchState, type Settings } from '../../shared/ipc.ts'
 import { estimateCostUsd, totalTokens } from '../../shared/realtime.ts'
+import { estimateTextCostUsd } from '../../shared/text.ts'
+import { cleanForSpeech, takeSpeakable } from '../../shared/speech.ts'
+import { SpeechQueue } from './voice/speechQueue.ts'
 import { AiCore, type CoreState } from './components/AiCore.tsx'
 import { ConversationPanel, type Entry } from './components/ConversationPanel.tsx'
 import { OpsColumn } from './components/OpsColumn.tsx'
@@ -42,7 +45,7 @@ function statusLine(o: {
     if (o.activity === 'listening') return 'Listening…'
     return 'Voice is on. Go ahead.'
   }
-  if (o.busy) return 'Delivering your message to the main process…'
+  if (o.busy) return 'Thinking…'
   return 'Nothing needs you.'
 }
 
@@ -60,6 +63,17 @@ export function App(): React.JSX.Element {
   const [entries, setEntries] = useState<Entry[]>([])
   const [usage, setUsage] = useState({ tokens: 0, costUsd: 0 as number | null, latencyMs: null as number | null, ttsChars: 0 })
   const assistantIds = useRef(new Map<string, string>()) // realtime item/response id → entry id
+  const [typedSpeaking, setTypedSpeaking] = useState(false)
+  const typedSpeech = useRef<SpeechQueue | null>(null)
+  if (!typedSpeech.current) {
+    // Reads typed replies aloud with the ElevenLabs voice when voice mode is off.
+    typedSpeech.current = new SpeechQueue({
+      onStart: () => setTypedSpeaking(true),
+      onIdle: () => setTypedSpeaking(false),
+      onError: (m) => setEntries((e) => [...e, { id: newId(), role: 'system', text: m, at: new Date(), via: 'text' }]),
+      onCharacters: (n) => setUsage((prev) => ({ ...prev, ttsChars: prev.ttsChars + n })),
+    })
+  }
 
   const push = useCallback((role: Entry['role'], text: string, via: Entry['via']) => {
     setEntries((e) => [...e, { id: newId(), role, text, at: new Date(), via }])
@@ -123,7 +137,10 @@ export function App(): React.JSX.Element {
   // Stop all: tear down voice immediately (mic off, connection closed).
   const stopVoice = voice.stop
   useEffect(() => {
-    if (kill?.engaged) stopVoice()
+    if (kill?.engaged) {
+      stopVoice()
+      typedSpeech.current?.stop()
+    }
   }, [kill?.engaged, stopVoice])
 
   useEffect(() => {
@@ -161,18 +178,41 @@ export function App(): React.JSX.Element {
         if (!voice.sendText(text)) push('system', 'Voice is not ready yet. Try again in a moment.', 'text')
         return
       }
+      // Recent turns for context (typed and spoken), oldest first, excluding system notices.
+      const history = entries
+        .filter((e) => (e.role === 'user' || e.role === 'assistant') && !e.streaming)
+        .slice(-20)
+        .map((e) => ({ role: e.role as 'user' | 'assistant', text: e.text }))
       push('user', text, 'text')
+      typedSpeech.current?.stop()
       setBusy(true)
+      const started = performance.now()
       try {
-        const res = await window.jarvis.chat.send(text)
-        push(res.ok ? 'assistant' : 'system', res.ok ? res.reply : res.message, 'text')
+        const res = await window.jarvis.chat.send(text, history)
+        if (res.ok) {
+          push('assistant', res.reply, 'text')
+          setUsage((prev) => ({
+            ...prev,
+            tokens: prev.tokens + res.usage.inputTokens + res.usage.outputTokens,
+            costUsd: prev.costUsd === null ? null : prev.costUsd + estimateTextCostUsd(res.model, res.usage),
+            latencyMs: Math.round(performance.now() - started),
+          }))
+          if (settings?.speakTypedReplies && settings.speechEngine === 'elevenlabs' && creds?.elevenlabs.configured) {
+            for (const chunk of takeSpeakable(res.reply, true).chunks) {
+              const clean = cleanForSpeech(chunk)
+              if (clean) typedSpeech.current?.enqueue(clean)
+            }
+          }
+        } else {
+          push('system', res.message, 'text')
+        }
       } catch (err) {
         push('system', `The message couldn't be delivered: ${String(err)}`, 'text')
       } finally {
         setBusy(false)
       }
     },
-    [voice, push],
+    [voice, push, entries, settings, creds],
   )
 
   const halted = !!bridgeError || !!kill?.engaged
@@ -182,7 +222,9 @@ export function App(): React.JSX.Element {
       ? ACTIVITY_TO_CORE[voice.activity]
       : voice.phase === 'connecting' || busy
         ? 'processing'
-        : 'idle'
+        : typedSpeaking
+          ? 'speaking'
+          : 'idle'
   const workspace = WORKSPACES.find((w) => w.id === settings?.activeWorkspace) ?? WORKSPACES[0]
   const elevenActive = voice.engine === 'elevenlabs' || (voice.engine === null && settings?.speechEngine === 'elevenlabs')
   const telemetry: Telemetry = {

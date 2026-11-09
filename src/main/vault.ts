@@ -55,7 +55,8 @@ interface EnvKey {
 }
 
 function envFilePath(): string | null {
-  if (app.isPackaged) return null
+  // Never in packaged builds, and never in automated tests (they must not use your real keys).
+  if (app.isPackaged || process.env['JARVIS_USER_DATA']) return null
   for (const dir of [app.getAppPath(), process.cwd()]) {
     const p = join(dir, '.env')
     if (existsSync(p)) return p

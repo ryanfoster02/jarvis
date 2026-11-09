@@ -100,6 +100,13 @@ export const ELEVEN_MODELS = [
 ] as const
 export type ElevenModelId = (typeof ELEVEN_MODELS)[number]['id']
 
+/** Models for typed replies (Responses API). Checked against OpenAI docs 2026-11-09. */
+export const TEXT_MODELS = [
+  { id: 'gpt-5.4-mini', name: 'GPT-5.4 mini (fast)' },
+  { id: 'gpt-5-mini', name: 'GPT-5 mini (lower cost)' },
+] as const
+export type TextModelId = (typeof TEXT_MODELS)[number]['id']
+
 export interface Settings {
   theme: Theme
   reducedMotion: boolean
@@ -114,6 +121,10 @@ export interface Settings {
   elevenModel: ElevenModelId
   /** Let the owner talk over Jarvis while it speaks through ElevenLabs. Off = mic pauses during speech (avoids echo on speakers). */
   bargeIn: boolean
+  /** Model for typed replies when voice is off. */
+  textModel: TextModelId
+  /** Read typed replies aloud with the ElevenLabs voice (when that engine and key are set up). */
+  speakTypedReplies: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = Object.freeze({
@@ -128,6 +139,8 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   elevenVoiceId: '6WwXjDDEMyNmFG95zycZ',
   elevenModel: 'eleven_flash_v2_5',
   bargeIn: false,
+  textModel: 'gpt-5.4-mini',
+  speakTypedReplies: true,
 })
 
 /** Execution limits (SECURITY.md §6). Displayed now; enforced by the agent runtime in Phase 2. */
@@ -210,9 +223,24 @@ export type TtsResult =
   | { ok: true; audio: Uint8Array; characters: number }
   | { ok: false; code: 'no_key' | 'halted' | 'invalid_input' | 'network' | 'api_error'; message: string }
 
+export interface ChatTurn {
+  role: 'user' | 'assistant'
+  text: string
+}
+
+export interface TextUsage {
+  inputTokens: number
+  outputTokens: number
+  cachedTokens: number
+}
+
 export type ChatResult =
-  | { ok: true; reply: string }
-  | { ok: false; code: 'no_provider' | 'halted' | 'invalid_input'; message: string }
+  | { ok: true; reply: string; model: TextModelId; usage: TextUsage }
+  | {
+      ok: false
+      code: 'no_provider' | 'halted' | 'invalid_input' | 'rate_limited' | 'network' | 'api_error'
+      message: string
+    }
 
 export const MAX_CHAT_CHARS = 8000
 export const MAX_REASON_CHARS = 200
@@ -264,6 +292,10 @@ export function isElevenVoiceId(v: unknown): v is string {
 
 export function isProviderId(v: unknown): v is ProviderId {
   return typeof v === 'string' && (PROVIDERS as readonly string[]).includes(v)
+}
+
+export function isTextModelId(v: unknown): v is TextModelId {
+  return typeof v === 'string' && TEXT_MODELS.some((m) => m.id === v)
 }
 
 export function isRealtimeModelId(v: unknown): v is RealtimeModelId {
@@ -320,6 +352,14 @@ export function validateSettingsPatch(input: unknown): Partial<Settings> {
         if (typeof value !== 'boolean') throw new IpcValidationError('bargeIn must be boolean')
         out.bargeIn = value
         break
+      case 'textModel':
+        if (!isTextModelId(value)) throw new IpcValidationError(`invalid text model: ${String(value)}`)
+        out.textModel = value
+        break
+      case 'speakTypedReplies':
+        if (typeof value !== 'boolean') throw new IpcValidationError('speakTypedReplies must be boolean')
+        out.speakTypedReplies = value
+        break
       default:
         throw new IpcValidationError(`unknown setting: ${key}`)
     }
@@ -342,6 +382,8 @@ export function normalizeSettings(stored: unknown): Settings {
   if (isElevenVoiceId(stored.elevenVoiceId)) s.elevenVoiceId = stored.elevenVoiceId
   if (isElevenModelId(stored.elevenModel)) s.elevenModel = stored.elevenModel
   if (typeof stored.bargeIn === 'boolean') s.bargeIn = stored.bargeIn
+  if (isTextModelId(stored.textModel)) s.textModel = stored.textModel
+  if (typeof stored.speakTypedReplies === 'boolean') s.speakTypedReplies = stored.speakTypedReplies
   return s
 }
 
@@ -351,6 +393,26 @@ export function validateChatMessage(input: unknown): string {
   if (text.length === 0) throw new IpcValidationError('message is empty')
   if (text.length > MAX_CHAT_CHARS) throw new IpcValidationError(`message exceeds ${MAX_CHAT_CHARS} characters`)
   return text
+}
+
+export const MAX_HISTORY_TURNS = 20
+export const MAX_HISTORY_CHARS = 40_000
+
+/** Recent conversation sent with a typed message. Oldest turns are dropped to fit the limits. */
+export function validateChatHistory(input: unknown): ChatTurn[] {
+  if (input === undefined || input === null) return []
+  if (!Array.isArray(input)) throw new IpcValidationError('history must be a list')
+  const turns: ChatTurn[] = []
+  for (const t of input.slice(-MAX_HISTORY_TURNS)) {
+    if (!isPlainObject(t)) throw new IpcValidationError('history entries must be objects')
+    if (t.role !== 'user' && t.role !== 'assistant') throw new IpcValidationError('history role must be user or assistant')
+    if (typeof t.text !== 'string') throw new IpcValidationError('history text must be text')
+    const text = t.text.trim().slice(0, MAX_CHAT_CHARS)
+    if (text) turns.push({ role: t.role, text })
+  }
+  let total = turns.reduce((n, t) => n + t.text.length, 0)
+  while (total > MAX_HISTORY_CHARS && turns.length > 0) total -= turns.shift()!.text.length
+  return turns
 }
 
 export function validateReason(input: unknown): string {

@@ -252,9 +252,25 @@ export function useVoice(handlers: VoiceHandlers) {
     dc.onopen = () => {
       if (gen === generation.current) setPhase('live')
     }
+    // 'disconnected' often recovers on its own (Wi-Fi blips); give it a few seconds before giving up.
+    let dropTimer: ReturnType<typeof setTimeout> | null = null
     pc.onconnectionstatechange = () => {
       if (gen !== generation.current) return
-      if (pc.connectionState === 'failed') fail('The voice connection dropped. Start voice again.')
+      if (pc.connectionState === 'connected' && dropTimer) {
+        clearTimeout(dropTimer)
+        dropTimer = null
+      } else if (pc.connectionState === 'disconnected' && !dropTimer) {
+        dropTimer = setTimeout(() => {
+          if (gen === generation.current && pc.connectionState !== 'connected') {
+            fail('The voice connection was lost. Check your internet connection and start voice again.')
+          }
+        }, 8000)
+      } else if (pc.connectionState === 'failed') {
+        fail('The voice connection dropped. Start voice again.')
+      }
+    }
+    dc.onclose = () => {
+      if (gen === generation.current && pcRef.current === pc) fail('The voice session ended. Start voice again.')
     }
 
     try {

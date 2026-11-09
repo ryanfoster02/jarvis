@@ -2,7 +2,7 @@
 
 Local-first, voice-capable desktop assistant. Electron + React + TypeScript (electron-vite).
 
-**Status:** Sprint 1 — secure desktop shell. Voice (Sprint 3), memory (Phase 2) and integrations (Phase 3) are not built yet; the UI says so where relevant. See [IMPLEMENTATION.md](IMPLEMENTATION.md).
+**Status:** Phase 1 complete (desktop app, dashboard, voice, typed chat, packaging). Memory (Phase 2) and integrations (Phase 3) are not built yet; the UI says so where relevant. See [IMPLEMENTATION.md](IMPLEMENTATION.md).
 
 ## Requirements
 - macOS (Apple Silicon or Intel). Windows/Linux later.
@@ -21,20 +21,33 @@ npm run dev          # launches the app with hot reload
 ## Commands
 | Command | What it does |
 |---|---|
-| `npm run dev` | Start the app in development (HMR) |
-| `npm run typecheck` | TypeScript check for main/preload and renderer |
-| `npm test` | Unit tests (Node's built-in test runner) |
+| `npm run dev` | Start the app in development (hot reload) |
+| `npm run typecheck` | TypeScript check (main, preload, renderer, tests) |
+| `npm test` | Unit tests (Node's built-in runner, no app launch) |
+| `npm run test:e2e` | Builds, then launches the real app with a throwaway profile and clicks through it (Playwright). Never uses your settings, keys or `.env`. |
 | `npm run build` | Typecheck + production bundle into `out/` |
 | `npm run preview` | Run the production bundle |
-| `npm run sunrise` | Session start briefing |
-| `npm run sunset -- --done "…" --next "…"` | Write `sessions/YYYY-MM-DD_HH-mm.md` |
+| `npm run dist:mac` | Build **JARVIS.app** as a `.dmg` and `.zip` in `release/<version>/` |
+| `npm run setup:env` | Create `.env` from `.env.example` |
+| `npm run sunrise` / `npm run sunset -- --done "…"` | Session briefing / session report |
+
+## Installing JARVIS as a Mac app
+```bash
+npm install            # once, after pulling (adds electron-builder and Playwright)
+npm run dist:mac
+```
+Open `release/0.1.0/JARVIS-0.1.0-arm64.dmg` (or `-x64` on Intel) and drag **JARVIS** into Applications.
+- The build is ad-hoc signed: it runs on the Mac that built it. It isn't notarized, so it's not for sharing yet.
+- The installed app **ignores `.env`**. Keys you saved in Settings → AI provider during development carry over (same profile); otherwise add them there once. macOS may ask once whether JARVIS can use "JARVIS Safe Storage" in your keychain: choose **Always Allow**.
+- macOS will ask for microphone access for **JARVIS** the first time you start voice.
+- Settings and the encrypted key vault live in `~/Library/Application Support/JARVIS/`, shared by the dev build and the installed app.
 
 ## Session routine (sunrise / sunset)
 - **In Claude Code:** type `/sunrise` at the start and `/sunset` at the end (commands in `.claude/commands/`).
 - **In a terminal:** `npm run sunrise`, or `./scripts/sunrise`. For sunset, pass one flag per bullet (all repeatable): `--title`, `--done`, `--decision`, `--issue`, `--todo`, `--next`. Git commits and changed files are added automatically.
 
 ## Configuration
-Settings (theme, reduced motion) are stored in `~/Library/Application Support/jarvis/settings.json`. API keys are **never** stored there — see [SECURITY.md](SECURITY.md). `.env.example` lists dev-only variables.
+Settings are stored in `~/Library/Application Support/JARVIS/settings.json`. API keys are **never** stored there — see [SECURITY.md](SECURITY.md). `.env.example` lists dev-only variables.
 
 ## API key (.env)
 For development, put your OpenAI key in a local `.env` file:
@@ -47,6 +60,7 @@ Open `.env` and paste your keys after `OPENAI_API_KEY=` and `ELEVENLABS_API_KEY=
 - Never rename it with a `VITE_` prefix: that would bundle the key into the interface.
 
 ## Using the app
+- **Typing:** with voice off, typed messages get typed replies (GPT-5.4 mini by default, same personality), read aloud with the ElevenLabs voice if *Read typed replies aloud* is on. Jarvis remembers the recent conversation within the session.
 - **Voice:** add your key via `.env` (above) or Settings → AI provider → *Verify and save*. Then on the dashboard press **Start voice** and allow the microphone. Talk naturally; talk over Jarvis to interrupt, or press **Interrupt**. **Mute** turns the mic off; **End voice** closes the session. While voice is on you can also type, and Jarvis answers by voice.
 - **Jarvis's voice (default: ElevenLabs).** OpenAI listens and thinks; ElevenLabs speaks with a real British voice. Default voice **Eldrin** (crisp British baritone); **Finley**, and legacy **George** / **Daniel** (retired by ElevenLabs on Dec 31 2026, older accounts only) are selectable, or paste any voice ID from your own ElevenLabs account. Use **Test voice** in Settings → Voice to hear it. Library voices may need *Add to My Voices* in ElevenLabs first.
 - **Talking over Jarvis:** with ElevenLabs on speakers, the mic pauses while Jarvis speaks (chip shows MIC PAUSED) so it doesn't hear itself — press **Interrupt** to cut in. Turn on *Talk over Jarvis (headphones)* to interrupt by voice.

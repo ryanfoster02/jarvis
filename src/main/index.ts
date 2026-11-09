@@ -7,6 +7,11 @@ import { engage } from './killswitch.ts'
 // ---- Process-wide hardening (must run before 'ready') ----
 app.enableSandbox()
 
+// Automated tests run against a throwaway profile so they never touch your real settings or keys.
+// Development builds only; packaged apps ignore this variable.
+const testUserData = process.env['JARVIS_USER_DATA']
+if (testUserData && !app.isPackaged) app.setPath('userData', testUserData)
+
 if (!app.requestSingleInstanceLock()) {
   app.quit()
   process.exit(0)

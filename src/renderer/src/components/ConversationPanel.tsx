@@ -106,7 +106,7 @@ export function ConversationPanel({ entries, busy, disabled, workspaceName, voic
         {entries.length === 0 && (
           <li className="conv-empty">
             {voice.hasKey ? (
-              <p>Start voice and say hello, or type once voice is on.</p>
+              <p>Type a message, or start voice and say hello.</p>
             ) : (
               <>
                 <p>Add your OpenAI key in Settings to talk with Jarvis.</p>

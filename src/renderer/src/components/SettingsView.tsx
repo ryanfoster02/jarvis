@@ -8,6 +8,7 @@ import {
   JARVIS_PRESET,
   PROVIDER_ENV,
   SPEECH_ENGINES,
+  TEXT_MODELS,
   PERSONAS,
   REALTIME_MODELS,
   VOICES,
@@ -17,6 +18,7 @@ import {
   type HonorificId,
   type ProviderId,
   type SpeechEngineId,
+  type TextModelId,
   type PersonaId,
   type RealtimeModelId,
   type Settings,
@@ -481,6 +483,34 @@ export function SettingsView({ settings, info, creds, onCreds, onUpdate }: Props
                   </option>
                 ))}
               </select>
+            </div>
+            <div className="field">
+              <div className="field-text">
+                <h3>Typed replies model (OpenAI)</h3>
+                <p>Answers what you type when voice is off. Same personality and limits as voice.</p>
+              </div>
+              <select className="select" value={settings.textModel} onChange={(e) => onUpdate({ textModel: e.target.value as TextModelId })}>
+                {TEXT_MODELS.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <div className="field-text">
+                <h3>Read typed replies aloud</h3>
+                <p>Speaks Jarvis&apos;s typed answers with the ElevenLabs voice when voice is off.</p>
+              </div>
+              <button
+                role="switch"
+                aria-checked={settings.speakTypedReplies}
+                className="switch"
+                onClick={() => onUpdate({ speakTypedReplies: !settings.speakTypedReplies })}
+                disabled={settings.speechEngine !== 'elevenlabs'}
+              >
+                <span className="sr-only">Read typed replies aloud</span>
+              </button>
             </div>
             <p className="fine">
               Changes apply the next time you start voice. The microphone is only on while voice is running, and the top

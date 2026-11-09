@@ -4,6 +4,7 @@ import {
   IpcValidationError,
   isTrustedSenderUrl,
   isProviderId,
+  validateChatHistory,
   validateChatMessage,
   validateProviderKey,
   validateReason,
@@ -13,6 +14,7 @@ import {
   WORKSPACES,
   type AppInfo,
   type ChatResult,
+  type ChatTurn,
   type CredentialResult,
   type MicAccess,
   type TrustedOrigins,
@@ -20,7 +22,9 @@ import {
   type VoiceConnectResult,
 } from '../shared/ipc.ts'
 import { buildRealtimeSession, isTranscriptionConfigError } from '../shared/realtime.ts'
-import { createRealtimeCall, verifyKey } from './openai.ts'
+import { buildTextRequest, parseResponsesOutput } from '../shared/text.ts'
+import { LIMITS, RateLimiter } from '../shared/ratelimit.ts'
+import { createRealtimeCall, createTextResponse, verifyKey } from './openai.ts'
 import { synthesize, verifyElevenLabsKey } from './elevenlabs.ts'
 import { clearKey, credentialStatus, encryptionAvailable, getKey, saveKey } from './vault.ts'
 import { loadSettings, updateSettings } from './settings.ts'
@@ -32,6 +36,15 @@ import { engage, getKillSwitch, isHalted, rearm } from './killswitch.ts'
  *  2. validates its payload with the shared validators,
  *  3. returns plain data only.
  */
+// Spend and abuse caps (per minute). See SECURITY.md, review 2026-11-09.
+const limits = {
+  chat: new RateLimiter(LIMITS.chatPerMinute, 60_000),
+  ttsChars: new RateLimiter(LIMITS.ttsCharsPerMinute, 60_000),
+  voice: new RateLimiter(LIMITS.voiceConnectsPerMinute, 60_000),
+  keys: new RateLimiter(LIMITS.keyChecksPerMinute, 60_000),
+}
+const SLOW_DOWN = 'Too many requests in the last minute. Wait a moment and try again.'
+
 export function registerIpc(trusted: TrustedOrigins): void {
   const guard =
     <A extends unknown[], R>(fn: (...args: A) => R) =>
@@ -71,28 +84,50 @@ export function registerIpc(trusted: TrustedOrigins): void {
   ipcMain.handle(Channels.killSwitchEngage, guard((reason: unknown) => engage(validateReason(reason))))
   ipcMain.handle(Channels.killSwitchRearm, guard(() => rearm()))
 
-  // Text conversation entry point. No AI provider exists yet (Phase 2 / Sprint 4),
-  // so this reports that truthfully instead of producing a fake reply.
+  // Typed conversation (voice off): OpenAI Responses API with recent history and the same persona.
   ipcMain.handle(
     Channels.chatSend,
-    guard((message: unknown): ChatResult => {
+    guard(async (message: unknown, history: unknown): Promise<ChatResult> => {
       if (isHalted()) {
-        return { ok: false, code: 'halted', message: 'Emergency stop is engaged. Re-arm JARVIS to continue.' }
+        return { ok: false, code: 'halted', message: 'Stop all is engaged. Re-arm Jarvis to continue.' }
       }
+      let text: string
+      let turns: ChatTurn[]
       try {
-        validateChatMessage(message)
+        text = validateChatMessage(message)
+        turns = validateChatHistory(history)
       } catch (err) {
         if (err instanceof IpcValidationError) return { ok: false, code: 'invalid_input', message: err.message }
         throw err
       }
-      const hasKey = credentialStatus().openai.configured
-      return {
-        ok: false,
-        code: 'no_provider',
-        message: hasKey
-          ? 'Typed replies without voice arrive in Sprint 4. Start voice in this panel and you can talk or type to Jarvis now.'
-          : 'No AI provider is connected yet. Add your OpenAI key in Settings → AI provider, then start voice.',
+      const key = getKey('openai')
+      if (!key) {
+        return {
+          ok: false,
+          code: 'no_provider',
+          message: 'No AI provider is connected yet. Add your OpenAI key in Settings → AI provider.',
+        }
       }
+      if (!limits.chat.take()) return { ok: false, code: 'rate_limited', message: SLOW_DOWN }
+      const settings = loadSettings()
+      const workspaceName = WORKSPACES.find((w) => w.id === settings.activeWorkspace)?.name ?? 'Personal'
+      const body = buildTextRequest({
+        model: settings.textModel,
+        workspaceName,
+        persona: settings.persona,
+        honorific: settings.honorific,
+        history: turns,
+        message: text,
+      })
+      const res = await createTextResponse(key, body)
+      if (isHalted()) return { ok: false, code: 'halted', message: 'Stop all was engaged while Jarvis was replying.' }
+      if (!res.ok) return { ok: false, code: res.status === 0 ? 'network' : 'api_error', message: res.message }
+      const parsed = parseResponsesOutput(res.value)
+      if (!parsed.text) {
+        return { ok: false, code: 'api_error', message: 'OpenAI returned an empty reply. Try rephrasing.' }
+      }
+      const reply = parsed.incomplete ? `${parsed.text} …(reply cut short)` : parsed.text
+      return { ok: true, reply, model: settings.textModel, usage: parsed.usage }
     }),
   )
 
@@ -104,6 +139,7 @@ export function registerIpc(trusted: TrustedOrigins): void {
     Channels.credentialsSet,
     guard(async (provider: unknown, input: unknown): Promise<CredentialResult> => {
       if (!isProviderId(provider)) return { ok: false, message: 'Unknown provider.' }
+      if (!limits.keys.take()) return { ok: false, message: SLOW_DOWN }
       let key: string
       try {
         key = validateProviderKey(provider, input)
@@ -144,6 +180,7 @@ export function registerIpc(trusted: TrustedOrigins): void {
       }
       const key = getKey('elevenlabs')
       if (!key) return { ok: false, code: 'no_key', message: 'Add your ElevenLabs key in Settings → AI provider.' }
+      if (!limits.ttsChars.take(text.length)) return { ok: false, code: 'api_error', message: SLOW_DOWN }
       const settings = loadSettings()
       const res = await synthesize(key, settings.elevenVoiceId, settings.elevenModel, text)
       if (isHalted()) return { ok: false, code: 'halted', message: 'Stop all is engaged.' }
@@ -172,6 +209,7 @@ export function registerIpc(trusted: TrustedOrigins): void {
     Channels.voiceConnect,
     guard(async (offer: unknown): Promise<VoiceConnectResult> => {
       if (isHalted()) return { ok: false, code: 'halted', message: 'Stop all is engaged. Re-arm Jarvis to start voice.' }
+      if (!limits.voice.take()) return { ok: false, code: 'api_error', message: SLOW_DOWN }
       let sdp: string
       try {
         sdp = validateSdpOffer(offer)

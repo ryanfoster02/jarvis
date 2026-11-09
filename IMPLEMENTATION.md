@@ -1,6 +1,6 @@
 # IMPLEMENTATION
 
-Current phase: Sprint 3 — Voice (built; awaiting live test with owner's OpenAI key)
+Current phase: Sprint 4 — Phase 1 Validation
 
 Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ not started
 
@@ -34,23 +34,31 @@ Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ no
 
 **Acceptance:** `npm install` (new font packages) + typecheck pass; every control works or says it isn't available yet; all 3 themes and all 7 core states look right on macOS; reduce-motion stops core animation; workspace + theme survive restart.
 
-### Sprint 3 — Voice 🟡
+### Sprint 3 — Voice ✅ (owner verified with real keys 2026-11-08)
 - ✅ Shared contract: voice/model settings, key + SDP validators, GA session builder, cost estimator, error sanitizer (18 unit tests)
 - ✅ Relay request shape verified with stubbed fetch; real Chrome SDP offer accepted by validator; voice hook type-checks against DOM WebRTC types
-- 🟡 Credential vault (safeStorage) + Settings → AI provider (verify with OpenAI, save, replace, remove)
-- 🟡 Development `.env` key (`npm run setup:env`); overrides vault while set; ignored when packaged
-- 🟡 Mic consent (macOS) + audio-only permission policy
-- 🟡 WebRTC session via main-process relay; live transcripts (you + Jarvis, streaming)
-- 🟡 Mute, Interrupt, End voice; MIC LIVE indicator; Stop all ends voice
-- 🟡 Core states driven by voice events; telemetry: provider, tokens, cost estimate (2.1-mini prices), latency
-- 🟡 Settings → Voice: model + voice selection, JARVIS preset (Ballad + British butler persona), form of address
-- 🟡 ElevenLabs speech engine (default): British voices (Eldrin default), custom voice ID, Flash v2.5 / v4 Turbo, sentence-chunked TTS, ordered playback, half-duplex or barge-in, Test voice
+- ✅ Credential vault (safeStorage) + Settings → AI provider (verify with OpenAI, save, replace, remove)
+- ✅ Development `.env` key (`npm run setup:env`); overrides vault while set; ignored when packaged
+- ✅ Mic consent (macOS) + audio-only permission policy
+- ✅ WebRTC session via main-process relay; live transcripts (you + Jarvis, streaming)
+- ✅ Mute, Interrupt, End voice; MIC LIVE indicator; Stop all ends voice
+- ✅ Core states driven by voice events; telemetry: provider, tokens, cost estimate (2.1-mini prices), latency
+- ✅ Settings → Voice: model + voice selection, JARVIS preset (Ballad + British butler persona), form of address
+- ✅ ElevenLabs speech engine (default): British voices (Eldrin default), custom voice ID, Flash v2.5 / v4 Turbo, sentence-chunked TTS, ordered playback, half-duplex or barge-in, Test voice
 - ✅ ElevenLabs request shape + error handling verified with stubbed fetch; SpeechQueue ordering/stop verified in headless Chrome; 31 unit tests
 
 **Acceptance:** with the owner's key on macOS — key saves and shows ••••last4; mic prompt appears once; a spoken round-trip works with transcripts; talking over Jarvis interrupts; Mute stops input; Stop all ends the session and turns the mic off; bad key / offline show clear errors; key never appears in DevTools.
 
-### Sprint 4 — Phase 1 Validation ⬜
-Startup, text chat (needs provider), voice, network-failure and bad-key tests; security review of IPC/credentials; Playwright-Electron smoke test; packaging with electron-builder; README run guide.
+### Sprint 4 — Phase 1 Validation 🟡
+- ✅ Typed replies without voice: Responses API (`gpt-5.4-mini` / `gpt-5-mini`), recent history, same persona, usage + cost + latency telemetry, optional read-aloud via ElevenLabs (request shape verified with stubbed fetch)
+- ✅ Security review recorded (SECURITY.md §11); fixes: per-minute spend caps on paid channels, voice connection-drop handling, fuses for packaged builds
+- ✅ Test isolation: `JARVIS_USER_DATA` profile override and no `.env` during tests (dev only)
+- 🟡 Playwright end-to-end suite (8 tests: launch, isolation/bridge surface, CSP, navigation/window blocking, theme persistence, Stop all/Re-arm, honest no-key reply, settings + key validation) — written, not yet run (needs the owner's Mac)
+- 🟡 Packaging: `npm run dist:mac` → ad-hoc signed DMG/ZIP with icon, mic usage string, security fuses — not yet built
+- ✅ README run guide (dev, tests, e2e, packaging, installed-app key setup)
+- ✅ 37 unit tests
+
+**Acceptance:** `npm install && npm run typecheck && npm test && npm run test:e2e` all pass on macOS; `npm run dist:mac` produces a DMG; installed JARVIS launches, asks for the mic as "JARVIS", and voice works after entering keys in Settings.
 
 ## Phase 2 — Intelligence & Memory ⬜
 SQLite + Drizzle · persistent conversations · global knowledge · workspace memory (view/edit/export/delete) · provider interface (OpenAI, Anthropic) · tool registry · permission engine · execution limits.

@@ -1,0 +1,41 @@
+# Packaging for a local, personal Mac build:  npm run dist:mac
+# Output: release/<version>/JARVIS-<version>-<arch>.dmg (+ .zip)
+appId: com.fosterautomation.jarvis
+productName: JARVIS
+copyright: Copyright © 2026 Ryan Foster
+directories:
+  output: release/${version}
+  buildResources: build
+# Everything the app needs is bundled by electron-vite into out/; no node_modules ship.
+files:
+  - out/**/*
+  - package.json
+asar: true
+artifactName: ${productName}-${version}-${arch}.${ext}
+
+mac:
+  category: public.app-category.productivity
+  icon: build/icon.png
+  target:
+    - dmg
+    - zip
+  # Ad-hoc signature: runs on the Mac that built it (Apple Silicon requires a signature).
+  # Not notarized — distributing to other people needs a Developer ID certificate (Phase 4).
+  identity: '-'
+  # Hardened runtime + ad-hoc signing makes Electron crash at launch; only needed for notarization.
+  hardenedRuntime: false
+  # Must be a mapping (not a list) or macOS never sees it and the mic prompt fails.
+  extendInfo:
+    NSMicrophoneUsageDescription: JARVIS listens only while voice is on, so it can hear what you say.
+
+dmg:
+  title: JARVIS ${version}
+
+# Security fuses (SECURITY.md §11): lock the packaged binary down.
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableCookieEncryption: true
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
