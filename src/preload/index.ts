@@ -7,6 +7,8 @@ import {
   type CredentialResult,
   type CredentialStatus,
   type MicAccess,
+  type ProviderId,
+  type TtsResult,
   type VoiceConnectResult,
   type KillSwitchState,
   type Settings,
@@ -38,12 +40,16 @@ const api = {
   // Keys go in, never come out: only status (configured, last 4 characters, verified time) is readable.
   credentials: {
     status: (): Promise<CredentialStatus> => ipcRenderer.invoke(Channels.credentialsStatus),
-    setOpenAIKey: (key: string): Promise<CredentialResult> => ipcRenderer.invoke(Channels.credentialsSetOpenAI, key),
-    clearOpenAIKey: (): Promise<CredentialStatus> => ipcRenderer.invoke(Channels.credentialsClearOpenAI),
+    set: (provider: ProviderId, key: string): Promise<CredentialResult> =>
+      ipcRenderer.invoke(Channels.credentialsSet, provider, key),
+    clear: (provider: ProviderId): Promise<CredentialStatus> => ipcRenderer.invoke(Channels.credentialsClear, provider),
   },
   voice: {
     micAccess: (): Promise<MicAccess> => ipcRenderer.invoke(Channels.voiceMicAccess),
     connect: (offerSdp: string): Promise<VoiceConnectResult> => ipcRenderer.invoke(Channels.voiceConnect, offerSdp),
+  },
+  tts: {
+    speak: (text: string): Promise<TtsResult> => ipcRenderer.invoke(Channels.ttsSpeak, text),
   },
 } as const
 

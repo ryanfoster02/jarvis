@@ -44,7 +44,8 @@ sessions/      session reports (YYYY-MM-DD_HH-mm.md)
 4. Audio flows peer-to-peer; events on the data channel drive state: `speech_started` → listening, `speech_stopped` → thinking, `output_audio_buffer.started/stopped` → speaking/idle, transcripts → conversation, `response.done` usage → tokens/cost, speech-end → first reply → latency.
 5. Typed text during a live session goes over the data channel (`conversation.item.create` + `response.create`).
 6. Mute disables the mic track; Interrupt sends `response.cancel` + `output_audio_buffer.clear`; server VAD also interrupts when you talk over Jarvis.
-7. Stop all / End voice closes the peer connection and stops all tracks. Tool calls are **not** enabled in the session yet (Phase 2 permission engine first).
+7. **ElevenLabs engine:** the session uses `output_modalities: ['text']`. Text deltas stream into the conversation and into a sentence chunker; each chunk goes over `tts:speak` to main, which calls ElevenLabs and returns MP3 bytes. `SpeechQueue` fetches ahead but plays strictly in order. Without barge-in, the mic track is disabled while speech plays (no self-hearing on speakers); `speech_started` or Interrupt stops playback and cancels the response.
+8. Stop all / End voice closes the peer connection and stops all tracks. Tool calls are **not** enabled in the session yet (Phase 2 permission engine first).
 
 ## AI runtime & tools (Phase 2)
 `Provider` interface (`complete`, `stream`) with OpenAI first, Anthropic later. `ToolRegistry` entries declare: name, schema, risk level (low/medium/high), required scopes. Every call goes through `PermissionEngine.check(tool, args, workspace, mandate)` → `approve | needsApproval | deny`, and is bounded by `ExecutionLimits` (iterations, time, tool calls, cost, depth, concurrency).

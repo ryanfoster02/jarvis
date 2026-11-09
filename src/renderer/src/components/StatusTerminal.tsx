@@ -3,6 +3,8 @@ export interface Telemetry {
   tokens: number
   costUsd: number | null // null = no published price for this model
   latencyMs: number | null
+  /** Characters sent to ElevenLabs this session (billed by ElevenLabs, separately). */
+  ttsChars: number
 }
 
 interface Props {
@@ -30,7 +32,12 @@ export function StatusTerminal({ line, tone, telemetry }: Props): React.JSX.Elem
         </div>
         <div>
           <dt>Cost est.</dt>
-          <dd title={telemetry.costUsd === null ? 'No published price for this model' : 'Estimated from token usage this session'}>
+          <dd
+            title={
+              (telemetry.costUsd === null ? 'No published price for this OpenAI model.' : 'OpenAI cost estimated from token usage this session.') +
+              (telemetry.ttsChars > 0 ? ` ElevenLabs: ${telemetry.ttsChars.toLocaleString()} characters, billed separately by ElevenLabs.` : '')
+            }
+          >
             {telemetry.costUsd === null ? '—' : `$${telemetry.costUsd.toFixed(3)}`}
           </dd>
         </div>

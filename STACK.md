@@ -18,6 +18,7 @@ Versions verified against official sources on 2026-11-08. Re-verify before major
 | Voice | OpenAI Realtime API (GA) over WebRTC | Sprint 3 | Default `gpt-realtime-2.1-mini`; `gpt-realtime-2.1` selectable. `gpt-realtime-mini` is **deprecated** (verified 2026-11-08) and not used. Voices: ballad (default — closest to British English), marin, cedar, alloy, ash, ballad, coral, echo, sage, shimmer, verse. User speech transcribed with `gpt-4o-mini-transcribe` (optional; session retries without it if rejected). |
 | AI reasoning | Provider interface | Phase 2 | OpenAI first; Anthropic Claude pluggable. |
 | Credentials | Electron `safeStorage` (macOS Keychain-backed) | Sprint 3 ✅ | `userData/vault.json` (mode 600), ciphertext only; main process only. |
+| Speech (TTS) | ElevenLabs REST streaming endpoint | Sprint 3 | `POST /v1/text-to-speech/{voice}/stream`, MP3 44.1 kHz, models `eleven_flash_v2_5` (default) / `eleven_v4_turbo`. Realtime session runs with `output_modalities: ['text']`; replies are chunked by sentence (`src/shared/speech.ts`) and synthesized in main; renderer plays in order with Web Audio. Voices are ElevenLabs' own (no clones of real people). Default Eldrin (6WwXjDDEMyNmFG95zycZ). |
 | Integrations | MCP + official APIs | Phase 3 | Allowlisted. |
 | Voice persona | Instructions (`src/shared/realtime.ts`) | Sprint 3 | British butler persona per OpenAI's realtime prompting guide: labelled sections, explicit RP accent rules, original sample phrases. No voice cloning; original character, not an imitation of any actor. |
 

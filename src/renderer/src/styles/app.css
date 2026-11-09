@@ -1191,3 +1191,23 @@ select {
   border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
   background: color-mix(in srgb, var(--accent) 7%, transparent);
 }
+
+.provider {
+  padding: 18px 0 8px;
+  border-top: 1px solid var(--line-soft);
+}
+.provider h3 {
+  font: 400 var(--t-sm) / 1.2 var(--font-display);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.provider .status-line {
+  margin: 10px 0 6px;
+}
+.test-voice {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}

@@ -18,6 +18,8 @@ export interface SessionOptions {
   transcription: boolean
   persona: PersonaId
   honorific: HonorificId
+  /** 'audio' = OpenAI speaks; 'text' = OpenAI replies in text and ElevenLabs speaks it. */
+  output: 'audio' | 'text'
 }
 
 const TITLE: Record<HonorificId, string | null> = { none: null, sir: 'sir', maam: "ma'am" }
@@ -57,15 +59,35 @@ const NEUTRAL = (title: string | null): string[] => [
   title ? `- Address the owner as "${title}" occasionally.` : '- Do not use titles like "sir" or "madam".',
 ]
 
-export function buildInstructions(o: Pick<SessionOptions, 'workspaceName' | 'persona' | 'honorific'>): string {
+const SPOKEN_TEXT = [
+  '# Output format',
+  '- Your replies are read aloud by a separate British text-to-speech voice.',
+  '- Write plain spoken sentences only: no markdown, lists, headings, emoji, URLs or code.',
+  '- Use British spelling and vocabulary. Write numbers the way they should be said.',
+]
+
+/** True for lines inside the "# Accent and delivery" section (heading through the blank line after it). */
+function isAccentLine(lines: string[], i: number): boolean {
+  const start = lines.indexOf('# Accent and delivery')
+  if (start < 0 || i < start) return false
+  const end = lines.indexOf('', start)
+  return i <= (end < 0 ? lines.length - 1 : end)
+}
+
+export function buildInstructions(o: Pick<SessionOptions, 'workspaceName' | 'persona' | 'honorific'> & { output?: 'audio' | 'text' }): string {
   const title = TITLE[o.honorific]
+  const persona = o.persona === 'british-butler' ? BRITISH_BUTLER(title) : NEUTRAL(title)
+  // In text mode the accent comes from the ElevenLabs voice, so pronunciation rules are dropped.
+  const personaLines =
+    o.output === 'text' ? persona.filter((_, i, all) => !isAccentLine(all, i)) : persona
   return [
     '# Role and objective',
     '- You are JARVIS, a personal assistant speaking with your owner through a desktop app.',
     `- The active workspace is "${o.workspaceName}".`,
     '',
-    ...(o.persona === 'british-butler' ? BRITISH_BUTLER(title) : NEUTRAL(title)),
+    ...personaLines,
     '',
+    ...(o.output === 'text' ? [...SPOKEN_TEXT, ''] : []),
     '# Length',
     '- One to three sentences per reply unless the owner asks for more.',
     '',
@@ -83,6 +105,15 @@ export function buildRealtimeSession(o: SessionOptions): Record<string, unknown>
     turn_detection: { type: 'server_vad', interrupt_response: true, create_response: true },
   }
   if (o.transcription) input.transcription = { model: TRANSCRIPTION_MODEL }
+  if (o.output === 'text') {
+    return {
+      type: 'realtime',
+      model: o.model,
+      output_modalities: ['text'],
+      instructions: buildInstructions(o),
+      audio: { input },
+    }
+  }
   return {
     type: 'realtime',
     model: o.model,
