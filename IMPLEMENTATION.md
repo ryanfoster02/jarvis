@@ -43,7 +43,7 @@ Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ no
 - 🟡 WebRTC session via main-process relay; live transcripts (you + Jarvis, streaming)
 - 🟡 Mute, Interrupt, End voice; MIC LIVE indicator; Stop all ends voice
 - 🟡 Core states driven by voice events; telemetry: provider, tokens, cost estimate (2.1-mini prices), latency
-- 🟡 Settings → Voice: model + voice selection
+- 🟡 Settings → Voice: model + voice selection, JARVIS preset (Ballad + British butler persona), form of address
 
 **Acceptance:** with the owner's key on macOS — key saves and shows ••••last4; mic prompt appears once; a spoken round-trip works with transcripts; talking over Jarvis interrupts; Mute stops input; Stop all ends the session and turns the mic off; bad key / offline show clear errors; key never appears in DevTools.
 

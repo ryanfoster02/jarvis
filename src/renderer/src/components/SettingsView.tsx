@@ -1,5 +1,18 @@
 import { useState, type FormEvent } from 'react'
-import { REALTIME_MODELS, VOICES, type AppInfo, type CredentialStatus, type RealtimeModelId, type Settings, type VoiceId } from '../../../shared/ipc.ts'
+import {
+  HONORIFICS,
+  JARVIS_PRESET,
+  PERSONAS,
+  REALTIME_MODELS,
+  VOICES,
+  type AppInfo,
+  type CredentialStatus,
+  type HonorificId,
+  type PersonaId,
+  type RealtimeModelId,
+  type Settings,
+  type VoiceId,
+} from '../../../shared/ipc.ts'
 import { AiCore, CORE_LABELS, CORE_STATES, type CoreState } from './AiCore.tsx'
 import { ThemeSwitcher } from './ThemeSwitcher.tsx'
 
@@ -26,6 +39,7 @@ interface Props {
 }
 
 const cap = (v: string): string => v.charAt(0).toUpperCase() + v.slice(1)
+const voiceLabel = (v: VoiceId): string => (v === 'ballad' ? 'Ballad (closest to British)' : cap(v))
 
 function ProviderSection({ creds, onCreds }: { creds: CredentialStatus; onCreds: (c: CredentialStatus) => void }): React.JSX.Element {
   const [key, setKey] = useState('')
@@ -179,6 +193,45 @@ export function SettingsView({ settings, info, creds, onCreds, onUpdate }: Props
               <span className={`dot ${creds.openai.configured ? 'dot-on' : 'dot-off'}`} />
               {creds.openai.configured ? 'Ready. Start voice from the Conversation panel.' : 'Needs an OpenAI key (AI provider).'}
             </p>
+            <div className="preset">
+              <div className="field-text">
+                <h3>JARVIS preset</h3>
+                <p>Ballad voice with the British butler personality: Received Pronunciation, measured pace, dry wit.</p>
+              </div>
+              <button
+                className="btn"
+                disabled={settings.voice === JARVIS_PRESET.voice && settings.persona === JARVIS_PRESET.persona}
+                onClick={() => onUpdate({ ...JARVIS_PRESET })}
+              >
+                {settings.voice === JARVIS_PRESET.voice && settings.persona === JARVIS_PRESET.persona ? 'Preset active' : 'Use JARVIS preset'}
+              </button>
+            </div>
+            <div className="field">
+              <div className="field-text">
+                <h3>Personality</h3>
+                <p>How Jarvis speaks. The British accent is shaped by instructions, so it's strong but can occasionally drift.</p>
+              </div>
+              <select className="select" value={settings.persona} onChange={(e) => onUpdate({ persona: e.target.value as PersonaId })}>
+                {PERSONAS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <div className="field-text">
+                <h3>Form of address</h3>
+                <p>What Jarvis calls you.</p>
+              </div>
+              <select className="select" value={settings.honorific} onChange={(e) => onUpdate({ honorific: e.target.value as HonorificId })}>
+                {HONORIFICS.map((h) => (
+                  <option key={h.id} value={h.id}>
+                    {h.name}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div className="field">
               <div className="field-text">
                 <h3>Model</h3>
@@ -199,18 +252,18 @@ export function SettingsView({ settings, info, creds, onCreds, onUpdate }: Props
             <div className="field">
               <div className="field-text">
                 <h3>Voice</h3>
-                <p>OpenAI recommends Marin and Cedar. Changes apply the next time you start voice.</p>
+                <p>OpenAI has no official British voice; Ballad sounds closest. Marin and Cedar are OpenAI's highest-quality voices.</p>
               </div>
               <select className="select" value={settings.voice} onChange={(e) => onUpdate({ voice: e.target.value as VoiceId })}>
                 {VOICES.map((v) => (
                   <option key={v} value={v}>
-                    {cap(v)}
+                    {voiceLabel(v)}
                   </option>
                 ))}
               </select>
             </div>
             <p className="fine">
-              The microphone is only on while voice is running, and the top bar shows MIC LIVE whenever it is. Stop all
+              Voice changes apply the next time you start voice. The microphone is only on while voice is running, and the top bar shows MIC LIVE whenever it is. Stop all
               ends voice immediately. Jarvis can talk but can't take actions or read your data yet.
             </p>
           </>

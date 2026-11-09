@@ -50,20 +50,41 @@ export type RealtimeModelId = (typeof REALTIME_MODELS)[number]['id']
 export const VOICES = ['marin', 'cedar', 'alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse'] as const
 export type VoiceId = (typeof VOICES)[number]
 
+/** How Jarvis speaks. The accent comes from instructions; Ballad is the closest built-in voice to British English. */
+export const PERSONAS = [
+  { id: 'british-butler', name: 'British butler (JARVIS style)' },
+  { id: 'neutral', name: 'Neutral assistant' },
+] as const
+export type PersonaId = (typeof PERSONAS)[number]['id']
+
+export const HONORIFICS = [
+  { id: 'none', name: 'No title' },
+  { id: 'sir', name: 'Sir' },
+  { id: 'maam', name: "Ma'am" },
+] as const
+export type HonorificId = (typeof HONORIFICS)[number]['id']
+
+/** One-click preset for the JARVIS feel (voice + persona; leaves form of address to the owner). */
+export const JARVIS_PRESET = { voice: 'ballad', persona: 'british-butler' } as const satisfies Partial<Settings>
+
 export interface Settings {
   theme: Theme
   reducedMotion: boolean
   activeWorkspace: WorkspaceId
   voice: VoiceId
   realtimeModel: RealtimeModelId
+  persona: PersonaId
+  honorific: HonorificId
 }
 
 export const DEFAULT_SETTINGS: Settings = Object.freeze({
   theme: 'gold',
   reducedMotion: false,
   activeWorkspace: 'personal',
-  voice: 'marin',
+  voice: 'ballad',
   realtimeModel: 'gpt-realtime-2.1-mini',
+  persona: 'british-butler',
+  honorific: 'none',
 })
 
 /** Execution limits (SECURITY.md §6). Displayed now; enforced by the agent runtime in Phase 2. */
@@ -159,6 +180,14 @@ export function isVoiceId(v: unknown): v is VoiceId {
   return typeof v === 'string' && (VOICES as readonly string[]).includes(v)
 }
 
+export function isPersonaId(v: unknown): v is PersonaId {
+  return typeof v === 'string' && PERSONAS.some((p) => p.id === v)
+}
+
+export function isHonorificId(v: unknown): v is HonorificId {
+  return typeof v === 'string' && HONORIFICS.some((h) => h.id === v)
+}
+
 export function isRealtimeModelId(v: unknown): v is RealtimeModelId {
   return typeof v === 'string' && REALTIME_MODELS.some((m) => m.id === v)
 }
@@ -189,6 +218,14 @@ export function validateSettingsPatch(input: unknown): Partial<Settings> {
         if (!isRealtimeModelId(value)) throw new IpcValidationError(`invalid realtime model: ${String(value)}`)
         out.realtimeModel = value
         break
+      case 'persona':
+        if (!isPersonaId(value)) throw new IpcValidationError(`invalid persona: ${String(value)}`)
+        out.persona = value
+        break
+      case 'honorific':
+        if (!isHonorificId(value)) throw new IpcValidationError(`invalid form of address: ${String(value)}`)
+        out.honorific = value
+        break
       default:
         throw new IpcValidationError(`unknown setting: ${key}`)
     }
@@ -205,6 +242,8 @@ export function normalizeSettings(stored: unknown): Settings {
   if (isWorkspaceId(stored.activeWorkspace)) s.activeWorkspace = stored.activeWorkspace
   if (isVoiceId(stored.voice)) s.voice = stored.voice
   if (isRealtimeModelId(stored.realtimeModel)) s.realtimeModel = stored.realtimeModel
+  if (isPersonaId(stored.persona)) s.persona = stored.persona
+  if (isHonorificId(stored.honorific)) s.honorific = stored.honorific
   return s
 }
 

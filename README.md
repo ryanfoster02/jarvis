@@ -48,7 +48,7 @@ Open `.env` and paste your key after `OPENAI_API_KEY=`. Then run `npm run dev` a
 
 ## Using the app
 - **Voice:** add your key via `.env` (above) or Settings → AI provider → *Verify and save*. Then on the dashboard press **Start voice** and allow the microphone. Talk naturally; talk over Jarvis to interrupt, or press **Interrupt**. **Mute** turns the mic off; **End voice** closes the session. While voice is on you can also type, and Jarvis answers by voice.
-- **Model & voice:** Settings → Voice (default GPT Realtime 2.1 mini, voice Marin).
+- **Model & voice:** Settings → Voice. Default: GPT Realtime 2.1 mini, voice **Ballad**, **British butler** personality. Press **Use JARVIS preset** to switch an existing install. OpenAI has no official British voice: Ballad is the closest built-in voice, and the Received Pronunciation accent, pace and dry wit come from the personality instructions (strong, but can occasionally drift). Choose *Form of address* (none / Sir / Ma'am).
 - **Privacy:** the mic is only on during a voice session; the top bar shows **MIC LIVE**. In development macOS lists the app as "Electron" under Privacy & Security → Microphone.
 - **Stop all** (top bar, or ⌘⇧.) ends voice and halts everything until you press **Re-arm**.
 - **Theme:** the THEME chip cycles Gold / Cyan / Azure. **Workspace** selector is in the top bar.

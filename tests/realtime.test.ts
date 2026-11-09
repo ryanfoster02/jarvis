@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   buildRealtimeSession,
+  buildInstructions,
   describeOpenAIError,
   estimateCostUsd,
   isOneOf,
@@ -18,10 +19,11 @@ import {
   validateSdpOffer,
   validateSettingsPatch,
   keyLast4,
+  JARVIS_PRESET,
 } from '../src/shared/ipc.ts'
 
 test('session: GA shape with voice, model, instructions, optional transcription', () => {
-  const s = buildRealtimeSession({ model: 'gpt-realtime-2.1-mini', voice: 'cedar', workspaceName: 'Research', transcription: true })
+  const s = buildRealtimeSession({ model: 'gpt-realtime-2.1-mini', voice: 'cedar', workspaceName: 'Research', transcription: true, persona: 'neutral', honorific: 'none' })
   assert.equal(s.type, 'realtime')
   assert.equal(s.model, 'gpt-realtime-2.1-mini')
   const audio = s.audio as { input: Record<string, unknown>; output: Record<string, unknown> }
@@ -32,7 +34,7 @@ test('session: GA shape with voice, model, instructions, optional transcription'
   assert.match(String(s.instructions), /Never pretend/)
   assert.equal('format' in audio.output, false, 'WebRTC negotiates format; none set')
 
-  const noTx = buildRealtimeSession({ model: 'gpt-realtime-2.1', voice: 'marin', workspaceName: 'Personal', transcription: false })
+  const noTx = buildRealtimeSession({ model: 'gpt-realtime-2.1', voice: 'marin', workspaceName: 'Personal', transcription: false, persona: 'neutral', honorific: 'none' })
   assert.equal('transcription' in (noTx.audio as { input: object }).input, false)
 })
 
@@ -100,10 +102,43 @@ test('SDP offer validation', () => {
 
 test('voice settings: validated and normalized', () => {
   assert.equal(DEFAULT_SETTINGS.realtimeModel, 'gpt-realtime-2.1-mini')
+  assert.equal(DEFAULT_SETTINGS.voice, 'ballad')
+  assert.equal(DEFAULT_SETTINGS.persona, 'british-butler')
+  assert.deepEqual(validateSettingsPatch({ persona: 'neutral', honorific: 'maam' }), { persona: 'neutral', honorific: 'maam' })
+  assert.throws(() => validateSettingsPatch({ persona: 'tony-stark' }), /invalid persona/)
+  assert.throws(() => validateSettingsPatch({ honorific: 'lord' }), /invalid form of address/)
+  assert.equal(normalizeSettings({ honorific: 'sir' }).honorific, 'sir')
   assert.deepEqual(validateSettingsPatch({ voice: 'cedar' }), { voice: 'cedar' })
   assert.deepEqual(validateSettingsPatch({ realtimeModel: 'gpt-realtime-2.1' }), { realtimeModel: 'gpt-realtime-2.1' })
   assert.throws(() => validateSettingsPatch({ voice: 'nova' }), /invalid voice/)
   assert.throws(() => validateSettingsPatch({ realtimeModel: 'gpt-realtime-mini' }), /invalid realtime model/)
   assert.equal(normalizeSettings({ realtimeModel: 'gpt-realtime-mini' }).realtimeModel, 'gpt-realtime-2.1-mini')
   assert.equal(normalizeSettings({ voice: 'echo' }).voice, 'echo')
+})
+
+test('british butler persona: accent rules, sample phrases, honorific handling, limits kept', () => {
+  const sir = buildInstructions({ workspaceName: 'Personal', persona: 'british-butler', honorific: 'sir' })
+  assert.match(sir, /Received Pronunciation/)
+  assert.match(sir, /Non-rhotic/)
+  assert.match(sir, /# Sample phrases/)
+  assert.match(sir, /Certainly, sir\. One moment\./)
+  assert.match(sir, /Address the owner as "sir"/)
+  assert.match(sir, /Never pretend to have done something/)
+  assert.match(sir, /do not claim to be a character from a film/)
+
+  const none = buildInstructions({ workspaceName: 'Personal', persona: 'british-butler', honorific: 'none' })
+  assert.match(none, /Do not use "sir"/)
+  assert.doesNotMatch(none, /Certainly, sir/)
+  assert.match(none, /"Certainly\. One moment\."/)
+
+  const maam = buildInstructions({ workspaceName: 'X', persona: 'british-butler', honorific: 'maam' })
+  assert.match(maam, /Good morning, ma'am\./)
+
+  const neutral = buildInstructions({ workspaceName: 'X', persona: 'neutral', honorific: 'none' })
+  assert.doesNotMatch(neutral, /Received Pronunciation/)
+  assert.match(neutral, /Never pretend/)
+})
+
+test('JARVIS preset selects Ballad + British butler and validates as a settings patch', () => {
+  assert.deepEqual(validateSettingsPatch({ ...JARVIS_PRESET }), { voice: 'ballad', persona: 'british-butler' })
 })

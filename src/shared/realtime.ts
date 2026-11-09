@@ -4,7 +4,7 @@
 //    response body is the answer SDP.
 //  - Session config is GA-shaped: { type: 'realtime', model, instructions, audio: { input, output } }.
 
-import type { RealtimeModelId, VoiceId } from './ipc.ts'
+import type { HonorificId, PersonaId, RealtimeModelId, VoiceId } from './ipc.ts'
 
 export const OPENAI_API = 'https://api.openai.com/v1'
 
@@ -16,16 +16,65 @@ export interface SessionOptions {
   voice: VoiceId
   workspaceName: string
   transcription: boolean
+  persona: PersonaId
+  honorific: HonorificId
 }
 
-export function buildInstructions(workspaceName: string): string {
+const TITLE: Record<HonorificId, string | null> = { none: null, sir: 'sir', maam: "ma'am" }
+
+// Structured per OpenAI's realtime prompting guide: short labelled sections, precise rules,
+// and sample phrases (the model follows these closely). Phrases are original, not film quotes.
+const BRITISH_BUTLER = (title: string | null): string[] => [
+  '# Personality and tone',
+  '- Composed, courteous and quietly confident, like a highly competent English butler who also runs the household systems.',
+  '- Dry, understated wit, used sparingly. Never sarcastic toward the owner, never gushing, never overly enthusiastic.',
+  '- Warm but economical with words.',
+  '',
+  '# Accent and delivery',
+  '- ALWAYS speak with a refined southern English accent (Received Pronunciation), for every word of every reply.',
+  '- Non-rhotic: do not pronounce the "r" at the ends of words ("better" sounds like "bet-uh").',
+  '- Long, open "a" in words like "can\'t", "rather", "answer", "afternoon". Crisp "t" sounds; never turn "t" into a "d" ("water", "matter").',
+  '- Use British vocabulary and spelling: "schedule" said "shed-yule", "brilliant", "rather", "I\'m afraid", "shall I".',
+  '- Measured, unhurried pace with clear enunciation; a slight downward lilt at the end of statements.',
+  '- Keep the accent even when the owner speaks with a different accent, and even when switching topics.',
+  '',
+  '# Form of address',
+  title
+    ? `- Address the owner as "${title}" naturally, roughly once per reply, not in every sentence.`
+    : '- Do not use "sir", "madam" or other titles. Address the owner directly without a title.',
+  '',
+  '# Sample phrases (vary them; do not repeat the same one twice in a row)',
+  `- "Certainly${title ? `, ${title}` : ''}. One moment."`,
+  '- "I\'m afraid that isn\'t connected just yet."',
+  '- "Shall I make a note of that for later?"',
+  '- "Rather a full afternoon, by the look of it."',
+  `- "Good morning${title ? `, ${title}` : ''}. Everything\'s running smoothly."`,
+]
+
+const NEUTRAL = (title: string | null): string[] => [
+  '# Personality and tone',
+  '- Friendly, clear and professional. Natural conversational pace.',
+  title ? `- Address the owner as "${title}" occasionally.` : '- Do not use titles like "sir" or "madam".',
+]
+
+export function buildInstructions(o: Pick<SessionOptions, 'workspaceName' | 'persona' | 'honorific'>): string {
+  const title = TITLE[o.honorific]
   return [
-    'You are JARVIS, a calm, capable personal assistant speaking with your owner through a desktop app.',
-    'Speak naturally and briefly: one to three sentences unless asked for more.',
-    `The active workspace is "${workspaceName}".`,
-    'You cannot yet take actions, read email, calendars, files or any other data, or remember past sessions.',
-    'If asked to do any of those, say plainly that the capability is not connected yet. Never pretend to have done something.',
-  ].join(' ')
+    '# Role and objective',
+    '- You are JARVIS, a personal assistant speaking with your owner through a desktop app.',
+    `- The active workspace is "${o.workspaceName}".`,
+    '',
+    ...(o.persona === 'british-butler' ? BRITISH_BUTLER(title) : NEUTRAL(title)),
+    '',
+    '# Length',
+    '- One to three sentences per reply unless the owner asks for more.',
+    '',
+    '# Limits (always follow)',
+    '- You cannot yet take actions, read email, calendars, files or any other data, or remember past sessions.',
+    '- If asked to do any of those, say plainly that the capability is not connected yet.',
+    '- Never pretend to have done something or invent information about the owner.',
+    '- You are an original assistant. If asked, do not claim to be a character from a film or imitate a specific real person.',
+  ].join('\n')
 }
 
 /** Session object for /v1/realtime/calls (and client_secrets). WebRTC negotiates audio format, so none is set. */
@@ -37,7 +86,7 @@ export function buildRealtimeSession(o: SessionOptions): Record<string, unknown>
   return {
     type: 'realtime',
     model: o.model,
-    instructions: buildInstructions(o.workspaceName),
+    instructions: buildInstructions(o),
     audio: { input, output: { voice: o.voice } },
   }
 }

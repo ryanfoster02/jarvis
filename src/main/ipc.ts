@@ -157,7 +157,13 @@ export function registerIpc(trusted: TrustedOrigins): void {
       }
       const settings = loadSettings()
       const workspaceName = WORKSPACES.find((w) => w.id === settings.activeWorkspace)?.name ?? 'Personal'
-      const base = { model: settings.realtimeModel, voice: settings.voice, workspaceName }
+      const base = {
+        model: settings.realtimeModel,
+        voice: settings.voice,
+        workspaceName,
+        persona: settings.persona,
+        honorific: settings.honorific,
+      }
 
       let transcription = true
       let res = await createRealtimeCall(key, sdp, buildRealtimeSession({ ...base, transcription }))
