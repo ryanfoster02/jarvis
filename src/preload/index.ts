@@ -6,6 +6,9 @@ import {
   type ChatResult,
   type ConversationSummary,
   type HistoryResult,
+  type Memory,
+  type MemoryExportResult,
+  type MemoryScope,
   type NewMessage,
   type StoredMessage,
   type CredentialResult,
@@ -49,6 +52,14 @@ const api = {
     append: (conversationId: string | null, message: NewMessage): Promise<HistoryResult<StoredMessage>> =>
       ipcRenderer.invoke(Channels.conversationsAppend, conversationId, message),
     delete: (id: string): Promise<HistoryResult<boolean>> => ipcRenderer.invoke(Channels.conversationsDelete, id),
+  },
+  memory: {
+    list: (): Promise<HistoryResult<Memory[]>> => ipcRenderer.invoke(Channels.memoryList),
+    add: (input: { scope: MemoryScope; text: string }, fromConversation = false): Promise<HistoryResult<Memory>> =>
+      ipcRenderer.invoke(Channels.memoryAdd, input, fromConversation),
+    update: (id: string, text: string): Promise<HistoryResult<Memory>> => ipcRenderer.invoke(Channels.memoryUpdate, id, text),
+    delete: (id: string): Promise<HistoryResult<boolean>> => ipcRenderer.invoke(Channels.memoryDelete, id),
+    export: (): Promise<MemoryExportResult> => ipcRenderer.invoke(Channels.memoryExport),
   },
   // Keys go in, never come out: only status (configured, last 4 characters, verified time) is readable.
   credentials: {

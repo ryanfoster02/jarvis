@@ -37,6 +37,8 @@ export interface HistoryControls {
 interface Props {
   entries: Entry[]
   history: HistoryControls
+  /** Save a message as a workspace memory; resolves to an error message or null. */
+  onRemember: (text: string) => Promise<string | null>
   busy: boolean
   disabled: boolean
   workspaceName: string
@@ -106,7 +108,30 @@ function HistoryBar({ h, disabled }: { h: HistoryControls; disabled: boolean }):
   )
 }
 
-export function ConversationPanel({ entries, history, busy, disabled, workspaceName, voice, onSend, onOpenSettings }: Props): React.JSX.Element {
+function RememberButton({ text, onRemember }: { text: string; onRemember: Props['onRemember'] }): React.JSX.Element {
+  const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [err, setErr] = useState<string | null>(null)
+  return (
+    <span className="remember">
+      <button
+        className="link-btn"
+        disabled={state === 'saving' || state === 'saved'}
+        onClick={async () => {
+          setState('saving')
+          const e = await onRemember(text)
+          setErr(e)
+          setState(e ? 'error' : 'saved')
+        }}
+        title="Save this as a fact Jarvis knows in this workspace"
+      >
+        {state === 'saved' ? 'Remembered' : state === 'saving' ? 'Saving…' : 'Remember'}
+      </button>
+      {err && <span className="remember-err">{err}</span>}
+    </span>
+  )
+}
+
+export function ConversationPanel({ entries, history, onRemember, busy, disabled, workspaceName, voice, onSend, onOpenSettings }: Props): React.JSX.Element {
   const [draft, setDraft] = useState('')
   const listRef = useRef<HTMLOListElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -197,6 +222,7 @@ export function ConversationPanel({ entries, history, busy, disabled, workspaceN
               {m.via === 'voice' && <span className="msg-via">voice</span>}
             </div>
             <p>{m.text}</p>
+            {m.role === 'user' && !m.streaming && <RememberButton text={m.text} onRemember={onRemember} />}
           </li>
         ))}
         {busy && (

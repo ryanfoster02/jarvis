@@ -37,4 +37,18 @@ export const messages = sqliteTable(
   (t) => [index('messages_conversation_created').on(t.conversationId, t.createdAt)],
 )
 
-export const schema = { workspaces, conversations, messages }
+export const memories = sqliteTable(
+  'memories',
+  {
+    id: text('id').primaryKey(),
+    scope: text('scope', { enum: ['global', 'workspace'] }).notNull(),
+    workspaceId: text('workspace_id').references(() => workspaces.id),
+    text: text('text').notNull(),
+    source: text('source', { enum: ['user', 'conversation'] }).notNull(),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (t) => [index('memories_scope_ws_updated').on(t.scope, t.workspaceId, t.updatedAt)],
+)
+
+export const schema = { workspaces, conversations, messages, memories }

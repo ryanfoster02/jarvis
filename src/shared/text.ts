@@ -12,13 +12,20 @@ export interface TextRequestOptions {
   honorific: HonorificId
   history: ChatTurn[]
   message: string
+  memories?: { global: string[]; workspace: string[] }
 }
 
 export function buildTextRequest(o: TextRequestOptions): Record<string, unknown> {
   const body: Record<string, unknown> = {
     model: o.model,
     // Same persona and limits as voice; replies are short plain sentences that also read well aloud.
-    instructions: buildInstructions({ workspaceName: o.workspaceName, persona: o.persona, honorific: o.honorific, output: 'text' }),
+    instructions: buildInstructions({
+      workspaceName: o.workspaceName,
+      persona: o.persona,
+      honorific: o.honorific,
+      output: 'text',
+      memories: o.memories,
+    }),
     input: [...o.history.map((t) => ({ role: t.role, content: t.text })), { role: 'user', content: o.message }],
     max_output_tokens: 1200,
     store: false, // don't keep conversations on OpenAI's side

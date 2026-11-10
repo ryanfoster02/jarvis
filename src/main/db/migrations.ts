@@ -29,6 +29,20 @@ export const MIGRATIONS: readonly string[] = [
   );
   CREATE INDEX messages_conversation_created ON messages(conversation_id, created_at);
   `,
+  // 2 — memories (Sprint 6): global facts, or facts scoped to one workspace
+  `
+  CREATE TABLE memories (
+    id            TEXT PRIMARY KEY,
+    scope         TEXT NOT NULL CHECK (scope IN ('global', 'workspace')),
+    workspace_id  TEXT REFERENCES workspaces(id),
+    text          TEXT NOT NULL,
+    source        TEXT NOT NULL CHECK (source IN ('user', 'conversation')),
+    created_at    INTEGER NOT NULL,
+    updated_at    INTEGER NOT NULL,
+    CHECK ((scope = 'global' AND workspace_id IS NULL) OR (scope = 'workspace' AND workspace_id IS NOT NULL))
+  );
+  CREATE INDEX memories_scope_ws_updated ON memories(scope, workspace_id, updated_at);
+  `,
 ]
 
 export function schemaVersion(db: DatabaseSync): number {

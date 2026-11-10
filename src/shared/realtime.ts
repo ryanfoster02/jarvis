@@ -5,6 +5,7 @@
 //  - Session config is GA-shaped: { type: 'realtime', model, instructions, audio: { input, output } }.
 
 import type { HonorificId, PersonaId, RealtimeModelId, VoiceId } from './ipc.ts'
+import { formatMemorySection } from './memory.ts'
 
 export const OPENAI_API = 'https://api.openai.com/v1'
 
@@ -20,6 +21,8 @@ export interface SessionOptions {
   honorific: HonorificId
   /** 'audio' = OpenAI speaks; 'text' = OpenAI replies in text and ElevenLabs speaks it. */
   output: 'audio' | 'text'
+  /** Saved facts for this workspace and globally (Sprint 6). */
+  memories?: { global: string[]; workspace: string[] }
 }
 
 const TITLE: Record<HonorificId, string | null> = { none: null, sir: 'sir', maam: "ma'am" }
@@ -74,7 +77,13 @@ function isAccentLine(lines: string[], i: number): boolean {
   return i <= (end < 0 ? lines.length - 1 : end)
 }
 
-export function buildInstructions(o: Pick<SessionOptions, 'workspaceName' | 'persona' | 'honorific'> & { output?: 'audio' | 'text' }): string {
+export function buildInstructions(
+  o: Pick<SessionOptions, 'workspaceName' | 'persona' | 'honorific'> & {
+    output?: 'audio' | 'text'
+    memories?: SessionOptions['memories']
+  },
+): string {
+  const memory = o.memories ? formatMemorySection(o.memories, o.workspaceName) : []
   const title = TITLE[o.honorific]
   const persona = o.persona === 'british-butler' ? BRITISH_BUTLER(title) : NEUTRAL(title)
   // In text mode the accent comes from the ElevenLabs voice, so pronunciation rules are dropped.
@@ -88,11 +97,13 @@ export function buildInstructions(o: Pick<SessionOptions, 'workspaceName' | 'per
     ...personaLines,
     '',
     ...(o.output === 'text' ? [...SPOKEN_TEXT, ''] : []),
+    ...(memory.length ? [...memory, ''] : []),
     '# Length',
     '- One to three sentences per reply unless the owner asks for more.',
     '',
     '# Limits (always follow)',
-    '- You cannot yet take actions, read email, calendars, files or any other data, or remember past sessions.',
+    '- You cannot yet take actions or read email, calendars, files or any other data.',
+    "- You can't save new memories yourself yet. If the owner asks you to remember something, tell them to type /remember followed by the fact, or use the Remember button or the Memory screen.",
     '- If asked to do any of those, say plainly that the capability is not connected yet.',
     '- Never pretend to have done something or invent information about the owner.',
     '- You are an original assistant. If asked, do not claim to be a character from a film or imitate a specific real person.',

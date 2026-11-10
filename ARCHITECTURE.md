@@ -53,7 +53,9 @@ sessions/      session reports (YYYY-MM-DD_HH-mm.md)
 ## Data (Phase 2)
 `userData/jarvis.db` opened in main at startup (`src/main/db/client.ts`): `node:sqlite` → executor → Drizzle sqlite-proxy. WAL, foreign keys on, migrations by `PRAGMA user_version` (atomic; refuses a newer schema). If it can't open, Jarvis runs without history and the UI says so.
 
-Tables (Sprint 5): `workspaces` (seeded), `conversations` (workspace_id, title, timestamps), `messages` (role user|assistant, via text|voice, cascade delete). Planned: memories (global | workspace), integrations, permissions, mandates, tasks, execution_log.
+Tables (Sprint 5): `workspaces` (seeded), `conversations` (workspace_id, title, timestamps), `messages` (role user|assistant, via text|voice, cascade delete). `memories` (Sprint 6: scope global|workspace, CHECK-enforced pairing, source user|conversation; store `src/main/db/memories.ts` with the same isolation rule). Planned: integrations, permissions, mandates, tasks, execution_log.
+
+**Memory in prompts:** main loads global + active-workspace memories and `formatMemorySection` adds them to the instructions (typed and voice) under a heading that labels them as owner-saved information, never instructions; quotes neutralised, capped at 6 000 chars, placed before the Limits section.
 
 **Workspace isolation is enforced in the repository layer** (`src/main/db/conversations.ts`): every function takes the workspace and scopes every query to it; a conversation from another workspace behaves as not found. Main supplies the active workspace from its own settings; the renderer never passes a workspace id. Typed replies load history from the database, not from the renderer. No credentials in these tables.
 

@@ -17,6 +17,8 @@ import { AiCore, type CoreState } from './components/AiCore.tsx'
 import { ConversationPanel, type Entry } from './components/ConversationPanel.tsx'
 import { OpsColumn } from './components/OpsColumn.tsx'
 import { SettingsView } from './components/SettingsView.tsx'
+import { MemoryView } from './components/MemoryView.tsx'
+import { parseRememberCommand } from '../../shared/memory.ts'
 import { StateLegend } from './components/StateLegend.tsx'
 import { StatusTerminal, type Telemetry } from './components/StatusTerminal.tsx'
 import { TopBar, type View } from './components/TopBar.tsx'
@@ -78,6 +80,15 @@ export function App(): React.JSX.Element {
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
   const [conversationId, setConversationIdState] = useState<string | null>(null)
   const [historyError, setHistoryError] = useState<string | null>(null)
+  const [memoryVersion, setMemoryVersion] = useState(0)
+
+  /** Save a fact for this workspace. Returns an error message, or null when saved. */
+  const remember = useCallback(async (text: string, fromConversation: boolean): Promise<string | null> => {
+    const r = await window.jarvis.memory.add({ scope: 'workspace', text }, fromConversation)
+    if (!r.ok) return r.message
+    setMemoryVersion((v) => v + 1)
+    return null
+  }, [])
   const convIdRef = useRef<string | null>(null)
   const saveChain = useRef<Promise<void>>(Promise.resolve()) // keeps saves in order
   const setConversationId = (id: string | null): void => {
@@ -271,6 +282,17 @@ export function App(): React.JSX.Element {
 
   const onSend = useCallback(
     async (text: string) => {
+      // "/remember <fact>" saves to this workspace's memory; it isn't sent to the model.
+      const fact = parseRememberCommand(text)
+      if (fact !== null || /^\/remember\s*$/i.test(text.trim())) {
+        if (!fact) {
+          push('system', 'Type /remember followed by the fact, e.g. /remember Acme renews in March.', 'text')
+          return
+        }
+        const err = await remember(fact, false)
+        push('system', err ?? `Remembered for this workspace: “${fact}”`, 'text')
+        return
+      }
       if (voice.phase === 'live') {
         push('user', text, 'text')
         if (voice.sendText(text)) persist({ role: 'user', text, via: 'text' })
@@ -309,7 +331,7 @@ export function App(): React.JSX.Element {
         setBusy(false)
       }
     },
-    [voice, push, persist, refreshList, settings, creds],
+    [voice, push, persist, refreshList, remember, settings, creds],
   )
 
   const halted = !!bridgeError || !!kill?.engaged
@@ -374,6 +396,7 @@ export function App(): React.JSX.Element {
 
             <ConversationPanel
               entries={entries}
+              onRemember={(text) => remember(text, true)}
               history={{
                 conversations,
                 currentId: conversationId,
@@ -401,6 +424,8 @@ export function App(): React.JSX.Element {
               }}
             />
           </div>
+        ) : view === 'memory' ? (
+          <MemoryView workspaceName={workspace.name} refreshKey={memoryVersion} />
         ) : settings && creds ? (
           <SettingsView
             settings={settings}

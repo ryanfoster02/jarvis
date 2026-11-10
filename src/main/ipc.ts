@@ -1,4 +1,4 @@
-import { app, ipcMain, systemPreferences, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, systemPreferences, type IpcMainInvokeEvent } from 'electron'
 import {
   Channels,
   IpcValidationError,
@@ -8,6 +8,7 @@ import {
   validateConversationId,
   validateNewMessage,
   validateOptionalConversationId,
+  validateConversationId as validateMemoryId,
   validateProviderKey,
   validateReason,
   validateSdpOffer,
@@ -19,6 +20,8 @@ import {
   type ChatTurn,
   type ConversationSummary,
   type HistoryResult,
+  type Memory,
+  type MemoryExportResult,
   type StoredMessage,
   type CredentialResult,
   type MicAccess,
@@ -35,6 +38,9 @@ import { clearKey, credentialStatus, encryptionAvailable, getKey, saveKey } from
 import { loadSettings, updateSettings } from './settings.ts'
 import type { Database } from './db/client.ts'
 import { appendMessage, deleteConversation, getMessages, listConversations, NotFoundError, recentTurns } from './db/conversations.ts'
+import { addMemory, allMemories, deleteMemory, listMemories, MemoryLimitError, MemoryNotFoundError, memoriesForPrompt, updateMemory } from './db/memories.ts'
+import { validateMemoryInput, validateMemoryText } from '../shared/memory.ts'
+import { writeFile } from 'node:fs/promises'
 import { engage, getKillSwitch, isHalted, rearm } from './killswitch.ts'
 
 /**
@@ -148,6 +154,7 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
       }
 
       const workspaceName = WORKSPACES.find((w) => w.id === ws)?.name ?? 'Personal'
+      const memories = db ? await memoriesForPrompt(db, ws) : undefined
       const body = buildTextRequest({
         model: settings.textModel,
         workspaceName,
@@ -155,6 +162,7 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
         honorific: settings.honorific,
         history: turns,
         message: text,
+        memories,
       })
       const res = await createTextResponse(key, body)
       if (isHalted()) return { ok: false, code: 'halted', message: 'Stop all was engaged while Jarvis was replying.' }
@@ -224,6 +232,100 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
         if (err instanceof IpcValidationError) return { ok: false, code: 'invalid_input', message: err.message }
         throw err
       }
+    }),
+  )
+
+  // ---------- Memory (global + active workspace; credentials refused) ----------
+
+  const memoryError = (err: unknown): { ok: false; code: 'invalid_input' | 'not_found'; message: string } => {
+    if (err instanceof IpcValidationError || err instanceof MemoryLimitError) return { ok: false, code: 'invalid_input', message: err.message }
+    if (err instanceof MemoryNotFoundError) return { ok: false, code: 'not_found', message: err.message }
+    throw err
+  }
+
+  ipcMain.handle(
+    Channels.memoryList,
+    guard(async (): Promise<HistoryResult<Memory[]>> => {
+      const db = history.database?.db
+      if (!db) return unavailable()
+      return { ok: true, value: await listMemories(db, activeWorkspace()) }
+    }),
+  )
+
+  ipcMain.handle(
+    Channels.memoryAdd,
+    guard(async (input: unknown, fromConversation: unknown): Promise<HistoryResult<Memory>> => {
+      const db = history.database?.db
+      if (!db) return unavailable()
+      try {
+        const m = validateMemoryInput(input)
+        const source = fromConversation === true ? 'conversation' : 'user'
+        return { ok: true, value: await addMemory(db, activeWorkspace(), { ...m, source }) }
+      } catch (err) {
+        return memoryError(err)
+      }
+    }),
+  )
+
+  ipcMain.handle(
+    Channels.memoryUpdate,
+    guard(async (id: unknown, text: unknown): Promise<HistoryResult<Memory>> => {
+      const db = history.database?.db
+      if (!db) return unavailable()
+      try {
+        return { ok: true, value: await updateMemory(db, activeWorkspace(), validateMemoryId(id), validateMemoryText(text)) }
+      } catch (err) {
+        return memoryError(err)
+      }
+    }),
+  )
+
+  ipcMain.handle(
+    Channels.memoryDelete,
+    guard(async (id: unknown): Promise<HistoryResult<boolean>> => {
+      const db = history.database?.db
+      if (!db) return unavailable()
+      try {
+        return { ok: true, value: await deleteMemory(db, activeWorkspace(), validateMemoryId(id)) }
+      } catch (err) {
+        return memoryError(err)
+      }
+    }),
+  )
+
+  // Export writes only to a file the owner picks in the macOS save dialog.
+  ipcMain.handle(
+    Channels.memoryExport,
+    guard(async (): Promise<MemoryExportResult> => {
+      const db = history.database?.db
+      if (!db) return { ok: false, cancelled: false, message: unavailable().message }
+      const all = await allMemories(db)
+      const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+      const stamp = new Date().toISOString().slice(0, 10)
+      const options = {
+        title: 'Export JARVIS memories',
+        defaultPath: `jarvis-memories-${stamp}.json`,
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+      }
+      const choice = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
+      if (choice.canceled || !choice.filePath) return { ok: false, cancelled: true, message: 'Export cancelled.' }
+      const names = Object.fromEntries(WORKSPACES.map((w) => [w.id, w.name]))
+      const payload = {
+        app: 'JARVIS',
+        kind: 'memories',
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        memories: all.map((m) => ({
+          scope: m.scope,
+          workspace: m.workspaceId ? (names[m.workspaceId] ?? m.workspaceId) : null,
+          text: m.text,
+          source: m.source,
+          createdAt: new Date(m.createdAt).toISOString(),
+          updatedAt: new Date(m.updatedAt).toISOString(),
+        })),
+      }
+      await writeFile(choice.filePath, JSON.stringify(payload, null, 2), { encoding: 'utf8', mode: 0o600 })
+      return { ok: true, path: choice.filePath, count: all.length }
     }),
   )
 
@@ -334,6 +436,7 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
         persona: settings.persona,
         honorific: settings.honorific,
         output: eleven ? ('text' as const) : ('audio' as const),
+        memories: history.database ? await memoriesForPrompt(history.database.db, settings.activeWorkspace) : undefined,
       }
 
       let transcription = true

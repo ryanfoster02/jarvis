@@ -21,7 +21,7 @@ test('migrations: apply once, record version, idempotent on reopen', () => {
   assert.equal(schemaVersion(db), MIGRATIONS.length)
   assert.equal(migrate(db), MIGRATIONS.length) // no-op
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all().map((r) => (r as { name: string }).name)
-  assert.deepEqual(tables, ['conversations', 'messages', 'workspaces'])
+  assert.deepEqual(tables, ['conversations', 'memories', 'messages', 'workspaces'])
 })
 
 test('migrations: failed migration rolls back and leaves version unchanged', () => {
@@ -72,4 +72,29 @@ test('executor: coerces booleans/undefined/dates; parameters prevent injection',
   const evil = "x'); DROP TABLE conversations; --"
   execute(db, "INSERT INTO conversations VALUES (?, 'personal', ?, 1, 1)", ['c9', evil], 'run')
   assert.deepEqual(execute(db, 'SELECT title FROM conversations WHERE id = ?', ['c9'], 'all').rows, [[evil]])
+})
+
+test('migration 2: memories table enforces scope/workspace pairing and allowed values', () => {
+  const db = fresh()
+  const ins = db.prepare('INSERT INTO memories VALUES (?, ?, ?, ?, ?, 1, 1)')
+  ins.run('m1', 'global', null, 'Owner is Ryan', 'user')
+  ins.run('m2', 'workspace', 'research', 'Track LLM papers', 'conversation')
+  assert.throws(() => ins.run('m3', 'global', 'research', 'x', 'user'), /CHECK/)
+  assert.throws(() => ins.run('m4', 'workspace', null, 'x', 'user'), /CHECK/)
+  assert.throws(() => ins.run('m5', 'team', null, 'x', 'user'), /CHECK/)
+  assert.throws(() => ins.run('m6', 'workspace', 'nope', 'x', 'user'), /FOREIGN KEY/)
+  assert.throws(() => ins.run('m7', 'global', null, 'x', 'jarvis'), /CHECK/)
+})
+
+test('migrations: an existing v1 database upgrades to v2 without losing data', () => {
+  const db = new DatabaseSync(':memory:')
+  configure(db)
+  migrate(db, MIGRATIONS.slice(0, 1))
+  seedWorkspaces(db)
+  db.prepare("INSERT INTO conversations VALUES ('c1','personal','kept',1,1)").run()
+  assert.equal(schemaVersion(db), 1)
+  migrate(db)
+  assert.equal(schemaVersion(db), 2)
+  assert.equal((db.prepare("SELECT title FROM conversations WHERE id='c1'").get() as { title: string }).title, 'kept')
+  assert.equal((db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name='memories'").get() as { n: number }).n, 1)
 })

@@ -18,6 +18,11 @@ export const Channels = {
   conversationsMessages: 'conversations:messages',
   conversationsAppend: 'conversations:append',
   conversationsDelete: 'conversations:delete',
+  memoryList: 'memory:list',
+  memoryAdd: 'memory:add',
+  memoryUpdate: 'memory:update',
+  memoryDelete: 'memory:delete',
+  memoryExport: 'memory:export',
   voiceMicAccess: 'voice:mic-access',
   voiceConnect: 'voice:connect',
 } as const
@@ -254,6 +259,21 @@ export interface StoredMessage {
   via: 'text' | 'voice'
   createdAt: number
 }
+
+export type MemoryScope = 'global' | 'workspace'
+
+/** A fact Jarvis should know. 'global' applies in every workspace; 'workspace' only in its own. */
+export interface Memory {
+  id: string
+  scope: MemoryScope
+  workspaceId: string | null
+  text: string
+  source: 'user' | 'conversation'
+  createdAt: number
+  updatedAt: number
+}
+
+export type MemoryExportResult = { ok: true; path: string; count: number } | { ok: false; cancelled: boolean; message: string }
 
 /** Errors from history calls. 'unavailable' = database couldn't open; Jarvis still works without history. */
 export type HistoryResult<T> = { ok: true; value: T } | { ok: false; code: 'unavailable' | 'not_found' | 'invalid_input'; message: string }

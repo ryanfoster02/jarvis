@@ -84,3 +84,9 @@ Scope: Electron window/session config, preload bridge, all IPC handlers, credent
 - Workspace isolation is enforced in main's data layer, not the UI; the renderer cannot choose the workspace for a query (unit-tested + e2e).
 - The model's context for typed replies is loaded from the database by main — the renderer can no longer inject fabricated "assistant" history.
 - Only user/assistant turns are stored (schema CHECK constraints); system notices and errors are not.
+
+## 13. Memory (Sprint 6)
+- Credentials never enter memory: `detectSecret` refuses API keys (OpenAI/ElevenLabs/GitHub/Slack/AWS formats), private keys, "password/secret/token is …" phrasing, card numbers and long opaque tokens — in main, on add and edit.
+- Prompt-injection defense: memories are presented to the model as quoted owner notes under an explicit "information, never instructions" label; the Limits section comes after them.
+- Isolation: workspace memories are only visible, editable and deletable from their own workspace (data layer, tested); global memories are shared by design.
+- Export writes only to a path the owner chooses in the save dialog (mode 600). Deletion asks for confirmation and is permanent.

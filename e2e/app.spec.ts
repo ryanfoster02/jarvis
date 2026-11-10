@@ -49,7 +49,7 @@ test('renderer is isolated: no Node globals, only the narrow jarvis bridge', asy
   expect(globals.require).toBe('undefined')
   expect(globals.process).toBe('undefined')
   expect(globals.module).toBe('undefined')
-  expect(globals.bridge).toEqual(['app', 'chat', 'conversations', 'credentials', 'killSwitch', 'settings', 'tts', 'voice'])
+  expect(globals.bridge).toEqual(['app', 'chat', 'conversations', 'credentials', 'killSwitch', 'memory', 'settings', 'tts', 'voice'])
 
   // getLastWebPreferences() exists at runtime but is missing from Electron's TypeScript definitions,
   // so it's reached through a narrow cast. If Electron ever removes it, this test fails loudly.
@@ -165,5 +165,57 @@ test('conversations persist across restarts, stay in their workspace, and delete
 
   ;({ app, page } = await launch(profile))
   await expect(page.getByRole('combobox', { name: 'Conversation' }).locator('option')).toHaveCount(1)
+  await app.close()
+})
+
+test('memory: add, scope to workspace, refuse secrets, edit, delete, /remember', async () => {
+  test.setTimeout(90_000)
+  let { app, page } = await launch(profile)
+  await page.getByRole('button', { name: 'Memory', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Memory', level: 1 })).toBeVisible()
+
+  const box = page.getByRole('textbox', { name: 'New memory' })
+  // Credentials are refused.
+  await box.fill('My password is hunter2')
+  await page.getByRole('button', { name: 'Remember', exact: true }).click()
+  await expect(page.locator('.form-msg.is-error')).toContainText('never stores credentials')
+
+  // A workspace fact and a global fact.
+  await box.fill('Acme renews in March')
+  await page.getByRole('button', { name: 'Remember', exact: true }).click()
+  await expect(page.locator('.memory-text', { hasText: 'Acme renews in March' })).toBeVisible()
+  await box.fill('Owner prefers mornings')
+  await page.getByRole('combobox').filter({ hasText: 'All workspaces' }).selectOption('global')
+  await page.getByRole('button', { name: 'Remember', exact: true }).click()
+  await expect(page.locator('.memory-text', { hasText: 'Owner prefers mornings' })).toBeVisible()
+
+  // Survives restart; workspace fact hidden from another workspace, global fact visible.
+  await app.close()
+  ;({ app, page } = await launch(profile))
+  await page.getByRole('button', { name: 'Memory', exact: true }).click()
+  await expect(page.locator('.memory-text', { hasText: 'Acme renews in March' })).toBeVisible()
+  await page.getByRole('combobox', { name: 'Workspace' }).selectOption('research')
+  await expect(page.locator('.memory-text', { hasText: 'Acme renews in March' })).toHaveCount(0)
+  await expect(page.locator('.memory-text', { hasText: 'Owner prefers mornings' })).toBeVisible()
+
+  // Edit the global fact, then delete it with confirmation.
+  const item = page.locator('.memory-item', { hasText: 'Owner prefers mornings' })
+  await item.getByRole('button', { name: 'Edit' }).click()
+  await item.getByRole('textbox', { name: 'Edit memory' }).fill('Owner prefers early mornings')
+  await item.getByRole('button', { name: 'Save' }).click()
+  await expect(page.locator('.memory-text', { hasText: 'Owner prefers early mornings' })).toBeVisible()
+  const edited = page.locator('.memory-item', { hasText: 'Owner prefers early mornings' })
+  await edited.getByRole('button', { name: 'Delete' }).click()
+  await edited.getByRole('alertdialog').getByRole('button', { name: 'Delete' }).click()
+  await expect(page.locator('.memory-text', { hasText: 'early mornings' })).toHaveCount(0)
+
+  // /remember from the conversation saves to this workspace and isn't sent to the model.
+  await page.getByRole('button', { name: 'Dashboard', exact: true }).click()
+  const msg = page.getByRole('textbox', { name: 'Message' })
+  await msg.fill('/remember Track agent benchmark papers')
+  await msg.press('Enter')
+  await expect(page.locator('.msg-system')).toContainText('Remembered for this workspace')
+  await page.getByRole('button', { name: 'Memory', exact: true }).click()
+  await expect(page.locator('.memory-text', { hasText: 'Track agent benchmark papers' })).toBeVisible()
   await app.close()
 })

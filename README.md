@@ -60,6 +60,7 @@ Open `.env` and paste your keys after `OPENAI_API_KEY=` and `ELEVENLABS_API_KEY=
 - Never rename it with a `VITE_` prefix: that would bundle the key into the interface.
 
 ## Using the app
+- **Memory:** the MEMORY tab lists facts Jarvis knows: for this workspace and for all workspaces. Add, edit, delete (asks first) or export everything as JSON. In a conversation, type `/remember …` or press **Remember** under one of your messages. Jarvis uses memories in typed and spoken replies; it refuses to store passwords or keys.
 - **History:** the Conversation panel's picker lists this workspace's saved conversations. **New** starts a fresh one; **Delete** removes the current one (asks first). Switching workspace shows only that workspace's conversations and ends any voice session. Stored locally in `~/Library/Application Support/JARVIS/jarvis.db`.
 - **Typing:** with voice off, typed messages get typed replies (GPT-5.4 mini by default, same personality), read aloud with the ElevenLabs voice if *Read typed replies aloud* is on. Conversations are saved per workspace and survive restarts.
 - **Voice:** add your key via `.env` (above) or Settings → AI provider → *Verify and save*. Then on the dashboard press **Start voice** and allow the microphone. Talk naturally; talk over Jarvis to interrupt, or press **Interrupt**. **Mute** turns the mic off; **End voice** closes the session. While voice is on you can also type, and Jarvis answers by voice.
