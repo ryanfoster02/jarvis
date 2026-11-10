@@ -6,6 +6,9 @@ import { join } from 'node:path'
 // Launches the production build (out/) with a throwaway profile: no real settings, keys or .env.
 const root = join(__dirname, '..')
 
+/** Time to allow per app launch in tests that restart JARVIS (launches take 15–45 s on the owner's Mac). */
+const LAUNCH_BUDGET = 60_000
+
 async function launch(userData: string): Promise<{ app: ElectronApplication; page: Page }> {
   // Load the built renderer from disk (as a packaged app would): drop the dev-server URL.
   const env: Record<string, string> = Object.fromEntries(
@@ -105,6 +108,7 @@ test('navigation away and new windows are blocked', async () => {
 })
 
 test('theme choice survives a restart', async () => {
+  test.setTimeout(2 * LAUNCH_BUDGET + 30_000) // two launches
   let { app, page } = await launch(profile)
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'gold')
   await page.getByRole('button', { name: /^Theme:/ }).click()
@@ -178,7 +182,7 @@ test('Claude for typed replies: key form validates, missing key is reported hone
 })
 
 test('conversations persist across restarts, stay in their workspace, and delete cleanly', async () => {
-  test.setTimeout(120_000) // three app launches
+  test.setTimeout(3 * LAUNCH_BUDGET + 30_000) // three launches
   let { app, page } = await launch(profile)
   // Store a turn through the same bridge voice transcripts use (typed replies need a real API key).
   const saved = await page.evaluate(async () => {
@@ -212,7 +216,7 @@ test('conversations persist across restarts, stay in their workspace, and delete
 })
 
 test('memory: add, scope to workspace, refuse secrets, edit, delete, /remember', async () => {
-  test.setTimeout(90_000)
+  test.setTimeout(2 * LAUNCH_BUDGET + 60_000) // two launches plus many steps
   let { app, page } = await launch(profile)
   await page.getByRole('button', { name: 'Memory', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Memory', level: 1 })).toBeVisible()
