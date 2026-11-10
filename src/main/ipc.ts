@@ -19,6 +19,7 @@ import {
   validateToolInvoke,
   validateRepoName,
   type GitHubRepoCheck,
+  type Reminder,
   DEFAULT_LIMITS,
   type ApprovalRequest,
   type ToolInvokeResult,
@@ -45,6 +46,17 @@ import { runAgent, type AgentResult } from '../shared/agent.ts'
 import { isOffered, RunBudget } from '../shared/permissions.ts'
 import { specsForRequest, TOOLS } from '../shared/tools.ts'
 import { getRepo, verifyGitHubToken } from './github.ts'
+import {
+  addReminder,
+  cancelReminder,
+  dismissReminder,
+  listReminders,
+  ReminderLimitError,
+  ReminderNotFoundError,
+  snoozeReminder,
+} from './db/reminders.ts'
+import { remindersChanged } from './scheduler.ts'
+import { parseWhen, SNOOZE_MINUTES, validateReminderText } from '../shared/reminders.ts'
 import { executeTool, permissionContext } from './tools.ts'
 import { answerApproval, listApprovals } from './approvals.ts'
 import { listToolRuns } from './db/toolRuns.ts'
@@ -619,5 +631,64 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
       }
       return { ok: true, repo: r.value }
     }),
+  )
+
+  // ---------- Reminders (Sprint 10): the owner's own actions, scoped to the active workspace ----------
+  const reminderError = (err: unknown): { ok: false; code: 'invalid_input' | 'not_found'; message: string } => {
+    if (err instanceof IpcValidationError || err instanceof ReminderLimitError) return { ok: false, code: 'invalid_input', message: err.message }
+    if (err instanceof ReminderNotFoundError) return { ok: false, code: 'not_found', message: err.message }
+    throw err
+  }
+
+  ipcMain.handle(
+    Channels.remindersList,
+    guard(async (): Promise<HistoryResult<Reminder[]>> => {
+      const db = history.database?.db
+      if (!db) return unavailable()
+      return { ok: true, value: await listReminders(db, activeWorkspace()) }
+    }),
+  )
+
+  ipcMain.handle(
+    Channels.remindersAdd,
+    guard(async (input: unknown): Promise<HistoryResult<Reminder>> => {
+      const db = history.database?.db
+      if (!db) return unavailable()
+      try {
+        if (!input || typeof input !== 'object') throw new IpcValidationError('reminder must be an object')
+        const { text, dueAt } = input as { text?: unknown; dueAt?: unknown }
+        const r = await addReminder(db, activeWorkspace(), { text: validateReminderText(text), dueAt: parseWhen(dueAt, Date.now()), source: 'user' })
+        remindersChanged()
+        return { ok: true, value: r }
+      } catch (err) {
+        return reminderError(err)
+      }
+    }),
+  )
+
+  const reminderAction =
+    (fn: (db: NonNullable<HistoryStore['database']>['db'], id: string, arg: unknown) => Promise<Reminder>) =>
+    async (id: unknown, arg?: unknown): Promise<HistoryResult<Reminder>> => {
+      const db = history.database?.db
+      if (!db) return unavailable()
+      try {
+        const r = await fn(db, validateConversationId(id), arg)
+        remindersChanged()
+        return { ok: true, value: r }
+      } catch (err) {
+        return reminderError(err)
+      }
+    }
+
+  ipcMain.handle(Channels.remindersCancel, guard(reminderAction((db, id) => cancelReminder(db, activeWorkspace(), id))))
+  ipcMain.handle(Channels.remindersDismiss, guard(reminderAction((db, id) => dismissReminder(db, activeWorkspace(), id))))
+  ipcMain.handle(
+    Channels.remindersSnooze,
+    guard(
+      reminderAction((db, id, minutes) => {
+        if (!(SNOOZE_MINUTES as readonly unknown[]).includes(minutes)) throw new IpcValidationError('snooze must be 10 or 60 minutes')
+        return snoozeReminder(db, activeWorkspace(), id, Date.now() + (minutes as number) * 60_000)
+      }),
+    ),
   )
 }

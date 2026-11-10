@@ -732,6 +732,23 @@ export function SettingsView({ settings, info, creds, onCreds, onUpdate }: Props
                 onClick={() => onUpdate({ autoSaveMemories: !settings.autoSaveMemories })}
               />
             </div>
+            <div className="field">
+              <div className="field-text">
+                <h3>Set reminders without asking</h3>
+                <p>
+                  Jarvis sets reminders you ask for straight away. Cancelling a reminder still asks, and after Jarvis has read
+                  GitHub content in a task, it asks again.
+                </p>
+              </div>
+              <button
+                role="switch"
+                aria-checked={settings.autoSetReminders}
+                aria-label="Set reminders without asking"
+                className="switch"
+                disabled={settings.disabledTools.includes('set_reminder')}
+                onClick={() => onUpdate({ autoSetReminders: !settings.autoSetReminders })}
+              />
+            </div>
             <p className="fine">
               Order of precedence: Stop all, then scope, then these switches, then high-risk approval, then standing permissions. Jarvis
               can&apos;t change any of these settings itself, and unanswered approvals expire after two minutes.
@@ -742,10 +759,27 @@ export function SettingsView({ settings, info, creds, onCreds, onUpdate }: Props
         {section === 'notifications' && (
           <>
             <h2>Notifications</h2>
-            <p className="status-line">
-              <span className="dot dot-off" /> Not available yet.
+            <div className="field">
+              <div className="field-text">
+                <h3>Notify me when reminders are due</h3>
+                <p>
+                  Shows a macOS notification. The dashboard always shows the reminder too, and reads it aloud if typed
+                  replies are read aloud.
+                </p>
+              </div>
+              <button
+                role="switch"
+                aria-checked={settings.reminderNotifications}
+                aria-label="Notify me when reminders are due"
+                className="switch"
+                onClick={() => onUpdate({ reminderNotifications: !settings.reminderNotifications })}
+              />
+            </div>
+            <p className="fine">
+              Reminders fire only while JARVIS is open (it doesn&apos;t run in the background). If notifications don&apos;t
+              appear, allow them in System Settings → Notifications (in development the app is listed as
+              &ldquo;Electron&rdquo;). Reminders that come due while JARVIS is closed show as missed when you next open it.
             </p>
-            <p>Reminders and task updates will notify you once the scheduler ships in Phase 3. Jarvis doesn't request notification permission until then.</p>
           </>
         )}
 

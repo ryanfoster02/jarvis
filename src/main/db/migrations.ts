@@ -61,6 +61,21 @@ export const MIGRATIONS: readonly string[] = [
   );
   CREATE INDEX tool_runs_ws_created ON tool_runs(workspace_id, created_at);
   `,
+  // 4 — reminders (Sprint 10). Fired only while the app runs; see shared/reminders.ts for the lifecycle.
+  `
+  CREATE TABLE reminders (
+    id            TEXT PRIMARY KEY,
+    workspace_id  TEXT NOT NULL REFERENCES workspaces(id),
+    text          TEXT NOT NULL CHECK (length(text) BETWEEN 1 AND 300),
+    due_at        INTEGER NOT NULL,
+    status        TEXT NOT NULL CHECK (status IN ('pending', 'fired', 'missed', 'dismissed', 'cancelled')),
+    source        TEXT NOT NULL CHECK (source IN ('user', 'assistant')),
+    created_at    INTEGER NOT NULL,
+    fired_at      INTEGER
+  );
+  CREATE INDEX reminders_status_due ON reminders(status, due_at);
+  CREATE INDEX reminders_ws_due ON reminders(workspace_id, due_at);
+  `,
 ]
 
 export function schemaVersion(db: DatabaseSync): number {

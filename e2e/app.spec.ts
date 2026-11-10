@@ -58,6 +58,7 @@ test('renderer is isolated: no Node globals, only the narrow jarvis bridge', asy
     'github',
     'killSwitch',
     'memory',
+    'reminders',
     'settings',
     'tools',
     'tts',
@@ -377,5 +378,72 @@ test('connections: GitHub token is validated locally; repositories need a connec
   const r = await invoke(page, 'github_list_repos', {})
   expect(r.output).toMatch(/^Not run: No access to github:read/)
   await expect(page.locator('.approval')).toHaveCount(0)
+  await app.close()
+})
+
+type ReminderBridge = {
+  reminders: { add: (text: string, dueAt: number) => Promise<{ ok: boolean; message?: string }> }
+  settings: { update: (p: object) => Promise<unknown> }
+}
+
+test('reminders: add and cancel from the dashboard; a due reminder fires, snoozes and dismisses', async () => {
+  test.setTimeout(90_000)
+  const { app, page } = await launch(profile)
+  // Keep the test run quiet: no macOS notifications.
+  await page.evaluate(() => (window as unknown as { jarvis: ReminderBridge }).jarvis.settings.update({ reminderNotifications: false }))
+
+  const panel = page.getByRole('region', { name: 'Reminders' })
+  await panel.getByRole('button', { name: 'Add reminder' }).click()
+  await panel.getByLabel('Reminder', { exact: true }).fill('Water the plants')
+  const later = await page.evaluate(() => {
+    const d = new Date(Date.now() + 26 * 3600_000)
+    const p = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+  })
+  await panel.getByLabel('When', { exact: true }).fill(later)
+  await panel.getByRole('button', { name: 'Add', exact: true }).click()
+  await expect(panel.locator('.reminder-row', { hasText: 'Water the plants' })).toBeVisible()
+  await panel.getByRole('button', { name: 'Cancel reminder: Water the plants' }).click()
+  await expect(panel.locator('.reminder-row', { hasText: 'Water the plants' })).toHaveCount(0)
+
+  // Due in 2 seconds: the scheduler (10 s tick) fires it into the panel and the conversation.
+  const added = await page.evaluate(() =>
+    (window as unknown as { jarvis: ReminderBridge }).jarvis.reminders.add('Stretch break', Date.now() + 2000),
+  )
+  expect(added.ok).toBe(true)
+  const alert = panel.locator('.reminder-alert', { hasText: 'Stretch break' })
+  await expect(alert).toBeVisible({ timeout: 25_000 })
+  await expect(page.locator('.msg-reminder', { hasText: 'Stretch break' })).toBeVisible()
+  await expect(page.locator('.terminal-line')).toContainText('Reminder: Stretch break')
+  await alert.getByRole('button', { name: '10 min' }).click()
+  await expect(panel.locator('.reminder-row', { hasText: 'Stretch break' })).toBeVisible()
+
+  // Past times are refused.
+  const past = await page.evaluate(() => (window as unknown as { jarvis: ReminderBridge }).jarvis.reminders.add('Too late', Date.now() - 3600_000))
+  expect(past).toEqual({ ok: false, code: 'invalid_input', message: 'That time has already passed.' })
+
+  // Clean up: cancel the snoozed one.
+  await panel.getByRole('button', { name: 'Cancel reminder: Stretch break' }).click()
+  await expect(panel.locator('.reminder-row')).toHaveCount(0)
+  await app.close()
+})
+
+test('reminders: Jarvis setting one asks first; approving puts it on the list', async () => {
+  const { app, page } = await launch(profile)
+  const when = await page.evaluate(() => {
+    const d = new Date(Date.now() + 2 * 86_400_000)
+    const p = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T09:30`
+  })
+  const setting = invoke(page, 'set_reminder', { text: 'Renew the domain', when })
+  const card = page.locator('.approval').filter({ hasText: 'Renew the domain' })
+  await expect(card.locator('.risk-badge')).toHaveText('Medium risk')
+  await expect(card).toContainText('Remind you')
+  await card.getByRole('button', { name: 'Approve' }).click()
+  expect((await setting).output).toContain('alerts only while the JARVIS app is open')
+  const panel = page.getByRole('region', { name: 'Reminders' })
+  await expect(panel.locator('.reminder-row', { hasText: 'Renew the domain' })).toBeVisible()
+  await panel.getByRole('button', { name: 'Cancel reminder: Renew the domain' }).click()
+  await expect(panel.locator('.reminder-row', { hasText: 'Renew the domain' })).toHaveCount(0)
   await app.close()
 })

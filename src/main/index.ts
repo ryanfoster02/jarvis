@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { registerIpc, type HistoryStore } from './ipc.ts'
 import { openDatabase } from './db/client.ts'
+import { startScheduler, stopScheduler } from './scheduler.ts'
 import { engage } from './killswitch.ts'
 
 // ---- Process-wide hardening (must run before 'ready') ----
@@ -193,6 +194,9 @@ void app.whenReady().then(() => {
   registerIpc({ devServerUrl, rendererFileUrl }, history)
   buildMenu()
   createWindow()
+  // Reminders fire only while the app runs (Sprint 10).
+  if (history.database) void startScheduler(history.database.db)
+  app.on('will-quit', stopScheduler)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

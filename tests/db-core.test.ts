@@ -21,7 +21,7 @@ test('migrations: apply once, record version, idempotent on reopen', () => {
   assert.equal(schemaVersion(db), MIGRATIONS.length)
   assert.equal(migrate(db), MIGRATIONS.length) // no-op
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all().map((r) => (r as { name: string }).name)
-  assert.deepEqual(tables, ['conversations', 'memories', 'messages', 'tool_runs', 'workspaces'])
+  assert.deepEqual(tables, ['conversations', 'memories', 'messages', 'reminders', 'tool_runs', 'workspaces'])
 })
 
 test('migrations: failed migration rolls back and leaves version unchanged', () => {
@@ -114,4 +114,18 @@ test('action log table: constraints keep rows well-formed and workspace-bound', 
   assert.throws(() => ins.run('r5', 'personal', 'get_time', 'low', 'text', 's', 'yolo', 'ok', '', 1, 0), /CHECK/)
   assert.throws(() => ins.run('r6', 'personal', 'get_time', 'low', 'text', 'x'.repeat(301), 'auto', 'ok', '', 1, 0), /CHECK/)
   assert.equal((db.prepare('SELECT count(*) AS n FROM tool_runs').get() as { n: number }).n, 1)
+})
+
+test('reminders table: lifecycle values and text length are enforced', () => {
+  const db = new DatabaseSync(':memory:')
+  configure(db)
+  migrate(db)
+  seedWorkspaces(db)
+  const ins = db.prepare('INSERT INTO reminders (id, workspace_id, text, due_at, status, source, created_at) VALUES (?,?,?,?,?,?,?)')
+  ins.run('a', 'personal', 'Call Acme', 10, 'pending', 'assistant', 1)
+  assert.throws(() => ins.run('b', 'personal', '', 10, 'pending', 'user', 1), /CHECK/)
+  assert.throws(() => ins.run('c', 'personal', 'x'.repeat(301), 10, 'pending', 'user', 1), /CHECK/)
+  assert.throws(() => ins.run('d', 'personal', 'x', 10, 'snoozed', 'user', 1), /CHECK/)
+  assert.throws(() => ins.run('e', 'personal', 'x', 10, 'pending', 'model', 1), /CHECK/)
+  assert.throws(() => ins.run('f', 'nowhere', 'x', 10, 'pending', 'user', 1), /FOREIGN KEY/)
 })

@@ -1,6 +1,6 @@
 # IMPLEMENTATION
 
-Current phase: Phase 3 / Sprint 9 — GitHub (read-only) + repository allowlist
+Current phase: Phase 3 / Sprint 10 — Scheduler & reminders
 
 Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ not started
 
@@ -114,7 +114,7 @@ Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ no
 ## Phase 3 — Integrations & Automation
 Tool execution with approvals and the execution log already landed in Sprint 8.
 
-### Sprint 9 — GitHub (read-only) + repository allowlist 🟡
+### Sprint 9 — GitHub (read-only) + repository allowlist ✅ (owner moved on 2026-11-09)
 - ✅ Contract: `github` credential (`GITHUB_TOKEN`), token validator (fine-grained `github_pat_` recommended, classic `ghp_` accepted), `githubRepos` allowlist setting (≤30, owner/name, links accepted), 5 tool names, `github:check-repo` channel
 - ✅ `src/shared/github.ts`: GET paths (encoded; safe path/ref validation), parsers for repo, issues/PRs, issue + latest 5 comments, commits, file/folder (binary, >1 MB and long files handled), untrusted wrapper, error messages — tested on **real API responses** (fixtures from this repo) plus synthetic issues
 - ✅ Tools (all low risk, scope `github:read`): `github_list_repos`, `github_list_issues`, `github_get_issue`, `github_recent_commits`, `github_read_file`; repo offered as an enum of allowed repos; allowlist re-checked in main
@@ -122,11 +122,19 @@ Tool execution with approvals and the execution log already landed in Sprint 8.
 - ✅ Main: `src/main/github.ts` (GET only), token verify via `GET /user`, repo check before allowing; client run live against api.github.com here (repo, commits, folder, file at a ref, issues, 404)
 - ✅ UI: Settings → Connections (token form with fine-grained instructions, allowlist with check-and-allow and remove), Ops column shows real GitHub status
 - ✅ Tests: 8 new unit tests; 1 new e2e test (token validation, no repo without connection, tools refused without scope)
-- 🟡 Needs owner verification: typecheck, `npm test`, `npm run test:e2e`; then create a fine-grained read-only token, connect it, allow a repo, and ask "what are the open issues in <repo>?", "what changed recently?", "summarise the README"
+- ✅ Owner moved on to Sprint 10 (live check with a personal token still recommended)
 - ⬜ Per-workspace allowlists (global for now); GitHub writes (comments, issues) — would be medium/high risk with approvals, not planned until requested
 
-### Sprint 10 — Scheduler & reminders ⬜
-Reminders Jarvis can set (with approval) and you can manage; macOS notifications; runs only while the app is open — stated in the UI; missed reminders shown on next launch.
+### Sprint 10 — Scheduler & reminders 🟡
+- ✅ Contract: `Reminder` type and lifecycle, 5 channels + 2 events, settings `autoSetReminders` (off) and `reminderNotifications` (on), 3 tool names
+- ✅ Rules (`src/shared/reminders.ts`): local-time parsing (with/without offset), past/too-far refused, text validation (secrets refused), startup sweep (fire recent, mark older missed), "today/tomorrow" formatting — tested in a fixed time zone
+- ✅ Tools: `set_reminder` (medium; mandate available), `list_reminders` (low), `cancel_reminder` (medium, never covered by a mandate); `get_time` now returns local ISO with offset
+- ✅ Storage: migration 4 `reminders` (CHECKs, FK) — constraint tests here; Drizzle store with workspace isolation — 2 tests run on the Mac
+- ✅ Main: `src/main/scheduler.ts` (10 s tick, paused while halted, startup sweep, macOS notifications with click-to-focus), reminders IPC (add/cancel/dismiss/snooze), live events
+- ✅ UI: Reminders in the Ops column (due/missed alerts with Dismiss and Snooze 10 min / 1 hour, upcoming list with Cancel, add form), reminder entries in the conversation (read aloud if typed replies are), status line, Settings → Notifications toggle, Permissions → "Set reminders without asking"
+- ✅ Tests: 6 unit tests + SQL constraint test; 2 Drizzle tests and 2 e2e tests (a real reminder fires through the scheduler; Jarvis setting one asks first) run on the Mac
+- 🟡 Needs owner verification: typecheck, `npm test`, `npm run test:e2e`; then "remind me in 2 minutes to stretch" (approve), keep the app open and check the notification; quit with a reminder due, reopen later and see it marked missed
+- ⬜ Repeating reminders; reminders while the app is closed (would need a background helper — not planned without your go-ahead)
 
 ### Sprint 11 — Worker / workflow stop levels ⬜
 Cancel one running action or one task without Stop all; abort signals threaded through tools and provider calls.

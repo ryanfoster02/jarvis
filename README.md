@@ -2,7 +2,7 @@
 
 Local-first, voice-capable desktop assistant. Electron + React + TypeScript (electron-vite).
 
-**Status:** Phase 1 complete (desktop app, dashboard, voice, typed chat, packaging). Phase 2 added memory, Claude for typed replies, and tools with approvals. Phase 3 is in progress: GitHub (read-only) is the first integration; reminders come next. The UI says what isn't available yet. See [IMPLEMENTATION.md](IMPLEMENTATION.md).
+**Status:** Phase 1 complete (desktop app, dashboard, voice, typed chat, packaging). Phase 2 added memory, Claude for typed replies, and tools with approvals. Phase 3 is in progress: GitHub (read-only) and reminders are in; finer-grained stop controls come next. The UI says what isn't available yet. See [IMPLEMENTATION.md](IMPLEMENTATION.md).
 
 ## Requirements
 - macOS (Apple Silicon or Intel). Windows/Linux later.
@@ -61,6 +61,7 @@ Open `.env` and paste your keys after `OPENAI_API_KEY=` and `ELEVENLABS_API_KEY=
 
 ## Using the app
 - **Actions & approvals:** Jarvis can check the time and look up, save and delete memories, typed or by voice ("remember that I take my coffee black", "forget that"). Saving asks you first in the dashboard's **Approvals** panel (or turn on *Save memories without asking* in Settings → Permissions); deleting always asks. Everything Jarvis does or tries is listed under **Activity**. Unanswered requests expire after 2 minutes; **Stop all** answers them with no. Switch any tool off in Settings → Permissions.
+- **Reminders:** ask Jarvis ("remind me at 3pm to call Acme") — he asks first unless you turn on *Set reminders without asking* in Settings → Permissions — or use **Add reminder** in the dashboard's Reminders panel. When one is due you get a macOS notification (Settings → Notifications), an alert on the dashboard with **Dismiss** / **Snooze**, and a note in the conversation. **Reminders only fire while JARVIS is open**; anything due while it was closed shows as *missed* next time.
 - **GitHub (read-only):** Settings → **Connections**. Create a fine-grained token on github.com (Settings → Developer settings → Fine-grained tokens → *Only select repositories*; **Contents**, **Issues**, **Pull requests**: *Read-only*), paste it, then **Check and allow** each repository Jarvis may read. Ask things like "what are the open issues in my repo?", "what changed recently?" or "summarise the README". Jarvis can't comment, change, merge or push, and treats what it reads as untrusted text.
 - **Memory:** the MEMORY tab lists facts Jarvis knows: for this workspace and for all workspaces. Add, edit, delete (asks first) or export everything as JSON. In a conversation, type `/remember …` or press **Remember** under one of your messages. Jarvis uses memories in typed and spoken replies; it refuses to store passwords or keys.
 - **History:** the Conversation panel's picker lists this workspace's saved conversations. **New** starts a fresh one; **Delete** removes the current one (asks first). Switching workspace shows only that workspace's conversations and ends any voice session. Stored locally in `~/Library/Application Support/JARVIS/jarvis.db`.

@@ -1,5 +1,5 @@
 import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
-import { RISK_LEVELS, TOOL_NAMES } from '../../shared/ipc.ts'
+import { REMINDER_STATUSES, RISK_LEVELS, TOOL_NAMES, type WorkspaceId } from '../../shared/ipc.ts'
 
 // Drizzle table definitions — typed queries. The SQL that creates them lives in migrations.ts.
 
@@ -72,4 +72,22 @@ export const toolRuns = sqliteTable(
   (t) => [index('tool_runs_ws_created').on(t.workspaceId, t.createdAt)],
 )
 
-export const schema = { workspaces, conversations, messages, memories, toolRuns }
+export const reminders = sqliteTable(
+  'reminders',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .$type<WorkspaceId>()
+      .notNull()
+      .references(() => workspaces.id),
+    text: text('text').notNull(),
+    dueAt: integer('due_at').notNull(),
+    status: text('status', { enum: REMINDER_STATUSES }).notNull(),
+    source: text('source', { enum: ['user', 'assistant'] }).notNull(),
+    createdAt: integer('created_at').notNull(),
+    firedAt: integer('fired_at'),
+  },
+  (t) => [index('reminders_status_due').on(t.status, t.dueAt), index('reminders_ws_due').on(t.workspaceId, t.dueAt)],
+)
+
+export const schema = { workspaces, conversations, messages, memories, toolRuns, reminders }

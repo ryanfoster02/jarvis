@@ -30,6 +30,11 @@ export const Channels = {
   toolRunsList: 'tools:runs',
   toolsInvoke: 'tools:invoke',
   githubCheckRepo: 'github:check-repo',
+  remindersList: 'reminders:list',
+  remindersAdd: 'reminders:add',
+  remindersCancel: 'reminders:cancel',
+  remindersDismiss: 'reminders:dismiss',
+  remindersSnooze: 'reminders:snooze',
 } as const
 
 /** Main → renderer push events. */
@@ -38,6 +43,10 @@ export const Events = {
   approvalsChanged: 'approvals:changed',
   /** An action was logged (carries its ActionNote). */
   toolRunLogged: 'tools:run-logged',
+  /** Reminders changed (added, fired, cancelled…): reload the list. */
+  remindersChanged: 'reminders:changed',
+  /** A reminder just fired (carries the Reminder). */
+  reminderFired: 'reminders:fired',
 } as const
 
 export type Channel = (typeof Channels)[keyof typeof Channels]
@@ -161,6 +170,10 @@ export interface Settings {
   autoSaveMemories: boolean
   /** Scope (SECURITY.md §4): GitHub repositories Jarvis may read, as "owner/name" (lowercase). Empty = none. */
   githubRepos: string[]
+  /** Mandate: let Jarvis set reminders without asking each time. Off by default. Cancelling always asks. */
+  autoSetReminders: boolean
+  /** Show macOS notifications when reminders fire (the in-app alert always shows). */
+  reminderNotifications: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = Object.freeze({
@@ -180,6 +193,8 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   disabledTools: [],
   autoSaveMemories: false,
   githubRepos: [],
+  autoSetReminders: false,
+  reminderNotifications: true,
 })
 
 /** Execution limits (SECURITY.md §6). Enforced per typed request by RunBudget (Sprint 8). */
@@ -460,6 +475,11 @@ export function validateSettingsPatch(input: unknown): Partial<Settings> {
         if (typeof value !== 'boolean') throw new IpcValidationError('autoSaveMemories must be boolean')
         out.autoSaveMemories = value
         break
+      case 'autoSetReminders':
+      case 'reminderNotifications':
+        if (typeof value !== 'boolean') throw new IpcValidationError(`${key} must be boolean`)
+        out[key] = value
+        break
       case 'githubRepos':
         if (!Array.isArray(value) || value.length > MAX_GITHUB_REPOS || !value.every(isRepoName)) {
           throw new IpcValidationError(`githubRepos must be up to ${MAX_GITHUB_REPOS} repositories written as owner/name`)
@@ -492,6 +512,8 @@ export function normalizeSettings(stored: unknown): Settings {
   if (typeof stored.speakTypedReplies === 'boolean') s.speakTypedReplies = stored.speakTypedReplies
   if (Array.isArray(stored.disabledTools)) s.disabledTools = [...new Set(stored.disabledTools.filter(isToolName))]
   if (typeof stored.autoSaveMemories === 'boolean') s.autoSaveMemories = stored.autoSaveMemories
+  if (typeof stored.autoSetReminders === 'boolean') s.autoSetReminders = stored.autoSetReminders
+  if (typeof stored.reminderNotifications === 'boolean') s.reminderNotifications = stored.reminderNotifications
   if (Array.isArray(stored.githubRepos)) {
     s.githubRepos = [...new Set(stored.githubRepos.filter(isRepoName).map((r) => r.toLowerCase()))].slice(0, MAX_GITHUB_REPOS)
   }
@@ -538,6 +560,9 @@ export const TOOL_NAMES = [
   'github_get_issue',
   'github_recent_commits',
   'github_read_file',
+  'set_reminder',
+  'list_reminders',
+  'cancel_reminder',
 ] as const
 export type ToolName = (typeof TOOL_NAMES)[number]
 export const isToolName = (v: unknown): v is ToolName => typeof v === 'string' && (TOOL_NAMES as readonly string[]).includes(v)
@@ -600,6 +625,28 @@ export function validateToolInvoke(name: unknown, args: unknown): { name: ToolNa
   if (typeof args !== 'string' || args.length > MAX_TOOL_ARGS_CHARS) throw new IpcValidationError('tool arguments must be a JSON string')
   return { name, args }
 }
+
+// ---------- Reminders (Sprint 10) ----------
+
+/**
+ * pending → fired (shown) → dismissed; pending → cancelled; pending → missed (due while JARVIS was
+ * closed) → dismissed. Snoozing a fired/missed reminder makes it pending again with a new time.
+ */
+export const REMINDER_STATUSES = ['pending', 'fired', 'missed', 'dismissed', 'cancelled'] as const
+export type ReminderStatus = (typeof REMINDER_STATUSES)[number]
+
+export interface Reminder {
+  id: string
+  workspaceId: WorkspaceId
+  text: string
+  dueAt: number
+  status: ReminderStatus
+  source: 'user' | 'assistant'
+  createdAt: number
+  firedAt: number | null
+}
+
+export type ReminderResult = HistoryResult<Reminder>
 
 // ---------- GitHub (Sprint 9) ----------
 

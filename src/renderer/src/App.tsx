@@ -3,6 +3,7 @@ import {
   textModelProvider,
   type ActionNote,
   type ApprovalRequest,
+  type Reminder,
   type ToolRun,
   WORKSPACES,
   type AppInfo,
@@ -46,6 +47,7 @@ function statusLine(o: {
   micPaused: boolean
   busy: boolean
   approvals: number
+  reminder: string | null
 }): string {
   if (o.bridgeError) return o.bridgeError
   if (o.kill?.engaged) {
@@ -53,6 +55,7 @@ function statusLine(o: {
     return `Stopped${at ? ` at ${at}` : ''}. Nothing runs until you re-arm.`
   }
   if (o.voiceError) return o.voiceError
+  if (o.reminder) return `Reminder: ${o.reminder}`
   if (o.approvals > 0) return o.approvals === 1 ? 'Waiting for your approval (see Approvals).' : `${o.approvals} requests waiting for your approval.`
   if (o.phase === 'connecting') return 'Connecting to OpenAI Realtime…'
   if (o.phase === 'live') {
@@ -92,6 +95,9 @@ export function App(): React.JSX.Element {
   const [info, setInfo] = useState<AppInfo | null>(null)
   const [kill, setKill] = useState<KillSwitchState | null>(null)
   const [creds, setCreds] = useState<CredentialStatus | null>(null)
+  // Latest values for long-lived event listeners (registered once).
+  const settingsRef = useRef<Settings | null>(null)
+  const credsRef = useRef<CredentialStatus | null>(null)
   const [busy, setBusy] = useState(false)
   const [view, setView] = useState<View>('dashboard')
   const [bridgeError, setBridgeError] = useState<string | null>(null)
@@ -202,6 +208,9 @@ export function App(): React.JSX.Element {
     setEntries((e) => [...e, { id: newId(), role, text, at: new Date(), via }])
   }, [])
 
+  settingsRef.current = settings
+  credsRef.current = creds
+
   const voice = useVoice({
     onUserText: (text) => {
       push('user', text, 'voice')
@@ -258,6 +267,47 @@ export function App(): React.JSX.Element {
       offLogged()
     }
   }, [])
+
+  // ---- Reminders (Sprint 10): fire in main while the app runs; shown and managed here ----
+  const [reminders, setReminders] = useState<Reminder[]>([])
+  const [remindersVersion, setRemindersVersion] = useState(0)
+  useEffect(() => {
+    if (!window.jarvis) return
+    const offChanged = window.jarvis.reminders.onChanged(() => setRemindersVersion((v) => v + 1))
+    const offFired = window.jarvis.reminders.onFired((r) => {
+      // Only this workspace's reminders go into the conversation; others still notify via macOS.
+      if (r.workspaceId !== settingsRef.current?.activeWorkspace) return
+      setEntries((e) => [...e, { id: newId(), role: 'reminder', text: r.text, at: new Date(), via: 'text' }])
+      const s = settingsRef.current
+      if (s?.speakTypedReplies && s.speechEngine === 'elevenlabs' && credsRef.current?.elevenlabs.configured) {
+        typedSpeech.current?.enqueue(cleanForSpeech(`Reminder: ${r.text}`))
+      }
+    })
+    return () => {
+      offChanged()
+      offFired()
+    }
+  }, [])
+  const remindersWorkspace = settings?.activeWorkspace
+  useEffect(() => {
+    if (!window.jarvis || !remindersWorkspace) return
+    let live = true
+    void window.jarvis.reminders.list().then((r) => {
+      if (live) setReminders(r.ok ? r.value : [])
+    })
+    return () => {
+      live = false
+    }
+  }, [remindersWorkspace, remindersVersion])
+  const reminderActions = {
+    add: async (text: string, dueAt: number): Promise<string | null> => {
+      const r = await window.jarvis.reminders.add(text, dueAt)
+      return r.ok ? null : r.message
+    },
+    cancel: (id: string) => void window.jarvis.reminders.cancel(id),
+    dismiss: (id: string) => void window.jarvis.reminders.dismiss(id),
+    snooze: (id: string, minutes: number) => void window.jarvis.reminders.snooze(id, minutes),
+  }
 
   // Action log for the active workspace: reload on workspace switch and after each action.
   const runsWorkspace = settings?.activeWorkspace
@@ -426,6 +476,7 @@ export function App(): React.JSX.Element {
     micPaused: voice.micPaused,
     busy,
     approvals: approvals.length,
+    reminder: reminders.find((r) => r.status === 'fired')?.text ?? null,
   })
 
   return (
@@ -453,6 +504,8 @@ export function App(): React.JSX.Element {
                 halted={halted}
                 onDecide={(id, approve) => void window.jarvis.approvals.decide(id, approve)}
                 github={{ connected: !!creds?.github.configured, repos: settings?.githubRepos.length ?? 0 }}
+                reminders={reminders}
+                reminderActions={reminderActions}
               />
             </div>
 

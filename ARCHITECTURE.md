@@ -84,5 +84,15 @@ model ── github_* tool call (repo ∈ enum of allowed repos) ──▶ execu
 - Results are wrapped as untrusted data. Once a typed task or voice session has read GitHub content, `decide` ignores standing permissions (medium risk asks).
 - Status shown in the Ops column (Integrations) and Settings → Connections.
 
+## Scheduler & reminders (Sprint 10)
+```
+set_reminder (tool, approval/mandate) ─┐                         ┌─▶ Notification (macOS, optional)
+Ops column form (owner) ── reminders:add ┴─▶ reminders table ──▶ scheduler.ts tick (10 s, paused while halted)
+                                                                 └─▶ reminders:fired / reminders:changed → dashboard + conversation
+startup: sweepOnStartup → due ≤ 2 min ago fire; older → missed (shown, one summary notification)
+```
+- Pure rules in `src/shared/reminders.ts` (time parsing in local time, sweep, formatting); store in `src/main/db/reminders.ts` (workspace-scoped for the owner, cross-workspace only for the scheduler).
+- Lifecycle: pending → fired → dismissed (or snoozed back to pending); pending → cancelled; pending → missed → dismissed.
+
 ## Integration boundary (Phase 3)
 Each integration: allowlist entry, status, scopes, credential reference (vault key), tools exposed, revoke action, execution history. External content is tagged untrusted and passed to the model as data, never as instructions.

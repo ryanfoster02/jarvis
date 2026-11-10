@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { DEFAULT_LIMITS, type ApprovalRequest, type ToolRun } from '../../../shared/ipc.ts'
+import { DEFAULT_LIMITS, type ApprovalRequest, type Reminder, type ToolRun } from '../../../shared/ipc.ts'
+import { formatWhen } from '../../../shared/reminders.ts'
 import { DECISION_LABEL } from '../../../shared/tools.ts'
 import { LIMITS } from '../../../shared/ratelimit.ts'
 
@@ -32,6 +33,121 @@ interface Props {
   onDecide: (id: string, approve: boolean) => void
   /** Real GitHub state: token saved, and how many repositories are allowed. */
   github: { connected: boolean; repos: number }
+  reminders: Reminder[]
+  reminderActions: {
+    add: (text: string, dueAt: number) => Promise<string | null>
+    cancel: (id: string) => void
+    dismiss: (id: string) => void
+    snooze: (id: string, minutes: number) => void
+  }
+}
+
+/** "YYYY-MM-DDTHH:mm" in local time, for <input type="datetime-local">. */
+const localInput = (ms: number): string => {
+  const d = new Date(ms)
+  const p = (n: number): string => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+function RemindersSection({ list, actions }: { list: Reminder[]; actions: Props['reminderActions'] }): React.JSX.Element {
+  const [now, setNow] = useState(() => Date.now())
+  const [adding, setAdding] = useState(false)
+  const [text, setText] = useState('')
+  const [when, setWhen] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(t)
+  }, [])
+  const attention = list.filter((r) => r.status === 'fired' || r.status === 'missed')
+  const upcoming = list.filter((r) => r.status === 'pending')
+
+  const submit = async (e: React.FormEvent): Promise<void> => {
+    e.preventDefault()
+    const dueAt = new Date(when).getTime()
+    if (!text.trim() || !Number.isFinite(dueAt)) return
+    const err = await actions.add(text, dueAt)
+    setError(err)
+    if (!err) {
+      setText('')
+      setWhen('')
+      setAdding(false)
+    }
+  }
+
+  return (
+    <section className="ops-section" aria-label="Reminders">
+      <h2 className="label">Reminders{upcoming.length ? ` · ${upcoming.length}` : ''}</h2>
+      {attention.length > 0 && (
+        <ul className="approvals">
+          {attention.map((r) => (
+            <li key={r.id} className={`reminder-alert ${r.status === 'missed' ? 'is-missed' : ''}`}>
+              <p className="approval-summary">{r.text}</p>
+              <p className="approval-meta">
+                {r.status === 'missed' ? `Missed while JARVIS was closed · was due ${formatWhen(r.dueAt, now)}` : `Due ${formatWhen(r.dueAt, now)}`}
+              </p>
+              <div className="approval-actions">
+                <button className="btn" onClick={() => actions.dismiss(r.id)}>
+                  Dismiss
+                </button>
+                <button className="btn btn-quiet" onClick={() => actions.snooze(r.id, 10)}>
+                  10 min
+                </button>
+                <button className="btn btn-quiet" onClick={() => actions.snooze(r.id, 60)}>
+                  1 hour
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {upcoming.length === 0 && attention.length === 0 && !adding && (
+        <p className="empty-note">Nothing scheduled. Ask Jarvis (&ldquo;remind me at 3pm to call Acme&rdquo;) or add one here.</p>
+      )}
+      {upcoming.length > 0 && (
+        <ol className="runs">
+          {upcoming.slice(0, 6).map((r) => (
+            <li key={r.id} className="run reminder-row">
+              <time dateTime={new Date(r.dueAt).toISOString()}>{formatWhen(r.dueAt, now)}</time>
+              <span className="run-summary" title={r.text}>
+                {r.text}
+              </span>
+              <button className="reminder-cancel" aria-label={`Cancel reminder: ${r.text}`} onClick={() => actions.cancel(r.id)}>
+                Cancel
+              </button>
+            </li>
+          ))}
+        </ol>
+      )}
+      {upcoming.length > 6 && <p className="fine">and {upcoming.length - 6} more</p>}
+      {adding ? (
+        <form className="reminder-form" onSubmit={(e) => void submit(e)}>
+          <input aria-label="Reminder" placeholder="Remind me to…" value={text} maxLength={300} onChange={(e) => setText(e.target.value)} />
+          <input
+            aria-label="When"
+            type="datetime-local"
+            value={when}
+            min={localInput(now)}
+            onChange={(e) => setWhen(e.target.value)}
+          />
+          <div className="approval-actions">
+            <button className="btn" type="submit" disabled={!text.trim() || !when}>
+              Add
+            </button>
+            <button className="btn btn-quiet" type="button" onClick={() => (setAdding(false), setError(null))}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : (
+        <button className="btn btn-quiet btn-small" onClick={() => setAdding(true)}>
+          Add reminder
+        </button>
+      )}
+      {error && <p className="form-msg is-error">{error}</p>}
+      <p className="fine">Reminders alert only while JARVIS is open. Anything due while it&apos;s closed shows here as missed.</p>
+    </section>
+  )
 }
 
 function ApprovalCard({ a, now, onDecide }: { a: ApprovalRequest; now: number; onDecide: Props['onDecide'] }): React.JSX.Element {
@@ -59,7 +175,7 @@ function ApprovalCard({ a, now, onDecide }: { a: ApprovalRequest; now: number; o
   )
 }
 
-export function OpsColumn({ approvals, runs, halted, onDecide, github }: Props): React.JSX.Element {
+export function OpsColumn({ approvals, runs, halted, onDecide, github, reminders, reminderActions }: Props): React.JSX.Element {
   const status = (name: string): string => {
     if (name !== 'GitHub' || !github.connected) return 'Not connected'
     return github.repos === 0 ? 'Connected · no repos allowed' : `Connected · ${github.repos} repo${github.repos === 1 ? '' : 's'}`
@@ -75,12 +191,7 @@ export function OpsColumn({ approvals, runs, halted, onDecide, github }: Props):
 
   return (
     <section className="frame panel ops" aria-label="Operations">
-      <section className="ops-section">
-        <h2 className="label">Tasks</h2>
-        <p className="empty-note">
-          Nothing scheduled. Reminders and scheduled tasks arrive with the scheduler in Phase 3.
-        </p>
-      </section>
+      <RemindersSection list={reminders} actions={reminderActions} />
 
       <section className="ops-section" aria-label="Approvals">
         <h2 className="label">Approvals{approvals.length > 0 ? ` · ${approvals.length}` : ''}</h2>

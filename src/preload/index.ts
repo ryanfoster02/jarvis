@@ -22,6 +22,7 @@ import {
   type ActionNote,
   type ApprovalRequest,
   type GitHubRepoCheck,
+  type Reminder,
   type ToolInvokeResult,
   type ToolRun,
 } from '../shared/ipc.ts'
@@ -88,6 +89,23 @@ const api = {
       const listener = (_e: IpcRendererEvent, list: ApprovalRequest[]): void => cb(list)
       ipcRenderer.on(Events.approvalsChanged, listener)
       return () => ipcRenderer.removeListener(Events.approvalsChanged, listener)
+    },
+  },
+  reminders: {
+    list: (): Promise<HistoryResult<Reminder[]>> => ipcRenderer.invoke(Channels.remindersList),
+    add: (text: string, dueAt: number): Promise<HistoryResult<Reminder>> => ipcRenderer.invoke(Channels.remindersAdd, { text, dueAt }),
+    cancel: (id: string): Promise<HistoryResult<Reminder>> => ipcRenderer.invoke(Channels.remindersCancel, id),
+    dismiss: (id: string): Promise<HistoryResult<Reminder>> => ipcRenderer.invoke(Channels.remindersDismiss, id),
+    snooze: (id: string, minutes: number): Promise<HistoryResult<Reminder>> => ipcRenderer.invoke(Channels.remindersSnooze, id, minutes),
+    onChanged: (cb: () => void): (() => void) => {
+      const listener = (): void => cb()
+      ipcRenderer.on(Events.remindersChanged, listener)
+      return () => ipcRenderer.removeListener(Events.remindersChanged, listener)
+    },
+    onFired: (cb: (r: Reminder) => void): (() => void) => {
+      const listener = (_e: IpcRendererEvent, r: Reminder): void => cb(r)
+      ipcRenderer.on(Events.reminderFired, listener)
+      return () => ipcRenderer.removeListener(Events.reminderFired, listener)
     },
   },
   github: {

@@ -3,10 +3,19 @@
 // and global data; the main process supplies the workspace, never the model or the renderer.
 
 import { GitHubArgError, validateRef, validateRepoPath } from './github.ts'
+import { formatWhen, parseWhen, validateReminderText } from './reminders.ts'
 import { IpcValidationError, isRepoName, type ActionNote, type MemoryScope, type RiskLevel, type ToolDecision, type ToolName } from './ipc.ts'
 import { validateMemoryText } from './memory.ts'
 
-export type ToolScope = 'clock' | 'memory:read' | 'memory:write' | 'memory:delete' | 'github:read'
+export type ToolScope =
+  | 'clock'
+  | 'memory:read'
+  | 'memory:write'
+  | 'memory:delete'
+  | 'github:read'
+  | 'reminders:read'
+  | 'reminders:write'
+  | 'reminders:cancel'
 
 export interface ToolArgs {
   get_time: Record<string, never>
@@ -18,6 +27,10 @@ export interface ToolArgs {
   github_get_issue: { repo: string; number: number }
   github_recent_commits: { repo: string; branch: string | null }
   github_read_file: { repo: string; path: string; ref: string | null }
+  /** `when` from the model is parsed to dueAt (epoch ms). */
+  set_reminder: { text: string; dueAt: number }
+  list_reminders: Record<string, never>
+  cancel_reminder: { id: string }
 }
 
 export interface ToolSpec {
@@ -144,7 +157,53 @@ const GITHUB_TOOLS = {
   ),
 } satisfies Partial<Record<ToolName, ToolSpec>>
 
-export const TOOLS: Record<ToolName, ToolSpec> = { ...CORE_TOOLS, ...GITHUB_TOOLS }
+// ---------- Reminders (Sprint 10) ----------
+
+const REMINDER_TOOLS = {
+  set_reminder: {
+    name: 'set_reminder',
+    title: 'Set a reminder',
+    ownerDescription: 'Sets a reminder that alerts you at a time. Asks you first unless you turn on the standing permission.',
+    description:
+      'Sets a reminder for the owner. `when` is a local date-time like "2026-11-10T09:30" (the owner\'s time zone); call get_time first if you are unsure of today\'s date. Reminders only alert while the JARVIS app is open — say so if the time is far off. Never put secrets in reminders.',
+    risk: 'medium',
+    scope: 'reminders:write',
+    parameters: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: 'What to remind the owner about, in a few words. Under 300 characters.' },
+        when: { type: 'string', description: 'Local date and time, ISO format without seconds, e.g. 2026-11-10T09:30.' },
+      },
+      required: ['text', 'when'],
+      additionalProperties: false,
+    },
+  },
+  list_reminders: {
+    name: 'list_reminders',
+    title: 'Look up reminders',
+    ownerDescription: 'Reads upcoming reminders in this workspace, with their IDs.',
+    description: 'Lists upcoming reminders in the active workspace with IDs and local times (for answering questions or before cancelling one).',
+    risk: 'low',
+    scope: 'reminders:read',
+    parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
+  },
+  cancel_reminder: {
+    name: 'cancel_reminder',
+    title: 'Cancel a reminder',
+    ownerDescription: 'Cancels an upcoming reminder. Always asks you.',
+    description: 'Cancels one upcoming reminder by ID (get IDs with list_reminders). Only when the owner asks. The owner must approve.',
+    risk: 'medium',
+    scope: 'reminders:cancel',
+    parameters: {
+      type: 'object',
+      properties: { id: { type: 'string', description: 'The reminder ID from list_reminders.' } },
+      required: ['id'],
+      additionalProperties: false,
+    },
+  },
+} satisfies Partial<Record<ToolName, ToolSpec>>
+
+export const TOOLS: Record<ToolName, ToolSpec> = { ...CORE_TOOLS, ...GITHUB_TOOLS, ...REMINDER_TOOLS }
 
 /**
  * Specs as offered for one request: GitHub tools get an enum of exactly the allowed repositories,
@@ -206,7 +265,7 @@ function gh<T>(f: () => T): T {
 
 const MEMORY_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-export function parseToolArgs<N extends ToolName>(name: N, raw: unknown): ToolArgs[N] {
+export function parseToolArgs<N extends ToolName>(name: N, raw: unknown, now: number = Date.now()): ToolArgs[N] {
   const o = argsObject(raw)
   switch (name) {
     case 'get_time':
@@ -231,8 +290,23 @@ export function parseToolArgs<N extends ToolName>(name: N, raw: unknown): ToolAr
       return { id: o.id.toLowerCase() } as ToolArgs[N]
     }
     case 'github_list_repos':
+    case 'list_reminders':
       only(o, [])
       return {} as ToolArgs[N]
+    case 'set_reminder': {
+      only(o, ['text', 'when'])
+      try {
+        return { text: validateReminderText(o.text), dueAt: parseWhen(o.when, now) } as ToolArgs[N]
+      } catch (err) {
+        if (err instanceof IpcValidationError) throw new ToolArgsError(err.message)
+        throw err
+      }
+    }
+    case 'cancel_reminder': {
+      only(o, ['id'])
+      if (typeof o.id !== 'string' || !MEMORY_ID.test(o.id)) throw new ToolArgsError('id must be a reminder ID from list_reminders.')
+      return { id: o.id.toLowerCase() } as ToolArgs[N]
+    }
     case 'github_list_issues': {
       only(o, ['repo', 'state', 'kind'])
       const state = o.state ?? 'open'
@@ -264,7 +338,11 @@ export function parseToolArgs<N extends ToolName>(name: N, raw: unknown): ToolAr
 const clip = (s: string, n: number): string => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
 
 /** One line for approvals and the action log. `memoryText` lets forget_memory show what would be deleted. */
-export function summarizeToolCall(name: ToolName, args: unknown, extra: { memoryText?: string; workspaceName?: string } = {}): string {
+export function summarizeToolCall(
+  name: ToolName,
+  args: unknown,
+  extra: { memoryText?: string; workspaceName?: string; reminderText?: string; now?: number } = {},
+): string {
   switch (name) {
     case 'get_time':
       return 'Read the current date and time'
@@ -296,6 +374,14 @@ export function summarizeToolCall(name: ToolName, args: unknown, extra: { memory
       const a = args as ToolArgs['github_read_file']
       return clip(`Read ${a.repo}/${a.path || '(root)'}${a.ref ? ` @ ${a.ref}` : ''}`, 280)
     }
+    case 'set_reminder': {
+      const a = args as ToolArgs['set_reminder']
+      return clip(`Remind you ${formatWhen(a.dueAt, extra.now ?? Date.now())}: "${a.text}"`, 280)
+    }
+    case 'list_reminders':
+      return 'Read upcoming reminders'
+    case 'cancel_reminder':
+      return clip(extra.reminderText ? `Cancel reminder: "${extra.reminderText}"` : 'Cancel a reminder', 280)
   }
 }
 
@@ -336,6 +422,11 @@ export function toolInstructions(specs: ToolSpec[]): string[] {
     lines.push('- Saving memories is switched off. If asked to remember something, tell the owner to type /remember followed by the fact.')
   }
   if (has('forget_memory')) lines.push('- forget_memory: only when the owner asks you to forget something; find the ID with list_memories first.')
+  if (has('set_reminder')) {
+    lines.push(
+      '- set_reminder: use the owner\'s local time; check get_time when the date matters. Reminders alert only while the app is open.',
+    )
+  }
   if (specs.some((t) => t.scope === 'github:read')) {
     lines.push(
       '- GitHub tools are read-only and limited to the repositories the owner allowed. You cannot comment, open, close, merge or push.',
