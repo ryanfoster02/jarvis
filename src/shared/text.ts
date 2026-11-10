@@ -2,7 +2,8 @@
 // Checked 2026-11-09: gpt-5.4-mini supports the Responses API with reasoning effort "none" by default;
 // raw REST responses carry text in output[].content[] items of type "output_text".
 
-import type { ChatTurn, HonorificId, PersonaId, TextModelId, TextUsage } from './ipc.ts'
+import { textModelProvider, type ChatTurn, type HonorificId, type PersonaId, type TextModelId, type TextUsage } from './ipc.ts'
+import { buildAnthropicRequest } from './anthropic.ts'
 import { buildInstructions } from './realtime.ts'
 
 export interface TextRequestOptions {
@@ -15,17 +16,23 @@ export interface TextRequestOptions {
   memories?: { global: string[]; workspace: string[] }
 }
 
+/** Same persona, memory and limits as voice; replies are short plain sentences that also read well aloud. */
+export function textInstructions(o: TextRequestOptions): string {
+  return buildInstructions({ workspaceName: o.workspaceName, persona: o.persona, honorific: o.honorific, output: 'text', memories: o.memories })
+}
+
+/** Request body for whichever provider serves the chosen model. */
+export function buildProviderRequest(o: TextRequestOptions): Record<string, unknown> {
+  return textModelProvider(o.model) === 'anthropic'
+    ? buildAnthropicRequest({ model: o.model, instructions: textInstructions(o), history: o.history, message: o.message })
+    : buildTextRequest(o)
+}
+
+/** OpenAI Responses API body. */
 export function buildTextRequest(o: TextRequestOptions): Record<string, unknown> {
   const body: Record<string, unknown> = {
     model: o.model,
-    // Same persona and limits as voice; replies are short plain sentences that also read well aloud.
-    instructions: buildInstructions({
-      workspaceName: o.workspaceName,
-      persona: o.persona,
-      honorific: o.honorific,
-      output: 'text',
-      memories: o.memories,
-    }),
+    instructions: textInstructions(o),
     input: [...o.history.map((t) => ({ role: t.role, content: t.text })), { role: 'user', content: o.message }],
     max_output_tokens: 1200,
     store: false, // don't keep conversations on OpenAI's side
@@ -64,14 +71,26 @@ export function parseResponsesOutput(json: unknown): { text: string; usage: Text
   return { text: text.trim(), usage, incomplete }
 }
 
-/** USD per 1M tokens, from developers.openai.com model pages (checked 2026-11-09). */
-const TEXT_PRICES: Record<TextModelId, { input: number; cached: number; output: number }> = {
+/**
+ * USD per 1M tokens (checked 2026-11-09): developers.openai.com model pages and
+ * platform.claude.com/docs pricing. Haiku 5.5 is priced by prompt length: above 100 000
+ * prompt tokens the whole request uses the higher tier.
+ */
+type Price = { input: number; cached: number; output: number }
+const TEXT_PRICES: Record<TextModelId, Price | { upTo100k: Price; above100k: Price }> = {
   'gpt-5.4-mini': { input: 0.75, cached: 0.075, output: 4.5 },
   'gpt-5-mini': { input: 0.25, cached: 0.025, output: 2 },
+  'claude-haiku-5-5': {
+    upTo100k: { input: 0.1, cached: 0.01, output: 0.5 },
+    above100k: { input: 0.5, cached: 0.05, output: 2.5 },
+  },
+  'claude-sonnet-5-5': { input: 2, cached: 0.1, output: 10 },
+  'claude-opus-5-5': { input: 4, cached: 0.2, output: 20 },
 }
 
 export function estimateTextCostUsd(model: TextModelId, u: TextUsage): number {
-  const p = TEXT_PRICES[model]
+  const entry = TEXT_PRICES[model]
+  const p = 'upTo100k' in entry ? (u.inputTokens > 100_000 ? entry.above100k : entry.upTo100k) : entry
   const fresh = Math.max(0, u.inputTokens - u.cachedTokens)
   return (fresh * p.input + u.cachedTokens * p.cached + u.outputTokens * p.output) / 1_000_000
 }

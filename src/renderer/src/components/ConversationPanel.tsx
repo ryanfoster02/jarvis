@@ -16,6 +16,8 @@ export interface VoiceControls {
   activity: VoiceActivity
   muted: boolean
   hasKey: boolean
+  /** The provider behind the typed-replies model has a key. */
+  textReady: boolean
   /** ElevenLabs is the chosen speech engine but its key is missing. */
   needsTtsKey: boolean
   transcription: boolean
@@ -204,6 +206,11 @@ export function ConversationPanel({ entries, history, onRemember, busy, disabled
           <li className="conv-empty">
             {voice.hasKey ? (
               <p>Type a message, or start voice and say hello.</p>
+            ) : voice.textReady ? (
+              <>
+                <p>Type a message to talk with Jarvis.</p>
+                <p className="fine">Voice needs an OpenAI key; add one in Settings to talk out loud.</p>
+              </>
             ) : (
               <>
                 <p>Add your OpenAI key in Settings to talk with Jarvis.</p>

@@ -54,7 +54,7 @@ For development, put your OpenAI key in a local `.env` file:
 ```bash
 npm run setup:env     # creates .env from .env.example (never overwrites)
 ```
-Open `.env` and paste your keys after `OPENAI_API_KEY=` and `ELEVENLABS_API_KEY=`. Then run `npm run dev` and press **Start voice**. Settings → AI provider shows "key from .env file · ending xxxx".
+Open `.env` and paste your keys after `OPENAI_API_KEY=` and `ELEVENLABS_API_KEY=` (and optionally `ANTHROPIC_API_KEY=` to use Claude for typed replies). Then run `npm run dev` and press **Start voice**. Settings → AI provider shows "key from .env file · ending xxxx".
 - `.env` is git-ignored and only read by the main process in development. Packaged builds ignore it.
 - While it's set, it overrides a key saved in Settings. Edits apply the next time you start voice.
 - Never rename it with a `VITE_` prefix: that would bundle the key into the interface.

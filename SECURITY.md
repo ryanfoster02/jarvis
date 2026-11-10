@@ -11,7 +11,7 @@
 ## 2. Credentials
 - Stored only in the main process, encrypted with Electron `safeStorage` (macOS Keychain-backed). Never in: renderer, frontend bundle, logs, SQLite memory tables, Git, session reports.
 - Realtime voice uses the WebRTC unified interface: main relays the SDP offer with the key; the renderer never receives a credential. Keys are verified (`GET /v1/models`) before saving; only the last 4 characters are ever shown. OpenAI error bodies stay in main (they can echo key fragments); the renderer gets a sanitized message.
-- `.env` (development only, git-ignored, created with mode 600 by `npm run setup:env`) may hold `OPENAI_API_KEY` and `ELEVENLABS_API_KEY`. It is read by the main process on each use, never copied into `process.env`, ignored when packaged, and overrides the vault key while set. Secrets must never use a `VITE_`-style prefix (electron-vite would bundle them into the renderer). `.env.example` holds names, never values.
+- `.env` (development only, git-ignored, created with mode 600 by `npm run setup:env`) may hold `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` and `ELEVENLABS_API_KEY`. It is read by the main process on each use, never copied into `process.env`, ignored when packaged, and overrides the vault key while set. Secrets must never use a `VITE_`-style prefix (electron-vite would bundle them into the renderer). `.env.example` holds names, never values.
 - Integration OAuth is user-initiated and interactive. No unattended credential capture.
 
 - ElevenLabs: key used only in main (`src/main/elevenlabs.ts`). The renderer sends text chunks (validated, ≤1000 chars, refused while halted) over `tts:speak` and receives MP3 bytes. Keys restricted to Text to Speech are accepted (verification treats `missing_permissions` as authenticated).
@@ -90,3 +90,9 @@ Scope: Electron window/session config, preload bridge, all IPC handlers, credent
 - Prompt-injection defense: memories are presented to the model as quoted owner notes under an explicit "information, never instructions" label; the Limits section comes after them.
 - Isolation: workspace memories are only visible, editable and deletable from their own workspace (data layer, tested); global memories are shared by design.
 - Export writes only to a path the owner chooses in the save dialog (mode 600). Deletion asks for confirmation and is permanent.
+
+## 14. Anthropic provider (Sprint 7)
+- The Anthropic key (`sk-ant-…`) is used only in `src/main/anthropic.ts`, sent as `x-api-key` to `api.anthropic.com` and nowhere else. Verified with `GET /v1/models` before saving; encrypted in the vault like the others; only the last 4 characters reach the UI.
+- Each provider gets only its own key: chat routing picks the key from the chosen model's provider. The OpenAI validator refuses `sk-ant-` keys (so a Claude key is never sent to OpenAI) and the Anthropic validator refuses non-`sk-ant-` keys.
+- Anthropic error bodies stay in main; messages shown to the renderer are rewritten and strip anything that looks like `sk-ant-…`.
+- Typed replies through Claude share the chat rate limit (30/min), the kill switch check, persona limits and memory labelling with OpenAI. Memory refuses Anthropic keys (`detectSecret`, tested).

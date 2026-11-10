@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
+  textModelProvider,
   WORKSPACES,
   type AppInfo,
   type ConversationSummary,
@@ -62,6 +63,23 @@ function statusLine(o: {
 
 let entrySeq = 0
 const newId = (): string => `e${++entrySeq}`
+
+
+/** Is the provider behind the typed-replies model connected? */
+function textReady(creds: CredentialStatus | null, settings: Settings | null): boolean {
+  if (!creds || !settings) return false
+  return creds[textModelProvider(settings.textModel)].configured
+}
+
+/** Real connected services only, e.g. "OpenAI + Claude + 11L". */
+function providerLabel(creds: CredentialStatus | null, settings: Settings | null, elevenActive: boolean): string {
+  if (!creds) return 'None'
+  const parts: string[] = []
+  if (creds.openai.configured) parts.push('OpenAI')
+  if (creds.anthropic.configured && settings && textModelProvider(settings.textModel) === 'anthropic') parts.push('Claude')
+  if (parts.length && elevenActive && creds.elevenlabs.configured) parts.push('11L')
+  return parts.length ? parts.join(' + ') : 'None'
+}
 
 export function App(): React.JSX.Element {
   const [settings, setSettings] = useState<Settings | null>(null)
@@ -347,7 +365,7 @@ export function App(): React.JSX.Element {
   const workspace = WORKSPACES.find((w) => w.id === settings?.activeWorkspace) ?? WORKSPACES[0]
   const elevenActive = voice.engine === 'elevenlabs' || (voice.engine === null && settings?.speechEngine === 'elevenlabs')
   const telemetry: Telemetry = {
-    provider: !creds?.openai.configured ? 'None' : elevenActive && creds.elevenlabs.configured ? 'OpenAI + 11L' : 'OpenAI',
+    provider: providerLabel(creds, settings, elevenActive),
     tokens: usage.tokens,
     costUsd: usage.costUsd,
     latencyMs: usage.latencyMs,
@@ -415,6 +433,7 @@ export function App(): React.JSX.Element {
                 activity: voice.activity,
                 muted: voice.muted,
                 hasKey: !!creds?.openai.configured,
+                textReady: textReady(creds, settings),
                 needsTtsKey: settings?.speechEngine === 'elevenlabs' && !creds?.elevenlabs.configured,
                 transcription: voice.transcription,
                 onStart: () => void voice.start(),

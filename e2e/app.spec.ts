@@ -134,6 +134,30 @@ test('settings open with ⌘, and close with Esc; bad key is rejected before any
   await app.close()
 })
 
+test('Claude for typed replies: key form validates, missing key is reported honestly', async () => {
+  const { app, page } = await launch(profile)
+  await page.keyboard.press('ControlOrMeta+,')
+  await page.getByRole('button', { name: 'Voice' }).click()
+  await page.getByRole('combobox', { name: 'Typed replies model' }).selectOption('claude-haiku-5-5')
+  await expect(page.locator('.field-warn')).toContainText('No Anthropic Claude key is saved')
+
+  await page.getByRole('button', { name: 'AI provider' }).click()
+  const anthropic = page.locator('.provider').filter({ hasText: 'Anthropic (Claude)' })
+  await anthropic.locator('input[type="password"]').fill('sk-proj-' + 'a'.repeat(40))
+  await anthropic.getByRole('button', { name: 'Verify and save' }).click()
+  await expect(anthropic.locator('.form-msg.is-error')).toContainText("doesn't look like an Anthropic API key")
+
+  await page.keyboard.press('Escape')
+  const box = page.getByRole('textbox', { name: 'Message' })
+  await box.fill('Jarvis, are you there?')
+  await box.press('Enter')
+  await expect(page.locator('.msg-system')).toContainText('no Anthropic key is saved')
+  await expect(page.locator('.msg-assistant')).toHaveCount(0)
+  // Leave the shared test profile as it was.
+  await page.evaluate(() => window.jarvis.settings.update({ textModel: 'gpt-5.4-mini' }))
+  await app.close()
+})
+
 test('conversations persist across restarts, stay in their workspace, and delete cleanly', async () => {
   test.setTimeout(120_000) // three app launches
   let { app, page } = await launch(profile)

@@ -110,11 +110,24 @@ export const ELEVEN_MODELS = [
 export type ElevenModelId = (typeof ELEVEN_MODELS)[number]['id']
 
 /** Models for typed replies (Responses API). Checked against OpenAI docs 2026-11-09. */
+/** Who answers typed messages. Voice always uses OpenAI Realtime (Anthropic has no speech-to-speech API). */
+export const TEXT_PROVIDERS = ['openai', 'anthropic'] as const
+export type TextProviderId = (typeof TEXT_PROVIDERS)[number]
+export const TEXT_PROVIDER_NAMES: Record<TextProviderId, string> = { openai: 'OpenAI', anthropic: 'Anthropic Claude' }
+
+/** Models for typed replies. Checked against OpenAI and Anthropic docs 2026-11-09. */
 export const TEXT_MODELS = [
-  { id: 'gpt-5.4-mini', name: 'GPT-5.4 mini (fast)' },
-  { id: 'gpt-5-mini', name: 'GPT-5 mini (lower cost)' },
+  { id: 'gpt-5.4-mini', provider: 'openai', name: 'GPT-5.4 mini (fast)' },
+  { id: 'gpt-5-mini', provider: 'openai', name: 'GPT-5 mini (lower cost)' },
+  { id: 'claude-haiku-5-5', provider: 'anthropic', name: 'Claude Haiku 5.5 (fastest, lowest cost)' },
+  { id: 'claude-sonnet-5-5', provider: 'anthropic', name: 'Claude Sonnet 5.5 (stronger)' },
+  { id: 'claude-opus-5-5', provider: 'anthropic', name: 'Claude Opus 5.5 (most capable)' },
 ] as const
 export type TextModelId = (typeof TEXT_MODELS)[number]['id']
+
+export function textModelProvider(id: TextModelId): TextProviderId {
+  return TEXT_MODELS.find((m) => m.id === id)?.provider ?? 'openai'
+}
 
 export interface Settings {
   theme: Theme
@@ -186,9 +199,13 @@ export interface KillSwitchState {
   reason: string | null
 }
 
-export const PROVIDERS = ['openai', 'elevenlabs'] as const
+export const PROVIDERS = ['openai', 'anthropic', 'elevenlabs'] as const
 export type ProviderId = (typeof PROVIDERS)[number]
-export const PROVIDER_ENV: Record<ProviderId, string> = { openai: 'OPENAI_API_KEY', elevenlabs: 'ELEVENLABS_API_KEY' }
+export const PROVIDER_ENV: Record<ProviderId, string> = {
+  openai: 'OPENAI_API_KEY',
+  anthropic: 'ANTHROPIC_API_KEY',
+  elevenlabs: 'ELEVENLABS_API_KEY',
+}
 
 export interface ProviderKeyStatus {
   configured: boolean
@@ -206,6 +223,7 @@ export interface CredentialStatus {
   /** False if the OS can't encrypt secrets (then keys can't be saved). */
   encryptionAvailable: boolean
   openai: ProviderKeyStatus
+  anthropic: ProviderKeyStatus
   elevenlabs: ProviderKeyStatus
 }
 
@@ -279,7 +297,7 @@ export type MemoryExportResult = { ok: true; path: string; count: number } | { o
 export type HistoryResult<T> = { ok: true; value: T } | { ok: false; code: 'unavailable' | 'not_found' | 'invalid_input'; message: string }
 
 export type ChatResult =
-  | { ok: true; reply: string; model: TextModelId; usage: TextUsage; conversationId: string | null }
+  | { ok: true; reply: string; model: TextModelId; provider: TextProviderId; usage: TextUsage; conversationId: string | null }
   | {
       ok: false
       code: 'no_provider' | 'halted' | 'invalid_input' | 'rate_limited' | 'network' | 'api_error'
@@ -515,6 +533,9 @@ export function validateOpenAIKey(input: unknown): string {
   if (typeof input !== 'string') throw new IpcValidationError('API key must be text')
   const key = input.trim()
   if (key.length > MAX_KEY_CHARS) throw new IpcValidationError('That API key is too long')
+  if (key.startsWith('sk-ant-')) {
+    throw new IpcValidationError('That is an Anthropic (Claude) key. Paste it into the Anthropic box instead.')
+  }
   if (!/^sk-[A-Za-z0-9_-]{20,}$/.test(key)) {
     throw new IpcValidationError("That doesn't look like an OpenAI API key. Keys start with sk- and contain no spaces.")
   }
@@ -532,8 +553,21 @@ export function validateElevenLabsKey(input: unknown): string {
   return key
 }
 
+/** Anthropic API keys start with sk-ant-. Never echoes the key in errors. */
+export function validateAnthropicKey(input: unknown): string {
+  if (typeof input !== 'string') throw new IpcValidationError('API key must be text')
+  const key = input.trim()
+  if (key.length > MAX_KEY_CHARS) throw new IpcValidationError('That API key is too long')
+  if (!/^sk-ant-[A-Za-z0-9_-]{20,}$/.test(key)) {
+    throw new IpcValidationError("That doesn't look like an Anthropic API key. Keys start with sk-ant- and contain no spaces.")
+  }
+  return key
+}
+
 export function validateProviderKey(provider: ProviderId, input: unknown): string {
-  return provider === 'openai' ? validateOpenAIKey(input) : validateElevenLabsKey(input)
+  if (provider === 'openai') return validateOpenAIKey(input)
+  if (provider === 'anthropic') return validateAnthropicKey(input)
+  return validateElevenLabsKey(input)
 }
 
 export const MAX_TTS_CHARS = 1000

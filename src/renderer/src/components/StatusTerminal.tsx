@@ -34,7 +34,7 @@ export function StatusTerminal({ line, tone, telemetry }: Props): React.JSX.Elem
           <dt>Cost est.</dt>
           <dd
             title={
-              (telemetry.costUsd === null ? 'No published price for this OpenAI model.' : 'OpenAI cost estimated from token usage this session.') +
+              (telemetry.costUsd === null ? 'No published price for this model.' : 'Model cost (OpenAI / Anthropic) estimated from token usage this session.') +
               (telemetry.ttsChars > 0 ? ` ElevenLabs: ${telemetry.ttsChars.toLocaleString()} characters, billed separately by ElevenLabs.` : '')
             }
           >

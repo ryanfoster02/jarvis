@@ -14,6 +14,7 @@ import {
   validateSdpOffer,
   validateSettingsPatch,
   validateTtsText,
+  textModelProvider,
   WORKSPACES,
   type AppInfo,
   type ChatResult,
@@ -30,9 +31,11 @@ import {
   type VoiceConnectResult,
 } from '../shared/ipc.ts'
 import { buildRealtimeSession, isTranscriptionConfigError } from '../shared/realtime.ts'
-import { buildTextRequest, parseResponsesOutput } from '../shared/text.ts'
+import { buildProviderRequest } from '../shared/text.ts'
+import { TEXT_PROVIDER_IMPLS } from './textProviders.ts'
+import { verifyAnthropicKey } from './anthropic.ts'
 import { LIMITS, RateLimiter } from '../shared/ratelimit.ts'
-import { createRealtimeCall, createTextResponse, verifyKey } from './openai.ts'
+import { createRealtimeCall, verifyKey } from './openai.ts'
 import { synthesize, verifyElevenLabsKey } from './elevenlabs.ts'
 import { clearKey, credentialStatus, encryptionAvailable, getKey, saveKey } from './vault.ts'
 import { loadSettings, updateSettings } from './settings.ts'
@@ -127,16 +130,22 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
         if (err instanceof IpcValidationError) return { ok: false, code: 'invalid_input', message: err.message }
         throw err
       }
-      const key = getKey('openai')
+      const settings = loadSettings()
+      // The chosen model decides the provider; each provider uses only its own key.
+      const providerId = textModelProvider(settings.textModel)
+      const provider = TEXT_PROVIDER_IMPLS[providerId]
+      const key = getKey(providerId)
       if (!key) {
         return {
           ok: false,
           code: 'no_provider',
-          message: 'No AI provider is connected yet. Add your OpenAI key in Settings → AI provider.',
+          message:
+            providerId === 'anthropic'
+              ? 'Typed replies are set to a Claude model, but no Anthropic key is saved. Add it in Settings → AI provider, or pick an OpenAI model.'
+              : 'No AI provider is connected yet. Add your OpenAI key in Settings → AI provider.',
         }
       }
       if (!limits.chat.take()) return { ok: false, code: 'rate_limited', message: SLOW_DOWN }
-      const settings = loadSettings()
       const ws = settings.activeWorkspace
       const db = history.database?.db ?? null
 
@@ -155,7 +164,7 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
 
       const workspaceName = WORKSPACES.find((w) => w.id === ws)?.name ?? 'Personal'
       const memories = db ? await memoriesForPrompt(db, ws) : undefined
-      const body = buildTextRequest({
+      const body = buildProviderRequest({
         model: settings.textModel,
         workspaceName,
         persona: settings.persona,
@@ -164,16 +173,17 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
         message: text,
         memories,
       })
-      const res = await createTextResponse(key, body)
+      const res = await provider.send(key, body)
       if (isHalted()) return { ok: false, code: 'halted', message: 'Stop all was engaged while Jarvis was replying.' }
       if (!res.ok) return { ok: false, code: res.status === 0 ? 'network' : 'api_error', message: res.message }
-      const parsed = parseResponsesOutput(res.value)
+      const parsed = provider.parse(res.value)
       if (!parsed.text) {
-        return { ok: false, code: 'api_error', message: 'OpenAI returned an empty reply. Try rephrasing.' }
+        const why = parsed.incomplete === 'refusal' ? 'declined to answer that' : 'returned an empty reply'
+        return { ok: false, code: 'api_error', message: `${provider.name} ${why}. Try rephrasing.` }
       }
-      const reply = parsed.incomplete ? `${parsed.text} …(reply cut short)` : parsed.text
+      const reply = parsed.incomplete && parsed.incomplete !== 'refusal' ? `${parsed.text} …(reply cut short)` : parsed.text
       if (db && convId) await appendMessage(db, ws, convId, { role: 'assistant', text: reply, via: 'text' })
-      return { ok: true, reply, model: settings.textModel, usage: parsed.usage, conversationId: convId }
+      return { ok: true, reply, model: settings.textModel, provider: providerId, usage: parsed.usage, conversationId: convId }
     }),
   )
 
@@ -348,7 +358,12 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
       if (!encryptionAvailable()) {
         return { ok: false, message: 'Secure storage is not available on this Mac, so the key cannot be saved safely.' }
       }
-      const check = provider === 'openai' ? await verifyKey(key) : await verifyElevenLabsKey(key)
+      const check =
+        provider === 'openai'
+          ? await verifyKey(key)
+          : provider === 'anthropic'
+            ? await verifyAnthropicKey(key)
+            : await verifyElevenLabsKey(key)
       if (!check.ok) return { ok: false, message: check.message }
       saveKey(provider, key)
       return { ok: true, status: credentialStatus() }

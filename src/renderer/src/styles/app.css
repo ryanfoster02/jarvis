@@ -1388,3 +1388,8 @@ select {
   color: #ff9aa4;
   text-align: left;
 }
+
+/* Inline warning inside a settings field description (e.g. model picked without its key). */
+.field-warn {
+  color: var(--danger);
+}

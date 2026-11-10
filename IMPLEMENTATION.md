@@ -1,6 +1,6 @@
 # IMPLEMENTATION
 
-Current phase: Phase 2 / Sprint 6 — Memory
+Current phase: Phase 2 / Sprint 7 — Provider interface (Claude)
 
 Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ not started
 
@@ -73,19 +73,28 @@ Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ no
 
 **Acceptance:** messages survive restart; switching workspace shows only that workspace's conversations; deleting removes messages; `npm test` (incl. Drizzle tests) and `npm run test:e2e` pass on macOS.
 
-### Sprint 6 — Memory 🟡
+### Sprint 6 — Memory ✅ (owner verified tests + e2e 2026-11-09)
 - ✅ Memory rules (`src/shared/memory.ts`): 500-char facts, 200 per scope, secret detection (API keys, tokens, passwords, card numbers, private keys) — 6 tests
 - ✅ Migration 2: `memories` table with scope/workspace CHECKs; v1→v2 upgrade keeps data (tested on node:sqlite)
-- 🟡 Workspace-scoped store: global visible everywhere, workspace memories only at home; edit/delete isolation; limits (3 Drizzle tests — run after `npm install`)
-- 🟡 Prompts: memories injected into typed and voice instructions as labelled data (never instructions), capped at 6 000 chars, placed before the Limits section
-- 🟡 UI: Memory screen (add with scope, edit, delete with confirmation, export all as JSON via save dialog), Remember button on your messages, `/remember …` command
-- 🟡 e2e: add/scope/secret refusal/persist/edit/delete/`/remember`
+- ✅ Workspace-scoped store: global visible everywhere, workspace memories only at home; edit/delete isolation; limits (3 Drizzle tests — run after `npm install`)
+- ✅ Prompts: memories injected into typed and voice instructions as labelled data (never instructions), capped at 6 000 chars, placed before the Limits section
+- ✅ UI: Memory screen (add with scope, edit, delete with confirmation, export all as JSON via save dialog), Remember button on your messages, `/remember …` command
+- ✅ e2e: add/scope/secret refusal/persist/edit/delete/`/remember`
 - ⬜ Jarvis saving memories itself (voice "remember that…") — needs tools + permissions (Sprint 8)
 
 **Acceptance:** facts saved in one workspace don't appear in another; global facts appear everywhere; Jarvis uses them in replies (typed and voice); secrets are refused; export writes a JSON file you choose; `npm test` and `npm run test:e2e` pass.
 
-### Sprint 7 — Provider interface ⬜
-`Provider` abstraction for typed replies; OpenAI + Anthropic Claude; per-workspace or global choice; key in vault.
+### Sprint 7 — Provider interface (Claude) 🟡
+- ✅ Contract: `anthropic` provider + `ANTHROPIC_API_KEY`; `sk-ant-` key validator (OpenAI validator now refuses Claude keys); Claude models in `TEXT_MODELS` with a `provider` field
+- ✅ Pure helpers (`src/shared/anthropic.ts`): request builder (top-level `system`, same persona + memory), history normalisation (user-first, alternating), response parsing (text blocks, cache-aware usage, `max_tokens` / `refusal`), sanitized errors (401/403/404/429/529) — 7 tests
+- ✅ Costs: Claude prices incl. Haiku 5.5's 100k prompt tier — tested
+- ✅ Main: `src/main/anthropic.ts` (verify via `GET /v1/models`, Messages call) + `TextProvider` registry; `chat:send` routes by the model's provider with its own key and an honest "no Anthropic key" message — client exercised against a stubbed `fetch` here
+- ✅ UI: Anthropic key form, typed-replies model picker grouped by provider with "(no key)" and an inline warning, telemetry shows "OpenAI + Claude", empty state works with a Claude key only
+- ✅ e2e: Claude model without key → honest notice; Anthropic form rejects non-Claude keys
+- 🟡 Needs owner verification: `npm run typecheck`, `npm test`, `npm run test:e2e`, and one real Claude reply with your Anthropic key
+- ⬜ Per-workspace provider choice (deferred: global setting for now); streaming replies (with Sprint 8 tools)
+
+**Acceptance:** with an Anthropic key saved and a Claude model picked, typed messages get Claude replies in the JARVIS persona using memories; switching back to GPT works; without the key the app says so; voice is unaffected.
 
 ### Sprint 8 — Tools, permissions, limits ⬜
 Tool registry with risk levels and scopes; permission engine (permissions → scopes → mandates, high-risk always asks); execution limits enforced; approvals queue UI; execution log; first low-risk tools (time/date, memory read/write).

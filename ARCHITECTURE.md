@@ -48,7 +48,9 @@ sessions/      session reports (YYYY-MM-DD_HH-mm.md)
 8. Stop all / End voice closes the peer connection and stops all tracks. Tool calls are **not** enabled in the session yet (Phase 2 permission engine first).
 
 ## AI runtime & tools (Phase 2)
-`Provider` interface (`complete`, `stream`) with OpenAI first, Anthropic later. `ToolRegistry` entries declare: name, schema, risk level (low/medium/high), required scopes. Every call goes through `PermissionEngine.check(tool, args, workspace, mandate)` → `approve | needsApproval | deny`, and is bounded by `ExecutionLimits` (iterations, time, tool calls, cost, depth, concurrency).
+**Typed-reply providers (Sprint 7).** `TextProvider` (`src/main/textProviders.ts`) = `{ id, name, send(key, body), parse(json) }`, with `openai` (Responses API) and `anthropic` (Messages API) entries. Request bodies are built in pure shared code (`buildProviderRequest` in `src/shared/text.ts` → `buildAnthropicRequest` in `src/shared/anthropic.ts`) from the same persona, memory and limits as voice. `chat:send` picks the provider from `settings.textModel` and uses only that provider's key; the renderer gets the reply text, the model, the provider id and token usage. Anthropic history is normalised (starts with the user, alternating roles) before sending. Streaming and tool use come with Sprint 8.
+
+Planned: `ToolRegistry` entries declare `ToolRegistry` entries declare: name, schema, risk level (low/medium/high), required scopes. Every call goes through `PermissionEngine.check(tool, args, workspace, mandate)` → `approve | needsApproval | deny`, and is bounded by `ExecutionLimits` (iterations, time, tool calls, cost, depth, concurrency).
 
 ## Data (Phase 2)
 `userData/jarvis.db` opened in main at startup (`src/main/db/client.ts`): `node:sqlite` → executor → Drizzle sqlite-proxy. WAL, foreign keys on, migrations by `PRAGMA user_version` (atomic; refuses a newer schema). If it can't open, Jarvis runs without history and the UI says so.

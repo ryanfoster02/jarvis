@@ -9,6 +9,9 @@ import {
   PROVIDER_ENV,
   SPEECH_ENGINES,
   TEXT_MODELS,
+  TEXT_PROVIDER_NAMES,
+  TEXT_PROVIDERS,
+  textModelProvider,
   PERSONAS,
   REALTIME_MODELS,
   VOICES,
@@ -58,6 +61,11 @@ const PROVIDER_INFO: Record<ProviderId, { name: string; purpose: string; where: 
     name: 'OpenAI',
     purpose: 'Listens and thinks: speech recognition and replies for voice.',
     where: 'platform.openai.com → API keys',
+  },
+  anthropic: {
+    name: 'Anthropic (Claude)',
+    purpose: 'Optional: answers typed messages when a Claude model is picked under Typed replies. Voice still needs the first key.',
+    where: 'platform.claude.com → Settings → API keys',
   },
   elevenlabs: {
     name: 'ElevenLabs',
@@ -163,6 +171,7 @@ function ProviderSection({ creds, onCreds }: { creds: CredentialStatus; onCreds:
         <p className="form-msg is-error">Secure storage isn&apos;t available on this system, so keys can&apos;t be saved.</p>
       )}
       <KeyForm provider="openai" creds={creds} onCreds={onCreds} />
+      <KeyForm provider="anthropic" creds={creds} onCreds={onCreds} />
       <KeyForm provider="elevenlabs" creds={creds} onCreds={onCreds} />
     </>
   )
@@ -486,14 +495,32 @@ export function SettingsView({ settings, info, creds, onCreds, onUpdate }: Props
             </div>
             <div className="field">
               <div className="field-text">
-                <h3>Typed replies model (OpenAI)</h3>
-                <p>Answers what you type when voice is off. Same personality and limits as voice.</p>
+                <h3>Typed replies model</h3>
+                <p>
+                  Answers what you type when voice is off. Same personality, memory and limits as voice.
+                  {!creds[textModelProvider(settings.textModel)].configured && (
+                    <span className="field-warn">
+                      {' '}
+                      No {TEXT_PROVIDER_NAMES[textModelProvider(settings.textModel)]} key is saved, so typed replies won&apos;t work
+                      until you add one above.
+                    </span>
+                  )}
+                </p>
               </div>
-              <select className="select" value={settings.textModel} onChange={(e) => onUpdate({ textModel: e.target.value as TextModelId })}>
-                {TEXT_MODELS.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
+              <select
+                className="select"
+                aria-label="Typed replies model"
+                value={settings.textModel}
+                onChange={(e) => onUpdate({ textModel: e.target.value as TextModelId })}
+              >
+                {TEXT_PROVIDERS.map((p) => (
+                  <optgroup key={p} label={`${TEXT_PROVIDER_NAMES[p]}${creds[p].configured ? '' : ' (no key)'}`}>
+                    {TEXT_MODELS.filter((m) => m.provider === p).map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
             </div>
