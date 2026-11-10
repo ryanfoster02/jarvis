@@ -1620,3 +1620,34 @@ select {
 .btn-small {
   margin-bottom: 10px;
 }
+
+/* ---------- Running tasks and stop controls (Sprint 11) ---------- */
+.running-task {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+.running-task .approval-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.running-task .approval-summary {
+  margin: 6px 0 8px;
+  color: var(--dim);
+}
+.running-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  animation: attention 1.2s ease-in-out infinite;
+}
+.composer-stop {
+  border-color: color-mix(in srgb, var(--danger) 70%, transparent) !important;
+  background: color-mix(in srgb, var(--danger) 14%, transparent) !important;
+  color: #ffb3ba !important;
+}

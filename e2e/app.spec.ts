@@ -52,6 +52,7 @@ test('renderer is isolated: no Node globals, only the narrow jarvis bridge', asy
   expect(globals.bridge).toEqual([
     'app',
     'approvals',
+    'background',
     'chat',
     'conversations',
     'credentials',
@@ -60,6 +61,7 @@ test('renderer is isolated: no Node globals, only the narrow jarvis bridge', asy
     'memory',
     'reminders',
     'settings',
+    'tasks',
     'tools',
     'tts',
     'voice',
@@ -445,5 +447,42 @@ test('reminders: Jarvis setting one asks first; approving puts it on the list', 
   await expect(panel.locator('.reminder-row', { hasText: 'Renew the domain' })).toBeVisible()
   await panel.getByRole('button', { name: 'Cancel reminder: Renew the domain' }).click()
   await expect(panel.locator('.reminder-row', { hasText: 'Renew the domain' })).toHaveCount(0)
+  await app.close()
+})
+
+test('background mode: menu-bar icon on and off; open-at-login only in the installed app', async () => {
+  const { app, page } = await launch(profile)
+  await page.keyboard.press('ControlOrMeta+,')
+  await page.getByRole('button', { name: 'Notifications' }).click()
+  const bg = page.getByRole('switch', { name: 'Keep running in the menu bar' })
+  const login = page.getByRole('switch', { name: 'Open at login' })
+  await expect(bg).toHaveAttribute('aria-checked', 'false')
+  await expect(login).toBeDisabled()
+  await bg.click()
+  await expect(page.getByText('Menu-bar icon is showing.')).toBeVisible()
+  await expect(page.getByText('Available in the installed app')).toBeVisible()
+  await expect(login).toBeDisabled() // development build
+  await bg.click()
+  await expect(page.getByText('Menu-bar mode is off.')).toBeVisible()
+  await app.close()
+})
+
+test('stop levels: stopping a running action withdraws its approval and logs it', async () => {
+  const { app, page } = await launch(profile)
+  const pending = invoke(page, 'save_memory', { text: 'Should be stopped', scope: 'workspace' })
+  const running = page.getByRole('region', { name: 'Running' })
+  await expect(running.locator('.running-task')).toContainText('Voice: Save a memory')
+  await expect(running.locator('.running-task')).toContainText('Now: Save a memory')
+  await expect(page.locator('.approval').filter({ hasText: 'Should be stopped' })).toBeVisible()
+  await running.getByRole('button', { name: 'Stop action' }).click()
+  expect((await pending).output).toContain('stopped this action')
+  await expect(page.locator('.approval')).toHaveCount(0)
+  await expect(running).toHaveCount(0) // section disappears when nothing runs
+  await expect(page.locator('.run').first()).toContainText('Should be stopped')
+  await expect(page.locator('.run-decision').first()).toContainText('Not done')
+  const memories: Awaited<ReturnType<ToolBridge['memory']['list']>> = await page.evaluate(() =>
+    (window as unknown as { jarvis: ToolBridge }).jarvis.memory.list(),
+  )
+  expect(memories.value?.some((m) => m.text === 'Should be stopped')).toBe(false)
   await app.close()
 })

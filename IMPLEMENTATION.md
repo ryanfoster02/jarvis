@@ -1,6 +1,6 @@
 # IMPLEMENTATION
 
-Current phase: Phase 3 / Sprint 10 — Scheduler & reminders
+Current phase: Phase 3 / Sprint 11 — Background mode + worker/workflow stop levels
 
 Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ not started
 
@@ -125,7 +125,7 @@ Tool execution with approvals and the execution log already landed in Sprint 8.
 - ✅ Owner moved on to Sprint 10 (live check with a personal token still recommended)
 - ⬜ Per-workspace allowlists (global for now); GitHub writes (comments, issues) — would be medium/high risk with approvals, not planned until requested
 
-### Sprint 10 — Scheduler & reminders 🟡
+### Sprint 10 — Scheduler & reminders ✅ (owner moved on 2026-11-09)
 - ✅ Contract: `Reminder` type and lifecycle, 5 channels + 2 events, settings `autoSetReminders` (off) and `reminderNotifications` (on), 3 tool names
 - ✅ Rules (`src/shared/reminders.ts`): local-time parsing (with/without offset), past/too-far refused, text validation (secrets refused), startup sweep (fire recent, mark older missed), "today/tomorrow" formatting — tested in a fixed time zone
 - ✅ Tools: `set_reminder` (medium; mandate available), `list_reminders` (low), `cancel_reminder` (medium, never covered by a mandate); `get_time` now returns local ISO with offset
@@ -133,11 +133,20 @@ Tool execution with approvals and the execution log already landed in Sprint 8.
 - ✅ Main: `src/main/scheduler.ts` (10 s tick, paused while halted, startup sweep, macOS notifications with click-to-focus), reminders IPC (add/cancel/dismiss/snooze), live events
 - ✅ UI: Reminders in the Ops column (due/missed alerts with Dismiss and Snooze 10 min / 1 hour, upcoming list with Cancel, add form), reminder entries in the conversation (read aloud if typed replies are), status line, Settings → Notifications toggle, Permissions → "Set reminders without asking"
 - ✅ Tests: 6 unit tests + SQL constraint test; 2 Drizzle tests and 2 e2e tests (a real reminder fires through the scheduler; Jarvis setting one asks first) run on the Mac
-- 🟡 Needs owner verification: typecheck, `npm test`, `npm run test:e2e`; then "remind me in 2 minutes to stretch" (approve), keep the app open and check the notification; quit with a reminder due, reopen later and see it marked missed
-- ⬜ Repeating reminders; reminders while the app is closed (would need a background helper — not planned without your go-ahead)
+- ⬜ Repeating reminders
+- ➡ Reminders while the window is closed: background mode, approved by the owner 2026-11-09 (Sprint 11)
 
-### Sprint 11 — Worker / workflow stop levels ⬜
-Cancel one running action or one task without Stop all; abort signals threaded through tools and provider calls.
+### Sprint 11 — Background mode + worker / workflow stop levels 🟡
+**Background mode (owner-approved 2026-11-09).** Opt-in "keep running in the menu bar": closing the window leaves the scheduler running behind a menu-bar icon (open, next reminder, Stop all / Re-arm, quit). Optional open at login (installed app; macOS may ask you to approve it in Login Items). No separate helper process; voice and the microphone never run without the window. One instance at a time.
+
+**Stop levels.** Cancel one running action (worker) or a whole request (workflow) without Stop all; abort signals threaded through provider calls, approvals and GitHub reads; a Running list in the dashboard and a Stop button while Jarvis is answering.
+
+- ✅ Background mode: settings `runInBackground` / `openAtLogin` (both off), `src/main/background.ts` (menu-bar icon with open / next reminder / Stop all · Re-arm / quit; Dock icon hidden while in the background; login item with the OS-reported status, installed app only; start without a window when opened at login), `windows.ts` (reopen from tray, notifications, second launch, Dock), Settings → Notifications → Background
+- ✅ Stop levels: `TaskRegistry` (`src/shared/taskRegistry.ts`) — tested; signals through `runAgent` (tested), OpenAI/Anthropic/GitHub fetches, approvals (withdrawn on stop) and the executor (logged "Cancelled by you"); Stop all cancels all tasks; `tasks:*` IPC + live event
+- ✅ UI: "Running" in the Ops column (current action, elapsed time, Stop action / Stop request), Stop button in the composer while Jarvis answers; actions that ran before a stop still show in the conversation
+- ✅ Tests: 4 new unit tests (registry, stop levels in the agent loop); 2 new e2e tests (background switches; stopping an action withdraws its approval)
+- 🟡 Needs owner verification: typecheck, `npm test`, `npm run test:e2e`; then turn on menu-bar mode, close the window, and let a reminder fire; in the installed app (`npm run dist:mac`) try *Open at login*; ask a long question and press Stop
+- ⬜ Background mode for voice (by design: voice needs the window)
 
 ## Phase 4 — Advanced ⬜
 Bounded subagents (depth 1, ≤2 concurrent) · multi-step workflows · business workflows (leads, CRM, n8n, reports) · Windows/Linux builds · performance.

@@ -1,5 +1,5 @@
 import { ANTHROPIC_API, ANTHROPIC_VERSION, describeAnthropicError } from '../shared/anthropic.ts'
-import type { OpenAIResult as ProviderResult } from './openai.ts'
+import { withCancel, type OpenAIResult as ProviderResult } from './openai.ts'
 
 // Network calls to Anthropic. Main process only: this is the only place the Anthropic key is used.
 
@@ -34,13 +34,13 @@ export async function verifyAnthropicKey(key: string): Promise<ProviderResult<tr
 }
 
 /** Typed reply via the Messages API. Returns the raw JSON for parsing by shared/anthropic.ts. */
-export async function createAnthropicMessage(key: string, body: Record<string, unknown>): Promise<ProviderResult<unknown>> {
+export async function createAnthropicMessage(key: string, body: Record<string, unknown>, cancel?: AbortSignal): Promise<ProviderResult<unknown>> {
   try {
     const res = await fetch(`${ANTHROPIC_API}/messages`, {
       method: 'POST',
       headers: headers(key),
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(60_000),
+      signal: withCancel(AbortSignal.timeout(60_000), cancel),
     })
     const text = await res.text()
     if (!res.ok) return { ok: false, status: res.status, body: text, message: describeAnthropicError(res.status, text) }
@@ -50,6 +50,7 @@ export async function createAnthropicMessage(key: string, body: Record<string, u
       return { ok: false, status: res.status, body: '', message: 'Anthropic sent a reply Jarvis could not read.' }
     }
   } catch (err) {
+    if (cancel?.aborted) return { ok: false, status: 0, body: '', message: 'Cancelled.' }
     return networkFailure(err)
   }
 }

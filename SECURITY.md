@@ -36,11 +36,11 @@ Implemented in `src/shared/permissions.ts` (`decide`, unit-tested). The order of
 ## 5. Kill switch
 | Level | Effect |
 |---|---|
-| Worker | Abort one running tool call/agent |
-| Workflow | Abort a multi-step workflow and its children |
+| Worker | Abort one running action (**Stop action**): withdraws its approval request or aborts its network call; the request continues and the model is told the action was stopped, not to retry |
+| Workflow | Abort one request and everything under it (**Stop request** / the composer's **Stop**): provider call aborted mid-flight, pending approvals withdrawn, remaining tool calls answered "not run" |
 | Global | Halt all agent execution, pause schedules (reminders wait and fire after re-arm), answer pending approvals with no, close voice session; new execution refused until the user re-arms |
 
-Sprint 1 ships the **global** switch state in main (`killswitch.ts`) with a UI control. Worker/workflow levels arrive with the runtime (Phase 2/3). Shortcut planned: ⌘⇧. (Cmd-Shift-Period).
+Global: `killswitch.ts` since Sprint 1 (⌘⇧. and the top-bar button; also in the menu-bar icon's menu from Sprint 11). Worker/workflow: Sprint 11 — `TaskRegistry` (`src/shared/taskRegistry.ts`, unit-tested) gives every typed request and every voice tool call an `AbortController`, with a child controller per action; the signals reach `fetch` (OpenAI, Anthropic, GitHub, combined with timeouts) and approvals. Stop all aborts every task through the same registry. Stopped actions are logged ("Cancelled by you").
 
 ## 6. Execution limits (Phase 2)
 Configurable: max iterations, wall time, tool calls, token/cost budget, subagent depth (default 1 — no recursive delegation), concurrent agents (default 2). Exceeding any limit stops the run and reports.
@@ -123,3 +123,10 @@ Scope: Electron window/session config, preload bridge, all IPC handlers, credent
 - **Risk**: `set_reminder` is medium (asks, unless the owner turns on *Set reminders without asking*); `cancel_reminder` is medium with its own scope that no mandate covers, so it always asks; `list_reminders` is low. After a task reads untrusted content the mandate stops applying (§16).
 - **Data**: `reminders` table (migration 4), per workspace, text ≤ 300 characters with secrets refused, at most 200 upcoming per workspace, up to a year ahead. Owner actions (add, cancel, dismiss, snooze) come from the UI and are validated in main; times outside now…+1 year are refused.
 - **Notifications** use Electron's `Notification` (macOS may require allowing them; the in-app alert always shows). They carry only the reminder text and workspace name.
+
+## 18. Background mode (Sprint 11, owner-approved 2026-11-09)
+- **Opt-in** (Settings → Notifications → *Keep running in the menu bar*, off by default). When on, closing the window keeps the same JARVIS process alive behind a menu-bar icon so reminders fire. No extra helper process, launch agent or daemon; quitting from the icon or with ⌘Q stops everything.
+- **What runs in the background**: only the main process — scheduler, approvals queue, Stop all. Voice and the microphone live in the window's renderer and always end when the window closes; nothing can listen in the background.
+- **Menu-bar menu**: open JARVIS, next reminder, Stop all / Re-arm, quit. It shows no conversation content beyond the next reminder's first 40 characters.
+- **Open at login** (separate switch; requires menu-bar mode; installed app only): registered through Electron's `setLoginItemSettings` (macOS 13+ `SMAppService`). The UI shows what macOS reports, including *requires approval*; ad-hoc-signed builds may be refused, and the UI says so rather than pretending. When opened at login, JARVIS starts in the menu bar without a window.
+- **Single instance**: a second launch focuses the running one.

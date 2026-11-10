@@ -8,7 +8,7 @@ const TIMEOUT_MS = 20_000
 
 export type GitHubResult<T> = { ok: true; value: T } | { ok: false; status: number; message: string }
 
-export async function githubGet(token: string, path: string): Promise<GitHubResult<unknown>> {
+export async function githubGet(token: string, path: string, cancel?: AbortSignal): Promise<GitHubResult<unknown>> {
   if (!path.startsWith('/')) return { ok: false, status: 0, message: 'Invalid GitHub path.' }
   try {
     const res = await fetch(`${GITHUB_API}${path}`, {
@@ -20,7 +20,7 @@ export async function githubGet(token: string, path: string): Promise<GitHubResu
         'User-Agent': 'JARVIS-desktop',
       },
       redirect: 'follow',
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: cancel ? AbortSignal.any([AbortSignal.timeout(TIMEOUT_MS), cancel]) : AbortSignal.timeout(TIMEOUT_MS),
     })
     const text = await res.text()
     if (!res.ok) {
@@ -32,6 +32,7 @@ export async function githubGet(token: string, path: string): Promise<GitHubResu
       return { ok: false, status: res.status, message: 'GitHub sent a reply Jarvis could not read.' }
     }
   } catch (err) {
+    if (cancel?.aborted) return { ok: false, status: 0, message: 'Cancelled.' }
     const timedOut = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')
     return {
       ok: false,

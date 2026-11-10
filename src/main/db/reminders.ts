@@ -114,3 +114,9 @@ export async function markFired(db: Db, ids: string[], at: number): Promise<void
 export async function markMissed(db: Db, ids: string[]): Promise<void> {
   if (ids.length) await db.update(reminders).set({ status: 'missed' }).where(and(inArray(reminders.id, ids), eq(reminders.status, 'pending')))
 }
+
+/** Soonest upcoming reminder in any workspace (for the menu-bar icon). */
+export async function nextPending(db: Db): Promise<Reminder | null> {
+  const rows = await db.select().from(reminders).where(eq(reminders.status, 'pending')).orderBy(asc(reminders.dueAt)).limit(1)
+  return rows[0] ?? null
+}

@@ -35,6 +35,10 @@ export const Channels = {
   remindersCancel: 'reminders:cancel',
   remindersDismiss: 'reminders:dismiss',
   remindersSnooze: 'reminders:snooze',
+  backgroundStatus: 'background:status',
+  tasksList: 'tasks:list',
+  tasksCancel: 'tasks:cancel',
+  tasksCancelAction: 'tasks:cancel-action',
 } as const
 
 /** Main → renderer push events. */
@@ -47,6 +51,8 @@ export const Events = {
   remindersChanged: 'reminders:changed',
   /** A reminder just fired (carries the Reminder). */
   reminderFired: 'reminders:fired',
+  /** Running tasks changed (carries RunningTask[]). */
+  tasksChanged: 'tasks:changed',
 } as const
 
 export type Channel = (typeof Channels)[keyof typeof Channels]
@@ -174,6 +180,10 @@ export interface Settings {
   autoSetReminders: boolean
   /** Show macOS notifications when reminders fire (the in-app alert always shows). */
   reminderNotifications: boolean
+  /** Keep running in the menu bar when the window is closed, so reminders still fire. Off by default. */
+  runInBackground: boolean
+  /** Start JARVIS (in the menu bar) when you log in. Installed app only; requires runInBackground. */
+  openAtLogin: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = Object.freeze({
@@ -195,6 +205,8 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   githubRepos: [],
   autoSetReminders: false,
   reminderNotifications: true,
+  runInBackground: false,
+  openAtLogin: false,
 })
 
 /** Execution limits (SECURITY.md §6). Enforced per typed request by RunBudget (Sprint 8). */
@@ -343,8 +355,10 @@ export type ChatResult =
     }
   | {
       ok: false
-      code: 'no_provider' | 'halted' | 'invalid_input' | 'rate_limited' | 'network' | 'api_error'
+      code: 'no_provider' | 'halted' | 'invalid_input' | 'rate_limited' | 'network' | 'api_error' | 'cancelled'
       message: string
+      /** Actions that ran before the request stopped (cancelled or failed). */
+      actions?: ActionNote[]
     }
 
 export const MAX_CHAT_CHARS = 8000
@@ -477,6 +491,8 @@ export function validateSettingsPatch(input: unknown): Partial<Settings> {
         break
       case 'autoSetReminders':
       case 'reminderNotifications':
+      case 'runInBackground':
+      case 'openAtLogin':
         if (typeof value !== 'boolean') throw new IpcValidationError(`${key} must be boolean`)
         out[key] = value
         break
@@ -514,6 +530,8 @@ export function normalizeSettings(stored: unknown): Settings {
   if (typeof stored.autoSaveMemories === 'boolean') s.autoSaveMemories = stored.autoSaveMemories
   if (typeof stored.autoSetReminders === 'boolean') s.autoSetReminders = stored.autoSetReminders
   if (typeof stored.reminderNotifications === 'boolean') s.reminderNotifications = stored.reminderNotifications
+  if (typeof stored.runInBackground === 'boolean') s.runInBackground = stored.runInBackground
+  if (typeof stored.openAtLogin === 'boolean') s.openAtLogin = stored.openAtLogin
   if (Array.isArray(stored.githubRepos)) {
     s.githubRepos = [...new Set(stored.githubRepos.filter(isRepoName).map((r) => r.toLowerCase()))].slice(0, MAX_GITHUB_REPOS)
   }
@@ -617,6 +635,18 @@ export interface ActionNote {
 /** Voice tool call result: `output` goes back to the model; `action` is for the conversation view. */
 export type ToolInvokeResult = { ok: true; output: string; action: ActionNote } | { ok: false; message: string }
 
+/**
+ * Something Jarvis is working on (SECURITY.md §5 worker/workflow levels). A task is one typed request
+ * (workflow) or one voice tool call; `action` is the tool running right now (worker).
+ */
+export interface RunningTask {
+  id: string
+  kind: 'typed' | 'voice'
+  title: string
+  startedAt: number
+  action: { tool: ToolName; title: string; startedAt: number } | null
+}
+
 /** Max size of a tool's JSON arguments from the model. */
 export const MAX_TOOL_ARGS_CHARS = 4000
 
@@ -647,6 +677,18 @@ export interface Reminder {
 }
 
 export type ReminderResult = HistoryResult<Reminder>
+
+/** Background mode as the OS sees it (Sprint 11). */
+export interface BackgroundStatus {
+  /** Menu-bar mode is on and the icon is showing. */
+  trayActive: boolean
+  /** Open-at-login can be set here (installed app on macOS/Windows). */
+  loginItemSupported: boolean
+  /** What the OS reports; null when unsupported. */
+  openAtLogin: boolean | null
+  /** macOS 13+: 'enabled' | 'requires-approval' | 'not-registered' | 'not-found'; null otherwise. */
+  loginItemStatus: string | null
+}
 
 // ---------- GitHub (Sprint 9) ----------
 

@@ -23,6 +23,8 @@ import {
   type ApprovalRequest,
   type GitHubRepoCheck,
   type Reminder,
+  type BackgroundStatus,
+  type RunningTask,
   type ToolInvokeResult,
   type ToolRun,
 } from '../shared/ipc.ts'
@@ -90,6 +92,21 @@ const api = {
       ipcRenderer.on(Events.approvalsChanged, listener)
       return () => ipcRenderer.removeListener(Events.approvalsChanged, listener)
     },
+  },
+  // Stop levels: one action (worker) or one whole request (workflow). Stop all stays on killSwitch.
+  tasks: {
+    list: (): Promise<RunningTask[]> => ipcRenderer.invoke(Channels.tasksList),
+    cancel: (id: string): Promise<boolean> => ipcRenderer.invoke(Channels.tasksCancel, id),
+    cancelAction: (id: string): Promise<boolean> => ipcRenderer.invoke(Channels.tasksCancelAction, id),
+    onChange: (cb: (list: RunningTask[]) => void): (() => void) => {
+      const listener = (_e: IpcRendererEvent, list: RunningTask[]): void => cb(list)
+      ipcRenderer.on(Events.tasksChanged, listener)
+      return () => ipcRenderer.removeListener(Events.tasksChanged, listener)
+    },
+  },
+  background: {
+    /** Menu-bar icon and open-at-login state as the OS reports it. */
+    status: (): Promise<BackgroundStatus> => ipcRenderer.invoke(Channels.backgroundStatus),
   },
   reminders: {
     list: (): Promise<HistoryResult<Reminder[]>> => ipcRenderer.invoke(Channels.remindersList),

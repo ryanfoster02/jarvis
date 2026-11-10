@@ -101,12 +101,14 @@ export interface ExecutedTool {
 export interface AgentDeps {
   provider: TextProviderId
   body: Json
-  send: (body: Json) => Promise<SendResult>
+  send: (body: Json, signal?: AbortSignal) => Promise<SendResult>
   parse: (json: unknown) => { text: string; usage: TextUsage; incomplete: string | null }
   cost: (usage: TextUsage) => number | null
   execute: (call: ToolCall, state: { untrusted: boolean }) => Promise<ExecutedTool>
   budget: RunBudget
   halted: () => boolean
+  /** Workflow-level stop for this request (SECURITY.md §5). */
+  signal?: AbortSignal
 }
 
 export type AgentResult =
@@ -119,7 +121,7 @@ export type AgentResult =
       stopped: string | null
       incomplete: string | null
     }
-  | { ok: false; code: 'halted' | 'network' | 'api_error'; message: string; usage: TextUsage; actions: ActionNote[] }
+  | { ok: false; code: 'halted' | 'cancelled' | 'network' | 'api_error'; message: string; usage: TextUsage; actions: ActionNote[] }
 
 export async function runAgent(d: AgentDeps): Promise<AgentResult> {
   const adapter = ADAPTERS[d.provider]
@@ -129,13 +131,18 @@ export async function runAgent(d: AgentDeps): Promise<AgentResult> {
   let lastText = ''
   let untrusted = false
 
+  const halted = (): AgentResult => ({ ok: false, code: 'halted', message: 'Stop all was engaged while Jarvis was working.', usage, actions })
+  const cancelled = (): AgentResult => ({ ok: false, code: 'cancelled', message: 'Stopped. Nothing more will run for this request.', usage, actions })
+
   for (;;) {
-    if (d.halted()) return { ok: false, code: 'halted', message: 'Stop all was engaged while Jarvis was working.', usage, actions }
+    if (d.halted()) return halted()
+    if (d.signal?.aborted) return cancelled()
     const stop = d.budget.nextIteration()
     if (stop) return { ok: true, text: lastText, usage, actions, stopped: stop, incomplete: null }
 
-    const res = await d.send(body)
-    if (d.halted()) return { ok: false, code: 'halted', message: 'Stop all was engaged while Jarvis was working.', usage, actions }
+    const res = await d.send(body, d.signal)
+    if (d.halted()) return halted()
+    if (d.signal?.aborted) return cancelled()
     if (!res.ok) return { ok: false, code: res.status === 0 ? 'network' : 'api_error', message: res.message, usage, actions }
 
     const parsed = d.parse(res.value)
@@ -157,6 +164,10 @@ export async function runAgent(d: AgentDeps): Promise<AgentResult> {
         results.push({ id: call.id, output: 'Not run: Stop all was engaged.', isError: true })
         continue
       }
+      if (d.signal?.aborted) {
+        results.push({ id: call.id, output: 'Not run: the owner stopped this request.', isError: true })
+        continue
+      }
       const limit = d.budget.nextToolCall()
       if (limit) {
         results.push({ id: call.id, output: `Not run: ${limit}.`, isError: true })
@@ -168,6 +179,7 @@ export async function runAgent(d: AgentDeps): Promise<AgentResult> {
       if (r.note) actions.push(r.note)
       results.push({ id: call.id, output: r.output, isError: r.isError })
     }
+    if (d.signal?.aborted) return cancelled()
     body = adapter.append(body, res.value, results)
   }
 }

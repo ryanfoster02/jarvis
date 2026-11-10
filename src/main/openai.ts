@@ -6,6 +6,9 @@ const TIMEOUT_MS = 20_000
 
 export type OpenAIResult<T> = { ok: true; value: T } | { ok: false; status: number; body: string; message: string }
 
+/** Combine a timeout with the owner's stop signal (SECURITY.md §5). */
+export const withCancel = (timeout: AbortSignal, cancel?: AbortSignal): AbortSignal => (cancel ? AbortSignal.any([timeout, cancel]) : timeout)
+
 function networkFailure(err: unknown): { ok: false; status: number; body: string; message: string } {
   const timedOut = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')
   return {
@@ -61,13 +64,13 @@ export async function createRealtimeCall(
 }
 
 /** Typed reply via the Responses API. Returns the raw JSON for parsing by shared/text.ts. */
-export async function createTextResponse(key: string, body: Record<string, unknown>): Promise<OpenAIResult<unknown>> {
+export async function createTextResponse(key: string, body: Record<string, unknown>, cancel?: AbortSignal): Promise<OpenAIResult<unknown>> {
   try {
     const res = await fetch(`${OPENAI_API}/responses`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(45_000),
+      signal: withCancel(AbortSignal.timeout(45_000), cancel),
     })
     const text = await res.text()
     if (!res.ok) return { ok: false, status: res.status, body: text, message: describeOpenAIError(res.status, text) }
@@ -77,6 +80,7 @@ export async function createTextResponse(key: string, body: Record<string, unkno
       return { ok: false, status: res.status, body: '', message: 'OpenAI sent a reply Jarvis could not read.' }
     }
   } catch (err) {
+    if (cancel?.aborted) return { ok: false, status: 0, body: '', message: 'Cancelled.' }
     return networkFailure(err)
   }
 }

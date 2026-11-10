@@ -94,5 +94,17 @@ startup: sweepOnStartup → due ≤ 2 min ago fire; older → missed (shown, one
 - Pure rules in `src/shared/reminders.ts` (time parsing in local time, sweep, formatting); store in `src/main/db/reminders.ts` (workspace-scoped for the owner, cross-workspace only for the scheduler).
 - Lifecycle: pending → fired → dismissed (or snoozed back to pending); pending → cancelled; pending → missed → dismissed.
 
+## Stop levels (Sprint 11)
+```
+chat:send ──▶ tasks.start('typed') ── signal ──▶ runAgent ──▶ provider.send(…, signal) ──▶ fetch(AbortSignal.any([timeout, signal]))
+                     └─ beginAction(tool) ── action signal (task ∪ action) ──▶ executeTool ──▶ requestApproval(…, signal) / githubGet(…, signal)
+tools:invoke (voice) ──▶ tasks.start('voice') + beginAction
+tasks:cancel → workflow · tasks:cancel-action → worker · Stop all → tasks.cancelAll() (killswitch listener)
+tasks:changed event → Ops column "Running" (Stop action / Stop request) + composer Stop button
+```
+
+## Background mode (Sprint 11)
+`src/main/background.ts`: menu-bar `Tray` (template icon from `trayIcon.ts`, menu rebuilt on reminder/kill-switch changes and every minute), `setLoginItemSettings`, `shouldStartHidden()` (opened at login → no window), `onAllWindowsClosed()` (keep running + hide Dock icon when on). `src/main/windows.ts` reopens the window for the tray, notifications, a second launch and the Dock. Settings `runInBackground`, `openAtLogin`; status via `background:status`.
+
 ## Integration boundary (Phase 3)
 Each integration: allowlist entry, status, scopes, credential reference (vault key), tools exposed, revoke action, execution history. External content is tagged untrusted and passed to the model as data, never as instructions.

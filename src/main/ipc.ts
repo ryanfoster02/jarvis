@@ -20,6 +20,9 @@ import {
   validateRepoName,
   type GitHubRepoCheck,
   type Reminder,
+  type BackgroundStatus,
+  type RunningTask,
+  isToolName,
   DEFAULT_LIMITS,
   type ApprovalRequest,
   type ToolInvokeResult,
@@ -56,6 +59,8 @@ import {
   snoozeReminder,
 } from './db/reminders.ts'
 import { remindersChanged } from './scheduler.ts'
+import { applyBackground, backgroundStatus } from './background.ts'
+import { tasks } from './tasks.ts'
 import { parseWhen, SNOOZE_MINUTES, validateReminderText } from '../shared/reminders.ts'
 import { executeTool, permissionContext } from './tools.ts'
 import { answerApproval, listApprovals } from './approvals.ts'
@@ -89,8 +94,6 @@ const limits = {
   tools: new RateLimiter(LIMITS.toolCallsPerMinute, 60_000),
 }
 const SLOW_DOWN = 'Too many requests in the last minute. Wait a moment and try again.'
-/** Typed-reply tasks in progress (SECURITY.md §6: at most DEFAULT_LIMITS.maxConcurrentAgents). */
-let running = 0
 /** The current voice session has read untrusted content (SECURITY.md §7); reset on each voice connect. */
 let voiceUntrusted = false
 
@@ -140,8 +143,15 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
 
   ipcMain.handle(
     Channels.settingsUpdate,
-    guard((patch: unknown) => updateSettings(validateSettingsPatch(patch))),
+    guard((patch: unknown) => {
+      const p = validateSettingsPatch(patch)
+      const next = updateSettings(p)
+      if ('runInBackground' in p || 'openAtLogin' in p) applyBackground(next)
+      return next
+    }),
   )
+
+  ipcMain.handle(Channels.backgroundStatus, guard((): BackgroundStatus => backgroundStatus()))
 
   ipcMain.handle(Channels.killSwitchGet, guard(() => getKillSwitch()))
   ipcMain.handle(Channels.killSwitchEngage, guard((reason: unknown) => engage(validateReason(reason))))
@@ -178,8 +188,10 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
               : 'No AI provider is connected yet. Add your OpenAI key in Settings → AI provider.',
         }
       }
+      // At most DEFAULT_LIMITS.maxConcurrentAgents typed requests at once (SECURITY.md §6).
+      const running = tasks.count('typed')
       if (running >= DEFAULT_LIMITS.maxConcurrentAgents) {
-        return { ok: false, code: 'rate_limited', message: `Jarvis is already working on ${running} tasks. Wait for one to finish.` }
+        return { ok: false, code: 'rate_limited', message: `Jarvis is already working on ${running} requests. Wait for one to finish, or stop one.` }
       }
       if (!limits.chat.take()) return { ok: false, code: 'rate_limited', message: SLOW_DOWN }
       const ws = settings.activeWorkspace
@@ -217,23 +229,33 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
         memories,
         tools,
       })
-      running++
+      const task = tasks.start('typed', text)
       let result: AgentResult
       try {
         result = await runAgent({
           provider: providerId,
           body,
-          send: (b) => provider.send(key, b),
+          send: (b, signal) => provider.send(key, b, signal),
           parse: provider.parse,
           cost: (u) => estimateTextCostUsd(settings.textModel, u),
-          execute: (call, state) => executeTool(call.name, call.arguments, { ...toolCtx, untrusted: state.untrusted }),
+          execute: async (call, state) => {
+            const ctx = { ...toolCtx, untrusted: state.untrusted }
+            if (!isToolName(call.name)) return executeTool(call.name, call.arguments, ctx) // refused immediately
+            const action = task.beginAction(call.name, TOOLS[call.name].title)
+            try {
+              return await executeTool(call.name, call.arguments, { ...ctx, signal: action.signal })
+            } finally {
+              action.end()
+            }
+          },
           budget: new RunBudget(DEFAULT_LIMITS),
           halted: isHalted,
+          signal: task.signal,
         })
       } finally {
-        running--
+        task.end()
       }
-      if (!result.ok) return { ok: false, code: result.code, message: result.message }
+      if (!result.ok) return { ok: false, code: result.code, message: result.message, actions: result.actions }
       let reply = result.text
       if (result.incomplete && result.incomplete !== 'refusal') reply = `${reply} …(reply cut short)`
       if (result.stopped) reply = `${reply ? `${reply} ` : ''}(Jarvis ${result.stopped}.)`
@@ -594,14 +616,24 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
       if (!limits.tools.take()) return { ok: false, message: SLOW_DOWN }
       const settings = loadSettings()
       const ws = settings.activeWorkspace
-      const r = await executeTool(call.name, call.args, {
-        db: history.database?.db ?? null,
-        ws,
-        workspaceName: WORKSPACES.find((w) => w.id === ws)?.name ?? 'Personal',
-        source: 'voice',
-        settings,
-        untrusted: voiceUntrusted,
-      })
+      // Each voice tool call is its own task, so it can be stopped from the dashboard.
+      const task = tasks.start('voice', `Voice: ${TOOLS[call.name].title}`)
+      const action = task.beginAction(call.name, TOOLS[call.name].title)
+      let r: Awaited<ReturnType<typeof executeTool>>
+      try {
+        r = await executeTool(call.name, call.args, {
+          db: history.database?.db ?? null,
+          ws,
+          workspaceName: WORKSPACES.find((w) => w.id === ws)?.name ?? 'Personal',
+          source: 'voice',
+          settings,
+          untrusted: voiceUntrusted,
+          signal: action.signal,
+        })
+      } finally {
+        action.end()
+        task.end()
+      }
       if (r.untrusted) voiceUntrusted = true // rest of this voice session treated as tainted
       if (!r.note) return { ok: false, message: r.output }
       return { ok: true, output: r.output, action: r.note }
@@ -690,5 +722,16 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
         return snoozeReminder(db, activeWorkspace(), id, Date.now() + (minutes as number) * 60_000)
       }),
     ),
+  )
+
+  // ---------- Running tasks and stop levels (Sprint 11, SECURITY.md §5) ----------
+  ipcMain.handle(Channels.tasksList, guard((): RunningTask[] => tasks.list()))
+  ipcMain.handle(
+    Channels.tasksCancel,
+    guard((id: unknown): boolean => (typeof id === 'string' && id.length <= 64 ? tasks.cancel(id) : false)),
+  )
+  ipcMain.handle(
+    Channels.tasksCancelAction,
+    guard((id: unknown): boolean => (typeof id === 'string' && id.length <= 64 ? tasks.cancelAction(id) : false)),
   )
 }

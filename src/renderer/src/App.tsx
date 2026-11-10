@@ -4,6 +4,7 @@ import {
   type ActionNote,
   type ApprovalRequest,
   type Reminder,
+  type RunningTask,
   type ToolRun,
   WORKSPACES,
   type AppInfo,
@@ -268,6 +269,15 @@ export function App(): React.JSX.Element {
     }
   }, [])
 
+  // ---- Running tasks and stop levels (Sprint 11) ----
+  const [running, setRunning] = useState<RunningTask[]>([])
+  useEffect(() => {
+    if (!window.jarvis) return
+    void window.jarvis.tasks.list().then(setRunning)
+    return window.jarvis.tasks.onChange(setRunning)
+  }, [])
+  const typedTask = [...running].reverse().find((t) => t.kind === 'typed') ?? null
+
   // ---- Reminders (Sprint 10): fire in main while the app runs; shown and managed here ----
   const [reminders, setReminders] = useState<Reminder[]>([])
   const [remindersVersion, setRemindersVersion] = useState(0)
@@ -436,6 +446,7 @@ export function App(): React.JSX.Element {
             }
           }
         } else {
+          for (const a of res.actions ?? []) onAction(a, 'text')
           push('system', res.message, 'text')
         }
       } catch (err) {
@@ -506,6 +517,9 @@ export function App(): React.JSX.Element {
                 github={{ connected: !!creds?.github.configured, repos: settings?.githubRepos.length ?? 0 }}
                 reminders={reminders}
                 reminderActions={reminderActions}
+                running={running}
+                onStopTask={(id) => void window.jarvis.tasks.cancel(id)}
+                onStopAction={(id) => void window.jarvis.tasks.cancelAction(id)}
               />
             </div>
 
@@ -533,6 +547,7 @@ export function App(): React.JSX.Element {
               disabled={halted}
               workspaceName={workspace.name}
               onSend={onSend}
+              onStop={typedTask ? () => void window.jarvis.tasks.cancel(typedTask.id) : null}
               onOpenSettings={() => setView('settings')}
               voice={{
                 phase: voice.phase,

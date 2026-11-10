@@ -38,6 +38,8 @@ export interface ToolContext {
   settings: Settings
   /** This task (typed request or voice session) has already read untrusted content. */
   untrusted?: boolean
+  /** Stops this action (worker) or its whole request (workflow). */
+  signal?: AbortSignal
 }
 
 /** Scopes this setup can grant: memory needs the database; GitHub needs a token and at least one allowed repo. */
@@ -61,7 +63,10 @@ export function permissionContext(ctx: Pick<ToolContext, 'db' | 'settings' | 'un
   }
 }
 
-const ANSWER_TEXT: Record<'denied' | 'expired' | 'halted', string> = {
+const CANCELLED_TEXT = 'The owner stopped this action, so it was not done. Do not retry it; tell them it was stopped.'
+
+const ANSWER_TEXT: Record<'denied' | 'expired' | 'halted' | 'cancelled', string> = {
+  cancelled: CANCELLED_TEXT,
   denied: 'The owner declined this action. Do not retry it; tell them it was not done.',
   expired: 'The owner did not answer in time, so this action was not done. Do not retry it.',
   halted: 'Stop all was engaged, so this action was not done.',
@@ -100,11 +105,11 @@ async function record(
 }
 
 /** GitHub read: the repository must be on the allowlist *now* (re-read from settings, not the model's word). */
-async function gh(repo: string, path: string): Promise<unknown> {
+async function gh(repo: string, path: string, signal?: AbortSignal): Promise<unknown> {
   if (!loadSettings().githubRepos.includes(repo)) throw new Error(`${repo} is not on your allowed repositories list.`)
   const token = getKey('github')
   if (!token) throw new Error('GitHub is not connected.')
-  const r = await githubGet(token, path)
+  const r = await githubGet(token, path, signal)
   if (!r.ok) throw new Error(r.message)
   return r.value
 }
@@ -139,28 +144,28 @@ async function run(name: ToolName, args: ToolArgs[ToolName], ctx: ToolContext): 
       return { output: 'Reminder cancelled.', detail: 'Cancelled' }
     }
     case 'github_list_repos': {
-      const repos = await Promise.all(ctx.settings.githubRepos.map(async (r) => ({ ...parseRepo(await gh(r, githubPaths.repo(r))) })))
+      const repos = await Promise.all(ctx.settings.githubRepos.map(async (r) => ({ ...parseRepo(await gh(r, githubPaths.repo(r), ctx.signal)) })))
       return { output: untrusted('allowed repositories', repos), detail: `${repos.length} repositories`, untrusted: true }
     }
     case 'github_list_issues': {
       const a = args as ToolArgs['github_list_issues']
-      const items = parseIssues(await gh(a.repo, githubPaths.issues(a.repo, a.state)), a.kind)
+      const items = parseIssues(await gh(a.repo, githubPaths.issues(a.repo, a.state), ctx.signal), a.kind)
       return { output: untrusted(a.repo, items), detail: `${items.length} found`, untrusted: true }
     }
     case 'github_get_issue': {
       const a = args as ToolArgs['github_get_issue']
-      const [issue, comments] = await Promise.all([gh(a.repo, githubPaths.issue(a.repo, a.number)), gh(a.repo, githubPaths.comments(a.repo, a.number))])
+      const [issue, comments] = await Promise.all([gh(a.repo, githubPaths.issue(a.repo, a.number), ctx.signal), gh(a.repo, githubPaths.comments(a.repo, a.number), ctx.signal)])
       const d = parseIssueDetail(issue, comments)
       return { output: untrusted(`${a.repo}#${a.number}`, d), detail: d.title, untrusted: true }
     }
     case 'github_recent_commits': {
       const a = args as ToolArgs['github_recent_commits']
-      const commits = parseCommits(await gh(a.repo, githubPaths.commits(a.repo, a.branch)))
+      const commits = parseCommits(await gh(a.repo, githubPaths.commits(a.repo, a.branch), ctx.signal))
       return { output: untrusted(a.repo, commits), detail: `${commits.length} commits`, untrusted: true }
     }
     case 'github_read_file': {
       const a = args as ToolArgs['github_read_file']
-      const c = parseContents(await gh(a.repo, githubPaths.contents(a.repo, a.path, a.ref)), a.path)
+      const c = parseContents(await gh(a.repo, githubPaths.contents(a.repo, a.path, a.ref), ctx.signal), a.path)
       const detail =
         c.kind === 'file'
           ? `${c.text.length.toLocaleString()} characters${c.truncated ? ' (truncated)' : ''}`
@@ -267,11 +272,12 @@ export async function executeTool(rawName: string, rawArgs: unknown, ctx: ToolCo
   let waitedMs = 0
   if (verdict.kind === 'ask') {
     const askedAt = Date.now()
-    const answer = await requestApproval({ tool: name, title: spec.title, risk: spec.risk, summary, source: ctx.source })
+    const answer = await requestApproval({ tool: name, title: spec.title, risk: spec.risk, summary, source: ctx.source }, ctx.signal)
     waitedMs = Date.now() - askedAt
     if (answer !== 'approved') {
-      const d: ToolDecision = answer === 'halted' ? 'blocked' : answer
-      const detail = answer === 'denied' ? 'You declined' : answer === 'expired' ? 'No answer in time' : 'Stop all engaged'
+      const d: ToolDecision = answer === 'halted' || answer === 'cancelled' ? 'blocked' : answer
+      const detail =
+        answer === 'denied' ? 'You declined' : answer === 'expired' ? 'No answer in time' : answer === 'cancelled' ? 'Cancelled by you' : 'Stop all engaged'
       const note = await record(ctx, name, summary, d, 'skipped', detail, started)
       return { output: ANSWER_TEXT[answer], isError: true, note, waitedMs }
     }
@@ -286,11 +292,19 @@ export async function executeTool(rawName: string, rawArgs: unknown, ctx: ToolCo
     decision = verdict.decision
   }
 
+  if (ctx.signal?.aborted) {
+    const note = await record(ctx, name, summary, decision, 'skipped', 'Cancelled by you', started)
+    return { output: CANCELLED_TEXT, isError: true, note, waitedMs }
+  }
   try {
     const r = await run(name, args, ctx)
     const note = await record(ctx, name, summary, decision, 'ok', r.detail, started)
     return { output: r.output, isError: false, note, waitedMs, untrusted: r.untrusted }
   } catch (err) {
+    if (ctx.signal?.aborted) {
+      const note = await record(ctx, name, summary, decision, 'skipped', 'Cancelled by you', started)
+      return { output: CANCELLED_TEXT, isError: true, note, waitedMs }
+    }
     const message =
       err instanceof MemoryLimitError || err instanceof ReminderLimitError
         ? err.message

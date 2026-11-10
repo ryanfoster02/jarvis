@@ -5,6 +5,7 @@ import type { Db } from './db/conversations.ts'
 import { markFired, markMissed, pendingDue } from './db/reminders.ts'
 import { isHalted } from './killswitch.ts'
 import { loadSettings } from './settings.ts'
+import { showMainWindow } from './windows.ts'
 
 // Reminder scheduler (Sprint 10). Runs only while the app is running — there is no background agent,
 // launch item or OS-level schedule, and the UI says so. Checks every TICK_MS. While Stop all is
@@ -23,14 +24,16 @@ function broadcast(channel: string, payload?: unknown): void {
   }
 }
 
-export const remindersChanged = (): void => broadcast(Events.remindersChanged)
+const changeListeners = new Set<() => void>()
+/** Main-process listeners (e.g. the menu-bar icon's "next reminder"). */
+export function onRemindersChanged(fn: () => void): () => void {
+  changeListeners.add(fn)
+  return () => changeListeners.delete(fn)
+}
 
-function focusApp(): void {
-  const win = BrowserWindow.getAllWindows()[0]
-  if (!win || win.isDestroyed()) return
-  if (win.isMinimized()) win.restore()
-  win.show()
-  win.focus()
+export const remindersChanged = (): void => {
+  broadcast(Events.remindersChanged)
+  for (const fn of changeListeners) fn()
 }
 
 function notify(title: string, body: string): void {
@@ -41,7 +44,7 @@ function notify(title: string, body: string): void {
     live.delete(n)
   }
   n.on('click', () => {
-    focusApp()
+    showMainWindow()
     release()
   })
   n.on('close', release)

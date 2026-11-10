@@ -1,5 +1,5 @@
 import { TOOLS } from '../../../shared/tools.ts'
-import { useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import {
   ELEVEN_MODELS,
   ELEVEN_PRESET,
@@ -11,6 +11,7 @@ import {
   SPEECH_ENGINES,
   TEXT_MODELS,
   MAX_GITHUB_REPOS,
+  type BackgroundStatus,
   TEXT_PROVIDER_NAMES,
   TEXT_PROVIDERS,
   textModelProvider,
@@ -171,6 +172,77 @@ function KeyForm({
         Get a {noun} at {info.where}. Or, for development, put {PROVIDER_ENV[provider]} in .env (npm run setup:env).
       </p>
     </div>
+  )
+}
+
+function BackgroundSettings({ settings, onUpdate }: { settings: Settings; onUpdate: (patch: Partial<Settings>) => void }): React.JSX.Element {
+  const [status, setStatus] = useState<BackgroundStatus | null>(null)
+  useEffect(() => {
+    let live = true
+    // Re-read shortly after a change: the OS applies login-item changes asynchronously.
+    const read = (): void => void window.jarvis.background.status().then((s) => live && setStatus(s))
+    read()
+    const t = setTimeout(read, 800)
+    return () => {
+      live = false
+      clearTimeout(t)
+    }
+  }, [settings.runInBackground, settings.openAtLogin])
+
+  const loginNote = !status
+    ? ''
+    : !status.loginItemSupported
+      ? 'Available in the installed app (npm run dist:mac), not in development.'
+      : !settings.runInBackground
+        ? 'Turn on menu-bar mode first.'
+        : !settings.openAtLogin
+          ? 'Off.'
+          : status.loginItemStatus === 'requires-approval'
+            ? 'macOS needs your approval: System Settings → General → Login Items → allow JARVIS.'
+            : status.openAtLogin
+              ? 'On: JARVIS starts in the menu bar when you log in.'
+              : "macOS didn't register it. Ad-hoc signed builds may not be allowed to open at login; you can add JARVIS manually in System Settings → General → Login Items."
+
+  return (
+    <>
+      <h3 className="subhead">Background</h3>
+      <div className="field">
+        <div className="field-text">
+          <h3>Keep running in the menu bar</h3>
+          <p>
+            Closing the window leaves JARVIS in the menu bar so reminders still fire. Voice and the microphone always
+            stop when the window closes. Quit from the menu-bar icon or with ⌘Q to stop everything.
+          </p>
+        </div>
+        <button
+          role="switch"
+          aria-checked={settings.runInBackground}
+          aria-label="Keep running in the menu bar"
+          className="switch"
+          onClick={() => onUpdate({ runInBackground: !settings.runInBackground })}
+        />
+      </div>
+      <div className="field">
+        <div className="field-text">
+          <h3>Open at login</h3>
+          <p>{loginNote}</p>
+        </div>
+        <button
+          role="switch"
+          aria-checked={settings.openAtLogin}
+          aria-label="Open at login"
+          className="switch"
+          disabled={!settings.runInBackground || !status?.loginItemSupported}
+          onClick={() => onUpdate({ openAtLogin: !settings.openAtLogin })}
+        />
+      </div>
+      {status && (
+        <p className="status-line">
+          <span className={`dot ${status.trayActive ? 'dot-on' : 'dot-off'}`} />
+          {status.trayActive ? 'Menu-bar icon is showing.' : 'Menu-bar mode is off.'}
+        </p>
+      )}
+    </>
   )
 }
 
@@ -776,10 +848,12 @@ export function SettingsView({ settings, info, creds, onCreds, onUpdate }: Props
               />
             </div>
             <p className="fine">
-              Reminders fire only while JARVIS is open (it doesn&apos;t run in the background). If notifications don&apos;t
+              Reminders fire only while JARVIS is running: with the window open, or in the menu bar if you turn that on
+              below. If notifications don&apos;t
               appear, allow them in System Settings → Notifications (in development the app is listed as
               &ldquo;Electron&rdquo;). Reminders that come due while JARVIS is closed show as missed when you next open it.
             </p>
+            <BackgroundSettings settings={settings} onUpdate={onUpdate} />
           </>
         )}
 

@@ -11,7 +11,7 @@ import { createTextResponse, type OpenAIResult } from './openai.ts'
 export interface TextProvider {
   id: TextProviderId
   name: string
-  send(key: string, body: Record<string, unknown>): Promise<OpenAIResult<unknown>>
+  send(key: string, body: Record<string, unknown>, cancel?: AbortSignal): Promise<OpenAIResult<unknown>>
   parse(json: unknown): { text: string; usage: TextUsage; incomplete: string | null }
 }
 
@@ -19,11 +19,11 @@ export interface TextProvider {
  * OpenAI call. With tools on we ask for encrypted reasoning (needed under store:false); if a model
  * rejects that option, retry once without it rather than failing the message.
  */
-async function sendOpenAI(key: string, body: Record<string, unknown>): Promise<OpenAIResult<unknown>> {
-  const res = await createTextResponse(key, body)
+async function sendOpenAI(key: string, body: Record<string, unknown>, cancel?: AbortSignal): Promise<OpenAIResult<unknown>> {
+  const res = await createTextResponse(key, body, cancel)
   if (!res.ok && res.status === 400 && 'include' in body && /include|encrypted_content/i.test(res.body)) {
     const { include: _dropped, ...rest } = body
-    return createTextResponse(key, rest)
+    return createTextResponse(key, rest, cancel)
   }
   return res
 }

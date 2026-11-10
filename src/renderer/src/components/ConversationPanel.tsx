@@ -49,6 +49,8 @@ interface Props {
   workspaceName: string
   voice: VoiceControls
   onSend: (text: string) => Promise<void>
+  /** Stop the request Jarvis is answering now (workflow level), or null when there's nothing to stop. */
+  onStop: (() => void) | null
   onOpenSettings: () => void
 }
 
@@ -136,7 +138,7 @@ function RememberButton({ text, onRemember }: { text: string; onRemember: Props[
   )
 }
 
-export function ConversationPanel({ entries, history, onRemember, busy, disabled, workspaceName, voice, onSend, onOpenSettings }: Props): React.JSX.Element {
+export function ConversationPanel({ entries, history, onRemember, busy, disabled, workspaceName, voice, onSend, onStop, onOpenSettings }: Props): React.JSX.Element {
   const [draft, setDraft] = useState('')
   const listRef = useRef<HTMLOListElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -265,9 +267,15 @@ export function ConversationPanel({ entries, history, onRemember, busy, disabled
           disabled={disabled}
           aria-label="Message"
         />
-        <button type="submit" disabled={disabled || busy || !draft.trim()}>
-          Send
-        </button>
+        {busy && onStop ? (
+          <button type="button" className="composer-stop" onClick={onStop} title="Stop this request (Stop all stays in the top bar)">
+            Stop
+          </button>
+        ) : (
+          <button type="submit" disabled={disabled || busy || !draft.trim()}>
+            Send
+          </button>
+        )}
       </form>
     </section>
   )

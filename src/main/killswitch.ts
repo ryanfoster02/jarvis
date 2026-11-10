@@ -19,7 +19,21 @@ export function onHalt(handler: AbortHandler): () => void {
   return () => handlers.delete(handler)
 }
 
+const changeListeners = new Set<() => void>()
+/** Main-process listeners for any change (engage or re-arm), e.g. the menu-bar icon. */
+export function onKillSwitchChange(fn: () => void): () => void {
+  changeListeners.add(fn)
+  return () => changeListeners.delete(fn)
+}
+
 function broadcast(): void {
+  for (const fn of changeListeners) {
+    try {
+      fn()
+    } catch (err) {
+      console.error('[killswitch] listener failed:', err)
+    }
+  }
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed()) win.webContents.send(Events.killSwitchChanged, getKillSwitch())
   }

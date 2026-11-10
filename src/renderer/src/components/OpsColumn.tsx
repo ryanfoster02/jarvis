@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { DEFAULT_LIMITS, type ApprovalRequest, type Reminder, type ToolRun } from '../../../shared/ipc.ts'
+import { DEFAULT_LIMITS, type ApprovalRequest, type Reminder, type RunningTask, type ToolRun } from '../../../shared/ipc.ts'
 import { formatWhen } from '../../../shared/reminders.ts'
 import { DECISION_LABEL } from '../../../shared/tools.ts'
 import { LIMITS } from '../../../shared/ratelimit.ts'
@@ -34,6 +34,9 @@ interface Props {
   /** Real GitHub state: token saved, and how many repositories are allowed. */
   github: { connected: boolean; repos: number }
   reminders: Reminder[]
+  running: RunningTask[]
+  onStopTask: (id: string) => void
+  onStopAction: (id: string) => void
   reminderActions: {
     add: (text: string, dueAt: number) => Promise<string | null>
     cancel: (id: string) => void
@@ -145,7 +148,7 @@ function RemindersSection({ list, actions }: { list: Reminder[]; actions: Props[
         </button>
       )}
       {error && <p className="form-msg is-error">{error}</p>}
-      <p className="fine">Reminders alert only while JARVIS is open. Anything due while it&apos;s closed shows here as missed.</p>
+      <p className="fine">Reminders alert while JARVIS is running (window open, or in the menu bar if you turn that on in Settings → Notifications). Anything due while it&apos;s quit shows here as missed.</p>
     </section>
   )
 }
@@ -175,7 +178,65 @@ function ApprovalCard({ a, now, onDecide }: { a: ApprovalRequest; now: number; o
   )
 }
 
-export function OpsColumn({ approvals, runs, halted, onDecide, github, reminders, reminderActions }: Props): React.JSX.Element {
+function RunningSection({ list, onStopTask, onStopAction }: { list: RunningTask[]; onStopTask: Props['onStopTask']; onStopAction: Props['onStopAction'] }): React.JSX.Element | null {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (list.length === 0) return
+    setNow(Date.now())
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [list.length])
+  if (list.length === 0) return null
+  const secs = (ms: number): string => `${Math.max(0, Math.round((now - ms) / 1000))}s`
+  return (
+    <section className="ops-section" aria-label="Running">
+      <h2 className="label">Running · {list.length}</h2>
+      <ul className="approvals">
+        {list.map((t) => (
+          <li key={t.id} className="running-task">
+            <div className="approval-head">
+              <span className="running-dot" aria-hidden="true" />
+              <span className="approval-title" title={t.title}>
+                {t.kind === 'typed' ? `Answering: ${t.title}` : t.title}
+              </span>
+              <span className="approval-meta">{secs(t.startedAt)}</span>
+            </div>
+            {t.action && (
+              <p className="approval-summary">
+                Now: {t.action.title} · {secs(t.action.startedAt)}
+              </p>
+            )}
+            <div className="approval-actions">
+              {t.action && (
+                <button className="btn btn-quiet" onClick={() => onStopAction(t.id)}>
+                  Stop action
+                </button>
+              )}
+              {t.kind === 'typed' && (
+                <button className="btn btn-deny" onClick={() => onStopTask(t.id)}>
+                  Stop request
+                </button>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+export function OpsColumn({
+  approvals,
+  runs,
+  halted,
+  onDecide,
+  github,
+  reminders,
+  reminderActions,
+  running,
+  onStopTask,
+  onStopAction,
+}: Props): React.JSX.Element {
   const status = (name: string): string => {
     if (name !== 'GitHub' || !github.connected) return 'Not connected'
     return github.repos === 0 ? 'Connected · no repos allowed' : `Connected · ${github.repos} repo${github.repos === 1 ? '' : 's'}`
@@ -191,6 +252,7 @@ export function OpsColumn({ approvals, runs, halted, onDecide, github, reminders
 
   return (
     <section className="frame panel ops" aria-label="Operations">
+      <RunningSection list={running} onStopTask={onStopTask} onStopAction={onStopAction} />
       <RemindersSection list={reminders} actions={reminderActions} />
 
       <section className="ops-section" aria-label="Approvals">

@@ -140,3 +140,45 @@ test('API errors pass through; adapters ignore malformed items', async () => {
   appendAnthropicResults(ab, { content: [] }, [])
   assert.deepEqual(ab, { messages: [] })
 })
+
+test('stop levels: a cancelled request ends; a cancelled action lets the request finish', async () => {
+  // Workflow: abort while the model is "thinking" → cancelled, nothing executed.
+  const ctl = new AbortController()
+  let executed = 0
+  const r = await runAgent(
+    deps({
+      provider: 'openai',
+      signal: ctl.signal,
+      send: async (_b, signal) => {
+        assert.equal(signal, ctl.signal, 'the request signal reaches the provider call')
+        ctl.abort()
+        return { ok: true, value: oaCall }
+      },
+      execute: async () => (executed++, { output: '', isError: false, note: null, waitedMs: 0 }),
+    }),
+  )
+  assert.deepEqual(!r.ok && [r.code, r.message], ['cancelled', 'Stopped. Nothing more will run for this request.'])
+  assert.equal(executed, 0)
+
+  // Already cancelled before starting: no provider call at all.
+  let sent = 0
+  const pre = new AbortController()
+  pre.abort()
+  const r2 = await runAgent(deps({ provider: 'openai', signal: pre.signal, send: async () => (sent++, { ok: true, value: oaFinal }) }))
+  assert.equal(!r2.ok && r2.code, 'cancelled')
+  assert.equal(sent, 0)
+
+  // Worker: the action reports it was stopped; the model still answers.
+  const replies = [oaCall, oaFinal]
+  const bodies: Array<Record<string, unknown>> = []
+  const r3 = await runAgent(
+    deps({
+      provider: 'openai',
+      send: async (b) => (bodies.push(b), { ok: true, value: replies.shift() }),
+      execute: async () => ({ output: 'Cancelled by the owner.', isError: true, note: null, waitedMs: 0 }),
+    }),
+  )
+  assert.equal(r3.ok && r3.text, 'Noted.')
+  const out = (bodies[1]?.input as Array<Record<string, unknown>>).find((i) => i.type === 'function_call_output')
+  assert.equal(out?.output, 'Cancelled by the owner.')
+})

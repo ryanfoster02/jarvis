@@ -4,6 +4,8 @@ import { pathToFileURL } from 'node:url'
 import { registerIpc, type HistoryStore } from './ipc.ts'
 import { openDatabase } from './db/client.ts'
 import { startScheduler, stopScheduler } from './scheduler.ts'
+import { initBackground, onAllWindowsClosed, shouldStartHidden } from './background.ts'
+import { registerWindowFactory, showMainWindow } from './windows.ts'
 import { engage } from './killswitch.ts'
 
 // ---- Process-wide hardening (must run before 'ready') ----
@@ -148,13 +150,8 @@ app.on('web-contents-created', (_event, contents) => {
   })
 })
 
-app.on('second-instance', () => {
-  const [win] = BrowserWindow.getAllWindows()
-  if (win) {
-    if (win.isMinimized()) win.restore()
-    win.focus()
-  }
-})
+// A second launch (or launching while running in the menu bar) just brings JARVIS forward.
+app.on('second-instance', () => showMainWindow())
 
 void app.whenReady().then(() => {
   // Deny every permission by default. The single exception is microphone-only media access
@@ -193,16 +190,22 @@ void app.whenReady().then(() => {
 
   registerIpc({ devServerUrl, rendererFileUrl }, history)
   buildMenu()
-  createWindow()
-  // Reminders fire only while the app runs (Sprint 10).
+  registerWindowFactory(createWindow)
+  // Background mode (opt-in): menu-bar icon + optional open at login. Opened by the OS at login
+  // with background mode on → stay in the menu bar without a window.
+  initBackground(history.database?.db ?? null)
+  if (shouldStartHidden()) {
+    if (process.platform === 'darwin') app.dock?.hide()
+  } else {
+    createWindow()
+  }
+  // Reminders fire while the app runs — with background mode, also while the window is closed.
   if (history.database) void startScheduler(history.database.db)
   app.on('will-quit', stopScheduler)
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
-  })
+  app.on('activate', () => showMainWindow())
 })
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+  if (!onAllWindowsClosed()) app.quit()
 })

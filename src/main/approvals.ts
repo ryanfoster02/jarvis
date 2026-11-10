@@ -7,7 +7,7 @@ import { isHalted, onHalt } from './killswitch.ts'
 // APPROVAL_TIMEOUT_MS counts as "no". Stop all answers every pending request with "no".
 
 export const APPROVAL_TIMEOUT_MS = 120_000
-export type ApprovalAnswer = 'approved' | 'denied' | 'expired' | 'halted'
+export type ApprovalAnswer = 'approved' | 'denied' | 'expired' | 'halted' | 'cancelled'
 
 interface Pending {
   request: ApprovalRequest
@@ -26,8 +26,12 @@ function broadcast(): void {
 }
 
 /** Ask the owner. Resolves when they answer, time runs out, or Stop all is pressed. */
-export function requestApproval(o: { tool: ToolName; title: string; risk: RiskLevel; summary: string; source: ToolSource }): Promise<ApprovalAnswer> {
+export function requestApproval(
+  o: { tool: ToolName; title: string; risk: RiskLevel; summary: string; source: ToolSource },
+  cancel?: AbortSignal,
+): Promise<ApprovalAnswer> {
   if (isHalted()) return Promise.resolve('halted')
+  if (cancel?.aborted) return Promise.resolve('cancelled')
   const now = Date.now()
   const request: ApprovalRequest = { id: crypto.randomUUID(), ...o, requestedAt: now, expiresAt: now + APPROVAL_TIMEOUT_MS }
   return new Promise<ApprovalAnswer>((resolve) => {
@@ -37,12 +41,16 @@ export function requestApproval(o: { tool: ToolName; title: string; risk: RiskLe
       settled = true
       clearTimeout(timer)
       offHalt()
+      cancel?.removeEventListener('abort', onCancel)
       pending.delete(request.id)
       broadcast()
       resolve(answer)
     }
     const timer = setTimeout(() => finish('expired'), APPROVAL_TIMEOUT_MS)
     const offHalt = onHalt(() => finish('halted'))
+    // Stopping the action or the request withdraws the question.
+    const onCancel = (): void => finish('cancelled')
+    cancel?.addEventListener('abort', onCancel, { once: true })
     pending.set(request.id, { request, resolve: finish })
     broadcast()
   })
