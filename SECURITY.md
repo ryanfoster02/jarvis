@@ -31,6 +31,8 @@
 
 Precedence: kill switch > high-risk approval > scope > permission > mandate.
 
+Implemented in `src/shared/permissions.ts` (`decide`, unit-tested). The order of evaluation puts the refusals first so nothing can loosen them: kill switch → scope → permission (tool switched off) → high risk always asks → low risk runs → medium runs only under a mandate, otherwise asks. A switched-off or out-of-scope tool is refused outright and never offered to the model.
+
 ## 5. Kill switch
 | Level | Effect |
 |---|---|
@@ -42,6 +44,8 @@ Sprint 1 ships the **global** switch state in main (`killswitch.ts`) with a UI c
 
 ## 6. Execution limits (Phase 2)
 Configurable: max iterations, wall time, tool calls, token/cost budget, subagent depth (default 1 — no recursive delegation), concurrent agents (default 2). Exceeding any limit stops the run and reports.
+
+**Enforced from Sprint 8** for every typed request (`RunBudget` + `runAgent`, unit-tested): 10 model steps, 120 s (time waiting for your approval is not counted), 20 tool calls, $1.00 estimated spend, 2 tasks at once. Calls past a limit are not run but still answered (both APIs require a result per call), and the reply says why it stopped. Voice sessions run in the renderer's WebRTC connection, so main caps voice tool calls at 30 per minute and applies the same permission, approval and kill-switch checks to each one. Subagents don't exist yet (Phase 4).
 
 ## 7. Prompt-injection defense (Phase 2/3)
 - External content (web, email, files, integration data) is wrapped and labeled untrusted; the system prompt states it is data.
@@ -96,3 +100,12 @@ Scope: Electron window/session config, preload bridge, all IPC handlers, credent
 - Each provider gets only its own key: chat routing picks the key from the chosen model's provider. The OpenAI validator refuses `sk-ant-` keys (so a Claude key is never sent to OpenAI) and the Anthropic validator refuses non-`sk-ant-` keys.
 - Anthropic error bodies stay in main; messages shown to the renderer are rewritten and strip anything that looks like `sk-ant-…`.
 - Typed replies through Claude share the chat rate limit (30/min), the kill switch check, persona limits and memory labelling with OpenAI. Memory refuses Anthropic keys (`detectSecret`, tested).
+
+## 15. Tools and approvals (Sprint 8)
+- **Registry** (`src/shared/tools.ts`): `get_time` (low, clock), `list_memories` (low, memory:read), `save_memory` (medium, memory:write), `forget_memory` (high, memory:delete). Each has a strict JSON schema; arguments are re-validated in main (unknown keys refused, memory text length-checked and secrets refused **before** any approval is shown).
+- **One executor** (`src/main/tools.ts`) for typed and voice calls: validate → `decide` → approval if needed → run → log. The workspace always comes from main's settings; the model and the renderer can't choose it. Tools can't change settings, permissions, mandates or the allowlist.
+- **Approvals** (`src/main/approvals.ts`): held in main memory, shown in the dashboard with risk, summary and countdown. No answer in 2 minutes = no. Stop all answers every pending request with no. After an approval, permissions are re-checked with fresh settings before running.
+- **Voice relay**: the renderer only forwards a tool name and JSON arguments (`tools:invoke`, validated, ≤4000 chars, rate-limited); main makes every decision.
+- **Action log**: `tool_runs` table (migration 3), per workspace, newest 500 kept; summaries are capped at 300 characters and never contain secrets. Shown in the dashboard's Activity list.
+- **Untrusted output**: tool results (e.g. memory text) are labelled as data in the prompt; the model is told not to follow instructions inside them and to claim an action only when the result confirms it.
+- **Defaults**: every tool on; standing permission to save memories **off** (saving asks each time); deleting always asks.

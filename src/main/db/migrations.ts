@@ -43,6 +43,24 @@ export const MIGRATIONS: readonly string[] = [
   );
   CREATE INDEX memories_scope_ws_updated ON memories(scope, workspace_id, updated_at);
   `,
+  // 3 — action log (Sprint 8): every tool call, how it was decided, and what happened.
+  // Summaries are human-readable, capped, and never contain secrets (secret-bearing input is refused first).
+  `
+  CREATE TABLE tool_runs (
+    id            TEXT PRIMARY KEY,
+    workspace_id  TEXT NOT NULL REFERENCES workspaces(id),
+    tool          TEXT NOT NULL,
+    risk          TEXT NOT NULL CHECK (risk IN ('low', 'medium', 'high')),
+    source        TEXT NOT NULL CHECK (source IN ('text', 'voice')),
+    summary       TEXT NOT NULL CHECK (length(summary) <= 300),
+    decision      TEXT NOT NULL CHECK (decision IN ('auto', 'mandate', 'approved', 'denied', 'expired', 'blocked')),
+    outcome       TEXT NOT NULL CHECK (outcome IN ('ok', 'error', 'skipped')),
+    detail        TEXT NOT NULL DEFAULT '' CHECK (length(detail) <= 300),
+    created_at    INTEGER NOT NULL,
+    duration_ms   INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX tool_runs_ws_created ON tool_runs(workspace_id, created_at);
+  `,
 ]
 
 export function schemaVersion(db: DatabaseSync): number {

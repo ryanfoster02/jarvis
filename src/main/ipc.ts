@@ -15,6 +15,13 @@ import {
   validateSettingsPatch,
   validateTtsText,
   textModelProvider,
+  validateApprovalId,
+  validateToolInvoke,
+  DEFAULT_LIMITS,
+  type ApprovalRequest,
+  type ToolInvokeResult,
+  type ToolName,
+  type ToolRun,
   WORKSPACES,
   type AppInfo,
   type ChatResult,
@@ -31,7 +38,13 @@ import {
   type VoiceConnectResult,
 } from '../shared/ipc.ts'
 import { buildRealtimeSession, isTranscriptionConfigError } from '../shared/realtime.ts'
-import { buildProviderRequest } from '../shared/text.ts'
+import { buildProviderRequest, estimateTextCostUsd } from '../shared/text.ts'
+import { runAgent, type AgentResult } from '../shared/agent.ts'
+import { isOffered, RunBudget } from '../shared/permissions.ts'
+import { TOOLS } from '../shared/tools.ts'
+import { executeTool, permissionContext } from './tools.ts'
+import { answerApproval, listApprovals } from './approvals.ts'
+import { listToolRuns } from './db/toolRuns.ts'
 import { TEXT_PROVIDER_IMPLS } from './textProviders.ts'
 import { verifyAnthropicKey } from './anthropic.ts'
 import { LIMITS, RateLimiter } from '../shared/ratelimit.ts'
@@ -58,8 +71,11 @@ const limits = {
   ttsChars: new RateLimiter(LIMITS.ttsCharsPerMinute, 60_000),
   voice: new RateLimiter(LIMITS.voiceConnectsPerMinute, 60_000),
   keys: new RateLimiter(LIMITS.keyChecksPerMinute, 60_000),
+  tools: new RateLimiter(LIMITS.toolCallsPerMinute, 60_000),
 }
 const SLOW_DOWN = 'Too many requests in the last minute. Wait a moment and try again.'
+/** Typed-reply tasks in progress (SECURITY.md §6: at most DEFAULT_LIMITS.maxConcurrentAgents). */
+let running = 0
 
 export interface HistoryStore {
   database: Database | null
@@ -145,6 +161,9 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
               : 'No AI provider is connected yet. Add your OpenAI key in Settings → AI provider.',
         }
       }
+      if (running >= DEFAULT_LIMITS.maxConcurrentAgents) {
+        return { ok: false, code: 'rate_limited', message: `Jarvis is already working on ${running} tasks. Wait for one to finish.` }
+      }
       if (!limits.chat.take()) return { ok: false, code: 'rate_limited', message: SLOW_DOWN }
       const ws = settings.activeWorkspace
       const db = history.database?.db ?? null
@@ -164,6 +183,10 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
 
       const workspaceName = WORKSPACES.find((w) => w.id === ws)?.name ?? 'Personal'
       const memories = db ? await memoriesForPrompt(db, ws) : undefined
+      const toolCtx = { db, ws, workspaceName, source: 'text' as const, settings }
+      // Only tools that are switched on and in scope are offered to the model at all.
+      const perm = permissionContext(toolCtx)
+      const tools = Object.values(TOOLS).filter((t) => isOffered(t, perm))
       const body = buildProviderRequest({
         model: settings.textModel,
         workspaceName,
@@ -172,18 +195,42 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
         history: turns,
         message: text,
         memories,
+        tools,
       })
-      const res = await provider.send(key, body)
-      if (isHalted()) return { ok: false, code: 'halted', message: 'Stop all was engaged while Jarvis was replying.' }
-      if (!res.ok) return { ok: false, code: res.status === 0 ? 'network' : 'api_error', message: res.message }
-      const parsed = provider.parse(res.value)
-      if (!parsed.text) {
-        const why = parsed.incomplete === 'refusal' ? 'declined to answer that' : 'returned an empty reply'
+      running++
+      let result: AgentResult
+      try {
+        result = await runAgent({
+          provider: providerId,
+          body,
+          send: (b) => provider.send(key, b),
+          parse: provider.parse,
+          cost: (u) => estimateTextCostUsd(settings.textModel, u),
+          execute: (call) => executeTool(call.name, call.arguments, toolCtx),
+          budget: new RunBudget(DEFAULT_LIMITS),
+          halted: isHalted,
+        })
+      } finally {
+        running--
+      }
+      if (!result.ok) return { ok: false, code: result.code, message: result.message }
+      let reply = result.text
+      if (result.incomplete && result.incomplete !== 'refusal') reply = `${reply} …(reply cut short)`
+      if (result.stopped) reply = `${reply ? `${reply} ` : ''}(Jarvis ${result.stopped}.)`
+      if (!reply) {
+        const why = result.incomplete === 'refusal' ? 'declined to answer that' : 'returned an empty reply'
         return { ok: false, code: 'api_error', message: `${provider.name} ${why}. Try rephrasing.` }
       }
-      const reply = parsed.incomplete && parsed.incomplete !== 'refusal' ? `${parsed.text} …(reply cut short)` : parsed.text
       if (db && convId) await appendMessage(db, ws, convId, { role: 'assistant', text: reply, via: 'text' })
-      return { ok: true, reply, model: settings.textModel, provider: providerId, usage: parsed.usage, conversationId: convId }
+      return {
+        ok: true,
+        reply,
+        model: settings.textModel,
+        provider: providerId,
+        usage: result.usage,
+        conversationId: convId,
+        actions: result.actions,
+      }
     }),
   )
 
@@ -452,6 +499,8 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
         honorific: settings.honorific,
         output: eleven ? ('text' as const) : ('audio' as const),
         memories: history.database ? await memoriesForPrompt(history.database.db, settings.activeWorkspace) : undefined,
+        // Tools are fixed for the voice session; switching one off later is still enforced on every call.
+        tools: Object.values(TOOLS).filter((t) => isOffered(t, permissionContext({ db: history.database?.db ?? null, settings }))),
       }
 
       let transcription = true
@@ -474,6 +523,60 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
         transcription,
         bargeIn: settings.bargeIn,
       }
+    }),
+  )
+
+  // ---------- Tools: approvals, action log, voice tool calls (Sprint 8) ----------
+
+  ipcMain.handle(Channels.approvalsList, guard((): ApprovalRequest[] => listApprovals()))
+
+  ipcMain.handle(
+    Channels.approvalsDecide,
+    guard((id: unknown, approve: unknown): boolean => {
+      if (typeof approve !== 'boolean') return false
+      try {
+        return answerApproval(validateApprovalId(id), approve)
+      } catch (err) {
+        if (err instanceof IpcValidationError) return false
+        throw err
+      }
+    }),
+  )
+
+  ipcMain.handle(
+    Channels.toolRunsList,
+    guard(async (): Promise<HistoryResult<ToolRun[]>> => {
+      const db = history.database?.db
+      if (!db) return unavailable()
+      return { ok: true, value: await listToolRuns(db, activeWorkspace()) }
+    }),
+  )
+
+  // Voice: the Realtime model runs in the renderer's WebRTC session, so its tool calls arrive there.
+  // The renderer only relays name + JSON arguments; main makes every decision (permissions,
+  // approvals, kill switch, workspace) exactly as for typed replies.
+  ipcMain.handle(
+    Channels.toolsInvoke,
+    guard(async (name: unknown, args: unknown): Promise<ToolInvokeResult> => {
+      let call: { name: ToolName; args: string }
+      try {
+        call = validateToolInvoke(name, args)
+      } catch (err) {
+        if (err instanceof IpcValidationError) return { ok: false, message: err.message }
+        throw err
+      }
+      if (!limits.tools.take()) return { ok: false, message: SLOW_DOWN }
+      const settings = loadSettings()
+      const ws = settings.activeWorkspace
+      const r = await executeTool(call.name, call.args, {
+        db: history.database?.db ?? null,
+        ws,
+        workspaceName: WORKSPACES.find((w) => w.id === ws)?.name ?? 'Personal',
+        source: 'voice',
+        settings,
+      })
+      if (!r.note) return { ok: false, message: r.output }
+      return { ok: true, output: r.output, action: r.note }
     }),
   )
 }

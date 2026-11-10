@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   textModelProvider,
+  type ActionNote,
+  type ApprovalRequest,
+  type ToolRun,
   WORKSPACES,
   type AppInfo,
   type ConversationSummary,
@@ -20,6 +23,7 @@ import { OpsColumn } from './components/OpsColumn.tsx'
 import { SettingsView } from './components/SettingsView.tsx'
 import { MemoryView } from './components/MemoryView.tsx'
 import { parseRememberCommand } from '../../shared/memory.ts'
+import { describeAction } from '../../shared/tools.ts'
 import { StateLegend } from './components/StateLegend.tsx'
 import { StatusTerminal, type Telemetry } from './components/StatusTerminal.tsx'
 import { TopBar, type View } from './components/TopBar.tsx'
@@ -41,6 +45,7 @@ function statusLine(o: {
   muted: boolean
   micPaused: boolean
   busy: boolean
+  approvals: number
 }): string {
   if (o.bridgeError) return o.bridgeError
   if (o.kill?.engaged) {
@@ -48,6 +53,7 @@ function statusLine(o: {
     return `Stopped${at ? ` at ${at}` : ''}. Nothing runs until you re-arm.`
   }
   if (o.voiceError) return o.voiceError
+  if (o.approvals > 0) return o.approvals === 1 ? 'Waiting for your approval (see Approvals).' : `${o.approvals} requests waiting for your approval.`
   if (o.phase === 'connecting') return 'Connecting to OpenAI Realtime…'
   if (o.phase === 'live') {
     if (o.activity === 'speaking')
@@ -99,6 +105,15 @@ export function App(): React.JSX.Element {
   const [conversationId, setConversationIdState] = useState<string | null>(null)
   const [historyError, setHistoryError] = useState<string | null>(null)
   const [memoryVersion, setMemoryVersion] = useState(0)
+
+  // ---- Tools: approvals waiting for the owner, and the action log (Sprint 8) ----
+  const [approvals, setApprovals] = useState<ApprovalRequest[]>([])
+  const [runs, setRuns] = useState<ToolRun[]>([])
+  const [runsVersion, setRunsVersion] = useState(0)
+  const onAction = useCallback((note: ActionNote, via: Entry['via']) => {
+    const tone = note.outcome === 'ok' ? 'ok' : note.outcome === 'error' ? 'error' : 'skipped'
+    setEntries((e) => [...e, { id: newId(), role: 'action', text: describeAction(note), at: new Date(), via, tone }])
+  }, [])
 
   /** Save a fact for this workspace. Returns an error message, or null when saved. */
   const remember = useCallback(async (text: string, fromConversation: boolean): Promise<string | null> => {
@@ -226,7 +241,36 @@ export function App(): React.JSX.Element {
       }),
     onLatency: (ms) => setUsage((prev) => ({ ...prev, latencyMs: ms })),
     onTtsCharacters: (n) => setUsage((prev) => ({ ...prev, ttsChars: prev.ttsChars + n })),
+    onAction: (note) => onAction(note, 'voice'),
   })
+
+  useEffect(() => {
+    if (!window.jarvis) return
+    void window.jarvis.approvals.list().then(setApprovals)
+    const offApprovals = window.jarvis.approvals.onChange(setApprovals)
+    // Main announces every logged action: refresh the Activity list, and Memory if it changed.
+    const offLogged = window.jarvis.tools.onLogged((note) => {
+      setRunsVersion((v) => v + 1)
+      if (note.outcome === 'ok' && (note.tool === 'save_memory' || note.tool === 'forget_memory')) setMemoryVersion((v) => v + 1)
+    })
+    return () => {
+      offApprovals()
+      offLogged()
+    }
+  }, [])
+
+  // Action log for the active workspace: reload on workspace switch and after each action.
+  const runsWorkspace = settings?.activeWorkspace
+  useEffect(() => {
+    if (!window.jarvis || !runsWorkspace) return
+    let live = true
+    void window.jarvis.tools.runs().then((r) => {
+      if (live) setRuns(r.ok ? r.value : [])
+    })
+    return () => {
+      live = false
+    }
+  }, [runsWorkspace, runsVersion])
 
   useEffect(() => {
     if (!window.jarvis) {
@@ -327,6 +371,7 @@ export function App(): React.JSX.Element {
         if (res.ok) {
           if (res.conversationId && res.conversationId !== convIdRef.current) setConversationId(res.conversationId)
           void refreshList()
+          for (const a of res.actions) onAction(a, 'text')
           push('assistant', res.reply, 'text')
           setUsage((prev) => ({
             ...prev,
@@ -380,6 +425,7 @@ export function App(): React.JSX.Element {
     muted: voice.muted,
     micPaused: voice.micPaused,
     busy,
+    approvals: approvals.length,
   })
 
   return (
@@ -393,6 +439,7 @@ export function App(): React.JSX.Element {
         onWorkspace={(w) => void update({ activeWorkspace: w })}
         onTheme={(t) => void update({ theme: t })}
         mic={voice.phase === 'live' ? (voice.muted ? 'muted' : voice.micPaused ? 'paused' : 'live') : 'off'}
+        approvalsWaiting={approvals.length}
       />
 
       <main className="stage">
@@ -400,7 +447,12 @@ export function App(): React.JSX.Element {
           <div className="dashboard">
             <div className="col-left">
               <StateLegend current={coreState} />
-              <OpsColumn />
+              <OpsColumn
+                approvals={approvals}
+                runs={runs}
+                halted={halted}
+                onDecide={(id, approve) => void window.jarvis.approvals.decide(id, approve)}
+              />
             </div>
 
             <section className="core-stage" aria-label="Jarvis core">

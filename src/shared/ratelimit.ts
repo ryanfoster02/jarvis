@@ -30,4 +30,6 @@ export const LIMITS = {
   ttsCharsPerMinute: 15_000,
   voiceConnectsPerMinute: 10,
   keyChecksPerMinute: 10,
+  /** Voice tool calls (typed replies are bounded per task by the execution limits instead). */
+  toolCallsPerMinute: 30,
 } as const

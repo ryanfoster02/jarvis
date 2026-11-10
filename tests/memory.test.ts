@@ -84,5 +84,7 @@ test('memories reach both voice and typed instructions', () => {
   // Limits still come last so notes can't push them out of view.
   const ins = buildInstructions({ workspaceName: 'X', persona: 'neutral', honorific: 'none', memories })
   assert.ok(ins.indexOf('# Remembered facts') < ins.indexOf('# Limits'))
-  assert.match(ins, /You can't save new memories yourself yet/)
+  // Without tools Jarvis must point the owner to /remember instead of claiming to save.
+  assert.match(ins, /You have no tools in this session/)
+  assert.match(ins, /type \/remember/)
 })

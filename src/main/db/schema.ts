@@ -1,4 +1,5 @@
 import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+import { RISK_LEVELS, TOOL_NAMES } from '../../shared/ipc.ts'
 
 // Drizzle table definitions — typed queries. The SQL that creates them lives in migrations.ts.
 
@@ -51,4 +52,24 @@ export const memories = sqliteTable(
   (t) => [index('memories_scope_ws_updated').on(t.scope, t.workspaceId, t.updatedAt)],
 )
 
-export const schema = { workspaces, conversations, messages, memories }
+export const toolRuns = sqliteTable(
+  'tool_runs',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id),
+    tool: text('tool', { enum: TOOL_NAMES }).notNull(),
+    risk: text('risk', { enum: RISK_LEVELS }).notNull(),
+    source: text('source', { enum: ['text', 'voice'] }).notNull(),
+    summary: text('summary').notNull(),
+    decision: text('decision', { enum: ['auto', 'mandate', 'approved', 'denied', 'expired', 'blocked'] }).notNull(),
+    outcome: text('outcome', { enum: ['ok', 'error', 'skipped'] }).notNull(),
+    detail: text('detail').notNull(),
+    createdAt: integer('created_at').notNull(),
+    durationMs: integer('duration_ms').notNull(),
+  },
+  (t) => [index('tool_runs_ws_created').on(t.workspaceId, t.createdAt)],
+)
+
+export const schema = { workspaces, conversations, messages, memories, toolRuns }

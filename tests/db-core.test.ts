@@ -21,7 +21,7 @@ test('migrations: apply once, record version, idempotent on reopen', () => {
   assert.equal(schemaVersion(db), MIGRATIONS.length)
   assert.equal(migrate(db), MIGRATIONS.length) // no-op
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all().map((r) => (r as { name: string }).name)
-  assert.deepEqual(tables, ['conversations', 'memories', 'messages', 'workspaces'])
+  assert.deepEqual(tables, ['conversations', 'memories', 'messages', 'tool_runs', 'workspaces'])
 })
 
 test('migrations: failed migration rolls back and leaves version unchanged', () => {
@@ -94,7 +94,24 @@ test('migrations: an existing v1 database upgrades to v2 without losing data', (
   db.prepare("INSERT INTO conversations VALUES ('c1','personal','kept',1,1)").run()
   assert.equal(schemaVersion(db), 1)
   migrate(db)
-  assert.equal(schemaVersion(db), 2)
+  assert.equal(schemaVersion(db), MIGRATIONS.length)
   assert.equal((db.prepare("SELECT title FROM conversations WHERE id='c1'").get() as { title: string }).title, 'kept')
   assert.equal((db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name='memories'").get() as { n: number }).n, 1)
+})
+
+test('action log table: constraints keep rows well-formed and workspace-bound', () => {
+  const db = new DatabaseSync(':memory:')
+  configure(db)
+  migrate(db)
+  seedWorkspaces(db)
+  const ins = db.prepare(
+    'INSERT INTO tool_runs (id, workspace_id, tool, risk, source, summary, decision, outcome, detail, created_at, duration_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+  )
+  ins.run('r1', 'personal', 'save_memory', 'medium', 'text', 'Remember: x', 'approved', 'ok', '', 1, 5)
+  assert.throws(() => ins.run('r2', 'nowhere', 'get_time', 'low', 'text', 's', 'auto', 'ok', '', 1, 0), /FOREIGN KEY/)
+  assert.throws(() => ins.run('r3', 'personal', 'get_time', 'extreme', 'text', 's', 'auto', 'ok', '', 1, 0), /CHECK/)
+  assert.throws(() => ins.run('r4', 'personal', 'get_time', 'low', 'email', 's', 'auto', 'ok', '', 1, 0), /CHECK/)
+  assert.throws(() => ins.run('r5', 'personal', 'get_time', 'low', 'text', 's', 'yolo', 'ok', '', 1, 0), /CHECK/)
+  assert.throws(() => ins.run('r6', 'personal', 'get_time', 'low', 'text', 'x'.repeat(301), 'auto', 'ok', '', 1, 0), /CHECK/)
+  assert.equal((db.prepare('SELECT count(*) AS n FROM tool_runs').get() as { n: number }).n, 1)
 })

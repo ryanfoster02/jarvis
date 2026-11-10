@@ -25,11 +25,18 @@ export const Channels = {
   memoryExport: 'memory:export',
   voiceMicAccess: 'voice:mic-access',
   voiceConnect: 'voice:connect',
+  approvalsList: 'approvals:list',
+  approvalsDecide: 'approvals:decide',
+  toolRunsList: 'tools:runs',
+  toolsInvoke: 'tools:invoke',
 } as const
 
 /** Main → renderer push events. */
 export const Events = {
   killSwitchChanged: 'killswitch:changed',
+  approvalsChanged: 'approvals:changed',
+  /** An action was logged (carries its ActionNote). */
+  toolRunLogged: 'tools:run-logged',
 } as const
 
 export type Channel = (typeof Channels)[keyof typeof Channels]
@@ -147,6 +154,10 @@ export interface Settings {
   textModel: TextModelId
   /** Read typed replies aloud with the ElevenLabs voice (when that engine and key are set up). */
   speakTypedReplies: boolean
+  /** Permissions (SECURITY.md §4): tools the owner has switched off. Off = Jarvis is never offered them. */
+  disabledTools: ToolName[]
+  /** Mandate: save memories Jarvis proposes without asking each time. Off by default. */
+  autoSaveMemories: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = Object.freeze({
@@ -163,9 +174,11 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   bargeIn: false,
   textModel: 'gpt-5.4-mini',
   speakTypedReplies: true,
+  disabledTools: [],
+  autoSaveMemories: false,
 })
 
-/** Execution limits (SECURITY.md §6). Displayed now; enforced by the agent runtime in Phase 2. */
+/** Execution limits (SECURITY.md §6). Enforced per typed request by RunBudget (Sprint 8). */
 export interface ExecutionLimits {
   maxIterations: number
   maxSeconds: number
@@ -297,7 +310,16 @@ export type MemoryExportResult = { ok: true; path: string; count: number } | { o
 export type HistoryResult<T> = { ok: true; value: T } | { ok: false; code: 'unavailable' | 'not_found' | 'invalid_input'; message: string }
 
 export type ChatResult =
-  | { ok: true; reply: string; model: TextModelId; provider: TextProviderId; usage: TextUsage; conversationId: string | null }
+  | {
+      ok: true
+      reply: string
+      model: TextModelId
+      provider: TextProviderId
+      usage: TextUsage
+      conversationId: string | null
+      /** Tools Jarvis used (or tried to) while answering, in order. */
+      actions: ActionNote[]
+    }
   | {
       ok: false
       code: 'no_provider' | 'halted' | 'invalid_input' | 'rate_limited' | 'network' | 'api_error'
@@ -422,6 +444,16 @@ export function validateSettingsPatch(input: unknown): Partial<Settings> {
         if (typeof value !== 'boolean') throw new IpcValidationError('speakTypedReplies must be boolean')
         out.speakTypedReplies = value
         break
+      case 'disabledTools':
+        if (!Array.isArray(value) || value.length > TOOL_NAMES.length || !value.every(isToolName)) {
+          throw new IpcValidationError('disabledTools must be a list of tool names')
+        }
+        out.disabledTools = [...new Set(value)]
+        break
+      case 'autoSaveMemories':
+        if (typeof value !== 'boolean') throw new IpcValidationError('autoSaveMemories must be boolean')
+        out.autoSaveMemories = value
+        break
       default:
         throw new IpcValidationError(`unknown setting: ${key}`)
     }
@@ -446,6 +478,8 @@ export function normalizeSettings(stored: unknown): Settings {
   if (typeof stored.bargeIn === 'boolean') s.bargeIn = stored.bargeIn
   if (isTextModelId(stored.textModel)) s.textModel = stored.textModel
   if (typeof stored.speakTypedReplies === 'boolean') s.speakTypedReplies = stored.speakTypedReplies
+  if (Array.isArray(stored.disabledTools)) s.disabledTools = [...new Set(stored.disabledTools.filter(isToolName))]
+  if (typeof stored.autoSaveMemories === 'boolean') s.autoSaveMemories = stored.autoSaveMemories
   return s
 }
 
@@ -475,6 +509,76 @@ export function validateChatHistory(input: unknown): ChatTurn[] {
   let total = turns.reduce((n, t) => n + t.text.length, 0)
   while (total > MAX_HISTORY_CHARS && turns.length > 0) total -= turns.shift()!.text.length
   return turns
+}
+
+// ---------- Tools, approvals, action log (Sprint 8; SECURITY.md §3–6) ----------
+
+export const TOOL_NAMES = ['get_time', 'list_memories', 'save_memory', 'forget_memory'] as const
+export type ToolName = (typeof TOOL_NAMES)[number]
+export const isToolName = (v: unknown): v is ToolName => typeof v === 'string' && (TOOL_NAMES as readonly string[]).includes(v)
+
+export const RISK_LEVELS = ['low', 'medium', 'high'] as const
+export type RiskLevel = (typeof RISK_LEVELS)[number]
+
+export type ToolSource = 'text' | 'voice'
+
+/**
+ * How a tool call was decided: auto (low risk), mandate (standing permission), approved/denied/expired
+ * (owner's answer or none within the time limit), blocked (kill switch, switched off, or over a limit).
+ */
+export type ToolDecision = 'auto' | 'mandate' | 'approved' | 'denied' | 'expired' | 'blocked'
+export type ToolOutcome = 'ok' | 'error' | 'skipped'
+
+/** One request waiting for the owner. Summary is human-readable and never contains secrets. */
+export interface ApprovalRequest {
+  id: string
+  tool: ToolName
+  title: string
+  risk: RiskLevel
+  summary: string
+  source: ToolSource
+  requestedAt: number
+  expiresAt: number
+}
+
+/** A row in the action log. */
+export interface ToolRun {
+  id: string
+  tool: ToolName
+  risk: RiskLevel
+  source: ToolSource
+  summary: string
+  decision: ToolDecision
+  outcome: ToolOutcome
+  detail: string
+  createdAt: number
+  durationMs: number
+}
+
+/** What the conversation shows about an action. */
+export interface ActionNote {
+  tool: ToolName
+  title: string
+  decision: ToolDecision
+  outcome: ToolOutcome
+  detail: string
+}
+
+/** Voice tool call result: `output` goes back to the model; `action` is for the conversation view. */
+export type ToolInvokeResult = { ok: true; output: string; action: ActionNote } | { ok: false; message: string }
+
+/** Max size of a tool's JSON arguments from the model. */
+export const MAX_TOOL_ARGS_CHARS = 4000
+
+export function validateToolInvoke(name: unknown, args: unknown): { name: ToolName; args: string } {
+  if (!isToolName(name)) throw new IpcValidationError('unknown tool')
+  if (typeof args !== 'string' || args.length > MAX_TOOL_ARGS_CHARS) throw new IpcValidationError('tool arguments must be a JSON string')
+  return { name, args }
+}
+
+export function validateApprovalId(input: unknown): string {
+  if (typeof input !== 'string' || !UUID.test(input)) throw new IpcValidationError('invalid approval id')
+  return input.toLowerCase()
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i

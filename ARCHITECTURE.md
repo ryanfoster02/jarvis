@@ -48,14 +48,26 @@ sessions/      session reports (YYYY-MM-DD_HH-mm.md)
 8. Stop all / End voice closes the peer connection and stops all tracks. Tool calls are **not** enabled in the session yet (Phase 2 permission engine first).
 
 ## AI runtime & tools (Phase 2)
-**Typed-reply providers (Sprint 7).** `TextProvider` (`src/main/textProviders.ts`) = `{ id, name, send(key, body), parse(json) }`, with `openai` (Responses API) and `anthropic` (Messages API) entries. Request bodies are built in pure shared code (`buildProviderRequest` in `src/shared/text.ts` → `buildAnthropicRequest` in `src/shared/anthropic.ts`) from the same persona, memory and limits as voice. `chat:send` picks the provider from `settings.textModel` and uses only that provider's key; the renderer gets the reply text, the model, the provider id and token usage. Anthropic history is normalised (starts with the user, alternating roles) before sending. Streaming and tool use come with Sprint 8.
+**Typed-reply providers (Sprint 7).** `TextProvider` (`src/main/textProviders.ts`) = `{ id, name, send(key, body), parse(json) }`, with `openai` (Responses API) and `anthropic` (Messages API) entries. Request bodies are built in pure shared code (`buildProviderRequest` in `src/shared/text.ts` → `buildAnthropicRequest` in `src/shared/anthropic.ts`) from the same persona, memory and limits as voice. `chat:send` picks the provider from `settings.textModel` and uses only that provider's key; the renderer gets the reply text, the model, the provider id and token usage. Anthropic history is normalised (starts with the user, alternating roles) before sending. Streaming is not implemented yet.
 
-Planned: `ToolRegistry` entries declare `ToolRegistry` entries declare: name, schema, risk level (low/medium/high), required scopes. Every call goes through `PermissionEngine.check(tool, args, workspace, mandate)` → `approve | needsApproval | deny`, and is bounded by `ExecutionLimits` (iterations, time, tool calls, cost, depth, concurrency).
+**Tools (Sprint 8).**
+```
+typed:  chat:send → runAgent (shared/agent.ts) ──▶ provider.send ──▶ tool calls? ──▶ executeTool ─┐
+                         ▲                                                                    │
+                         └──────────── results appended (OpenAI items / Anthropic tool_result) ◀┘
+voice:  Realtime response.done (function_call) → renderer → tools:invoke → executeTool → function_call_output → response.create
+executeTool (main/tools.ts): parseToolArgs → decide (shared/permissions.ts) → requestApproval? (main/approvals.ts) → run → logToolRun (tool_runs) → tools:run-logged event
+```
+- Registry: `src/shared/tools.ts` (risk, scope, strict JSON schema, owner/model descriptions, provider formats, prompt section).
+- Permission engine: `decide(tool, {halted, disabled, grantedScopes, mandates})` → allow (auto | mandate) | ask | deny.
+- Limits: `RunBudget` per typed request; concurrency counter in `chat:send`; voice tool calls rate-limited.
+- Provider adapters in `shared/agent.ts`: OpenAI output items are passed back verbatim with `function_call_output` (with `store:false`, reasoning travels as `reasoning.encrypted_content`); Anthropic gets the assistant turn then a user turn of `tool_result` blocks.
+- UI: approvals and Activity in the Ops column, "N approvals waiting" chip in the top bar, action notes in the conversation, tool switches + standing permission in Settings → Permissions.
 
 ## Data (Phase 2)
 `userData/jarvis.db` opened in main at startup (`src/main/db/client.ts`): `node:sqlite` → executor → Drizzle sqlite-proxy. WAL, foreign keys on, migrations by `PRAGMA user_version` (atomic; refuses a newer schema). If it can't open, Jarvis runs without history and the UI says so.
 
-Tables (Sprint 5): `workspaces` (seeded), `conversations` (workspace_id, title, timestamps), `messages` (role user|assistant, via text|voice, cascade delete). `memories` (Sprint 6: scope global|workspace, CHECK-enforced pairing, source user|conversation; store `src/main/db/memories.ts` with the same isolation rule). Planned: integrations, permissions, mandates, tasks, execution_log.
+Tables (Sprint 5): `workspaces` (seeded), `conversations` (workspace_id, title, timestamps), `messages` (role user|assistant, via text|voice, cascade delete). `memories` (Sprint 6: scope global|workspace, CHECK-enforced pairing, source user|conversation; store `src/main/db/memories.ts` with the same isolation rule). `tool_runs` (Sprint 8: action log; risk/source/decision/outcome CHECKs, per-workspace, trimmed to 500). Permissions and the memory mandate live in settings (`disabledTools`, `autoSaveMemories`). Planned: integrations, scoped mandates, tasks.
 
 **Memory in prompts:** main loads global + active-workspace memories and `formatMemorySection` adds them to the instructions (typed and voice) under a heading that labels them as owner-saved information, never instructions; quotes neutralised, capped at 6 000 chars, placed before the Limits section.
 

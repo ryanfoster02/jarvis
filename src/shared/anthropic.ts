@@ -6,6 +6,7 @@
 // The long-stable 2023-06-01 version is used (top-level `system`); the docs' own model-list example uses it.
 
 import type { ChatTurn, TextUsage } from './ipc.ts'
+import { anthropicTools, type ToolSpec } from './tools.ts'
 
 export const ANTHROPIC_API = 'https://api.anthropic.com/v1'
 export const ANTHROPIC_VERSION = '2023-06-01'
@@ -35,12 +36,14 @@ export function buildAnthropicRequest(o: {
   history: ChatTurn[]
   message: string
   maxTokens?: number
+  tools?: ToolSpec[]
 }): Record<string, unknown> {
   return {
     model: o.model,
     max_tokens: o.maxTokens ?? 1200,
     system: o.instructions,
     messages: toAnthropicMessages(o.history, o.message),
+    ...(o.tools?.length ? { tools: anthropicTools(o.tools) } : {}),
   }
 }
 

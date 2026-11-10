@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { RealtimeModelId, SpeechEngineId } from '../../../shared/ipc.ts'
-import { EV, isOneOf, type RealtimeUsage } from '../../../shared/realtime.ts'
+import type { ActionNote, RealtimeModelId, SpeechEngineId } from '../../../shared/ipc.ts'
+import { EV, isOneOf, realtimeToolCalls, type RealtimeUsage } from '../../../shared/realtime.ts'
 import { cleanForSpeech, takeSpeakable } from '../../../shared/speech.ts'
 import { SpeechQueue } from './speechQueue.ts'
 
@@ -14,6 +14,8 @@ export interface VoiceHandlers {
   onUsage: (model: RealtimeModelId, usage: RealtimeUsage | undefined) => void
   onLatency: (ms: number) => void
   onTtsCharacters: (n: number) => void
+  /** Jarvis used (or tried to use) a tool during voice. */
+  onAction: (note: ActionNote) => void
 }
 
 interface ServerEvent {
@@ -24,7 +26,13 @@ interface ServerEvent {
   item_id?: string
   response_id?: string
   error?: { message?: string }
-  response?: { id?: string; status?: string; usage?: RealtimeUsage; status_details?: { error?: { message?: string } } }
+  response?: {
+    id?: string
+    status?: string
+    usage?: RealtimeUsage
+    status_details?: { error?: { message?: string } }
+    output?: unknown[]
+  }
 }
 
 const MIC_DENIED =
@@ -58,6 +66,8 @@ export function useVoice(handlers: VoiceHandlers) {
   const engineRef = useRef<SpeechEngineId>('openai')
   const bargeInRef = useRef(false)
   const userMuted = useRef(false)
+  /** Realtime function-call IDs already relayed (response.done can repeat items). */
+  const handledCalls = useRef(new Set<string>())
   const autoPaused = useRef(false)
   const textBuffers = useRef(new Map<string, string>())
   const turnStart = useRef<number | null>(null)
@@ -118,6 +128,7 @@ export function useVoice(handlers: VoiceHandlers) {
     audioRef.current = null
     turnStart.current = null
     textBuffers.current.clear()
+    handledCalls.current.clear()
     userMuted.current = false
     autoPaused.current = false
     setActivity('idle')
@@ -188,6 +199,8 @@ export function useVoice(handlers: VoiceHandlers) {
           setError(ev.response.status_details?.error?.message ?? 'The response failed.')
         }
         setActivity((a) => (a === 'thinking' && !speech.active ? 'idle' : a))
+        const calls = realtimeToolCalls(ev.response).filter((c) => !handledCalls.current.has(c.callId))
+        if (calls.length) void runToolCalls(calls)
       } else if (ev.type === EV.error) {
         setError(ev.error?.message ?? 'OpenAI reported an error.')
       }
@@ -302,6 +315,28 @@ export function useVoice(handlers: VoiceHandlers) {
     applyMic()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  /**
+   * Voice tool calls: relay each to main (which checks permissions, asks for approval and runs it),
+   * hand every result back to the model, then ask it to continue. One response.create per batch.
+   */
+  const runToolCalls = async (calls: Array<{ callId: string; name: string; arguments: string }>): Promise<void> => {
+    setActivity('thinking')
+    for (const c of calls) handledCalls.current.add(c.callId)
+    for (const c of calls) {
+      let output: string
+      try {
+        const r = await window.jarvis.tools.invoke(c.name, c.arguments)
+        if (r.ok) h.current.onAction(r.action)
+        output = r.ok ? r.output : `Not run: ${r.message}`
+      } catch {
+        output = 'Not run: the app could not process this action.'
+      }
+      if (!send({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: c.callId, output } })) return
+    }
+    turnStart.current = performance.now()
+    send({ type: 'response.create' })
+  }
 
   const send = (event: Record<string, unknown>): boolean => {
     const dc = dcRef.current

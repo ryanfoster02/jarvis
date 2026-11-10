@@ -2,7 +2,7 @@
 
 Local-first, voice-capable desktop assistant. Electron + React + TypeScript (electron-vite).
 
-**Status:** Phase 1 complete (desktop app, dashboard, voice, typed chat, packaging). Memory (Phase 2) and integrations (Phase 3) are not built yet; the UI says so where relevant. See [IMPLEMENTATION.md](IMPLEMENTATION.md).
+**Status:** Phase 1 complete (desktop app, dashboard, voice, typed chat, packaging). Phase 2 adds memory, Claude for typed replies, and tools with approvals; integrations (Phase 3) are not built yet, and the UI says so where relevant. See [IMPLEMENTATION.md](IMPLEMENTATION.md).
 
 ## Requirements
 - macOS (Apple Silicon or Intel). Windows/Linux later.
@@ -60,6 +60,7 @@ Open `.env` and paste your keys after `OPENAI_API_KEY=` and `ELEVENLABS_API_KEY=
 - Never rename it with a `VITE_` prefix: that would bundle the key into the interface.
 
 ## Using the app
+- **Actions & approvals:** Jarvis can check the time and look up, save and delete memories, typed or by voice ("remember that I take my coffee black", "forget that"). Saving asks you first in the dashboard's **Approvals** panel (or turn on *Save memories without asking* in Settings → Permissions); deleting always asks. Everything Jarvis does or tries is listed under **Activity**. Unanswered requests expire after 2 minutes; **Stop all** answers them with no. Switch any tool off in Settings → Permissions.
 - **Memory:** the MEMORY tab lists facts Jarvis knows: for this workspace and for all workspaces. Add, edit, delete (asks first) or export everything as JSON. In a conversation, type `/remember …` or press **Remember** under one of your messages. Jarvis uses memories in typed and spoken replies; it refuses to store passwords or keys.
 - **History:** the Conversation panel's picker lists this workspace's saved conversations. **New** starts a fresh one; **Delete** removes the current one (asks first). Switching workspace shows only that workspace's conversations and ends any voice session. Stored locally in `~/Library/Application Support/JARVIS/jarvis.db`.
 - **Typing:** with voice off, typed messages get typed replies (GPT-5.4 mini by default, same personality), read aloud with the ElevenLabs voice if *Read typed replies aloud* is on. Conversations are saved per workspace and survive restarts.

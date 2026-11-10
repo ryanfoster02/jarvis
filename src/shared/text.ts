@@ -4,6 +4,7 @@
 
 import { textModelProvider, type ChatTurn, type HonorificId, type PersonaId, type TextModelId, type TextUsage } from './ipc.ts'
 import { buildAnthropicRequest } from './anthropic.ts'
+import { openAITools, type ToolSpec } from './tools.ts'
 import { buildInstructions } from './realtime.ts'
 
 export interface TextRequestOptions {
@@ -14,17 +15,26 @@ export interface TextRequestOptions {
   history: ChatTurn[]
   message: string
   memories?: { global: string[]; workspace: string[] }
+  /** Tools offered for this message (Sprint 8). */
+  tools?: ToolSpec[]
 }
 
 /** Same persona, memory and limits as voice; replies are short plain sentences that also read well aloud. */
 export function textInstructions(o: TextRequestOptions): string {
-  return buildInstructions({ workspaceName: o.workspaceName, persona: o.persona, honorific: o.honorific, output: 'text', memories: o.memories })
+  return buildInstructions({
+    workspaceName: o.workspaceName,
+    persona: o.persona,
+    honorific: o.honorific,
+    output: 'text',
+    memories: o.memories,
+    tools: o.tools,
+  })
 }
 
 /** Request body for whichever provider serves the chosen model. */
 export function buildProviderRequest(o: TextRequestOptions): Record<string, unknown> {
   return textModelProvider(o.model) === 'anthropic'
-    ? buildAnthropicRequest({ model: o.model, instructions: textInstructions(o), history: o.history, message: o.message })
+    ? buildAnthropicRequest({ model: o.model, instructions: textInstructions(o), history: o.history, message: o.message, tools: o.tools })
     : buildTextRequest(o)
 }
 
@@ -39,6 +49,11 @@ export function buildTextRequest(o: TextRequestOptions): Record<string, unknown>
   }
   // gpt-5-mini reasons by default (slower); keep it brief. gpt-5.4-mini defaults to no reasoning.
   if (o.model === 'gpt-5-mini') body.reasoning = { effort: 'low' }
+  if (o.tools?.length) {
+    body.tools = openAITools(o.tools)
+    // store:false keeps nothing on OpenAI's side, so any reasoning must travel with tool results.
+    body.include = ['reasoning.encrypted_content']
+  }
   return body
 }
 

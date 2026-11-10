@@ -1393,3 +1393,128 @@ select {
 .field-warn {
   color: var(--danger);
 }
+
+/* ---------- Tools: approvals, activity, action notes (Sprint 8) ---------- */
+.risk-medium { color: var(--attention); }
+.risk-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  border: 1px solid currentColor;
+  font: 400 var(--t-micro) / 1.2 var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+.chip-approval {
+  color: var(--attention);
+  border-color: color-mix(in srgb, var(--attention) 60%, transparent);
+  background: color-mix(in srgb, var(--attention) 10%, transparent);
+}
+.approval-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--attention);
+  box-shadow: 0 0 8px var(--attention);
+  animation: attention 1.6s ease-in-out infinite;
+}
+.approvals,
+.runs,
+.tool-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.approval {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--attention);
+  background: color-mix(in srgb, var(--attention) 6%, transparent);
+}
+.approval-high {
+  border-left-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 7%, transparent);
+}
+.approval-low {
+  border-left-color: var(--ok);
+}
+.approval-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.approval-title {
+  flex: 1;
+  font-weight: 500;
+  font-size: var(--t-sm);
+}
+.approval-meta {
+  font: 400 var(--t-micro) var(--font-mono);
+  color: var(--dim);
+}
+.approval-summary {
+  margin: 8px 0 10px;
+  font-size: var(--t-sm);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.approval-actions {
+  display: flex;
+  gap: 8px;
+}
+.approval-actions .btn {
+  height: 32px;
+  flex: 1;
+}
+.btn-approve {
+  border-color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 14%, transparent);
+}
+.btn-deny {
+  border-color: color-mix(in srgb, var(--danger) 70%, transparent);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+.run {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 10px;
+  row-gap: 2px;
+  font-size: var(--t-sm);
+}
+.run time {
+  font: 400 var(--t-micro) / 1.8 var(--font-mono);
+  color: var(--faint);
+}
+.run-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.run-decision {
+  grid-column: 2;
+  font: 400 var(--t-micro) var(--font-mono);
+  color: var(--dim);
+}
+.run.outcome-error .run-decision { color: var(--danger); }
+.run.outcome-skipped .run-decision { color: var(--attention); }
+.run.outcome-ok .run-decision { color: var(--ok); }
+.msg-action p {
+  padding: 7px 12px;
+  border-left: 2px solid var(--ok);
+  background: color-mix(in srgb, var(--ok) 6%, transparent);
+  color: var(--dim);
+  font-size: var(--t-sm);
+}
+.msg-action .msg-who { color: var(--ok); }
+.msg-action.tone-skipped p { border-left-color: var(--attention); background: color-mix(in srgb, var(--attention) 6%, transparent); }
+.msg-action.tone-skipped .msg-who { color: var(--attention); }
+.msg-action.tone-error p { border-left-color: var(--danger); background: color-mix(in srgb, var(--danger) 6%, transparent); }
+.msg-action.tone-error .msg-who { color: var(--danger); }
+.subhead {
+  margin: 22px 0 6px;
+}
+.tool-list .field h3 .risk-badge {
+  margin-left: 6px;
+}

@@ -49,7 +49,19 @@ test('renderer is isolated: no Node globals, only the narrow jarvis bridge', asy
   expect(globals.require).toBe('undefined')
   expect(globals.process).toBe('undefined')
   expect(globals.module).toBe('undefined')
-  expect(globals.bridge).toEqual(['app', 'chat', 'conversations', 'credentials', 'killSwitch', 'memory', 'settings', 'tts', 'voice'])
+  expect(globals.bridge).toEqual([
+    'app',
+    'approvals',
+    'chat',
+    'conversations',
+    'credentials',
+    'killSwitch',
+    'memory',
+    'settings',
+    'tools',
+    'tts',
+    'voice',
+  ])
 
   // getLastWebPreferences() exists at runtime but is missing from Electron's TypeScript definitions,
   // so it's reached through a narrow cast. If Electron ever removes it, this test fails loudly.
@@ -246,5 +258,101 @@ test('memory: add, scope to workspace, refuse secrets, edit, delete, /remember',
   await expect(page.locator('.msg-system')).toContainText('Remembered for this workspace')
   await page.getByRole('button', { name: 'Memory', exact: true }).click()
   await expect(page.locator('.memory-text', { hasText: 'Track agent benchmark papers' })).toBeVisible()
+  await app.close()
+})
+
+// Sprint 8: drives tool calls through the same bridge a live voice session uses (no API key needed),
+// so the permission engine, approvals queue, kill switch and action log are tested for real.
+type ToolBridge = {
+  tools: { invoke: (name: string, args: string) => Promise<{ ok: boolean; output?: string; message?: string }> }
+  memory: { list: () => Promise<{ ok: boolean; value?: Array<{ id: string; text: string }> }> }
+}
+const invoke = (page: Page, name: string, args: object) =>
+  page.evaluate(
+    ([n, a]: readonly [string, string]) => (window as unknown as { jarvis: ToolBridge }).jarvis.tools.invoke(n, a),
+    [name, JSON.stringify(args)] as const,
+  )
+
+test('tools: low risk runs, medium asks, high always asks, secrets refused, Stop all answers no', async () => {
+  test.setTimeout(90_000)
+  const { app, page } = await launch(profile)
+  const fact = 'Prefers tea in the afternoon'
+
+  const time = await invoke(page, 'get_time', {})
+  expect(time.ok).toBe(true)
+  expect(time.output).toContain('timeZone')
+
+  // Medium risk: waits for the owner.
+  const saving = invoke(page, 'save_memory', { text: fact, scope: 'workspace' })
+  const card = page.locator('.approval').filter({ hasText: fact })
+  await expect(card).toBeVisible()
+  await expect(card.locator('.risk-badge')).toHaveText('Medium risk')
+  await expect(page.locator('.chip-approval')).toHaveText('1 approval waiting')
+  await card.getByRole('button', { name: 'Approve' }).click()
+  expect((await saving).output).toContain('Saved')
+  await expect(page.locator('.approval')).toHaveCount(0)
+  await expect(page.locator('.run-summary', { hasText: fact })).toBeVisible()
+
+  // High risk: asks even though it's only a memory; the owner says no.
+  const listed: Awaited<ReturnType<ToolBridge['memory']['list']>> = await page.evaluate(() =>
+    (window as unknown as { jarvis: ToolBridge }).jarvis.memory.list(),
+  )
+  const id = listed.value?.find((m) => m.text === fact)?.id ?? ''
+  expect(id).not.toBe('')
+  const deleting = invoke(page, 'forget_memory', { id })
+  const del = page.locator('.approval').filter({ hasText: `Delete memory: "${fact}"` })
+  await expect(del.locator('.risk-badge')).toHaveText('High risk')
+  await del.getByRole('button', { name: 'Deny' }).click()
+  expect((await deleting).output).toContain('declined')
+  await expect(page.locator('.run-decision').first()).toContainText('You declined')
+
+  // Secrets never reach an approval.
+  const secret = await invoke(page, 'save_memory', { text: 'my api key is sk-proj-aaaaaaaaaaaaaaaaaaaaaaaa', scope: 'global' })
+  expect(secret.output).toMatch(/^Not run: .*API key/)
+  await expect(page.locator('.approval')).toHaveCount(0)
+
+  // Stop all answers a waiting request with "no".
+  const waiting = invoke(page, 'save_memory', { text: 'Should never be saved', scope: 'workspace' })
+  await expect(page.locator('.approval')).toHaveCount(1)
+  await page.getByRole('button', { name: 'Stop all' }).click()
+  expect((await waiting).output).toContain('Stop all')
+  await expect(page.locator('.approval')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Re-arm' }).click()
+
+  // A switched-off tool is refused outright, never asked about.
+  await page.evaluate(() => (window as unknown as { jarvis: { settings: { update: (p: object) => Promise<unknown> } } }).jarvis.settings.update({ disabledTools: ['forget_memory'] }))
+  expect((await invoke(page, 'forget_memory', { id })).output).toContain('switched this tool off')
+  await expect(page.locator('.approval')).toHaveCount(0)
+
+  // Leave the shared profile clean.
+  await page.evaluate(() => (window as unknown as { jarvis: { settings: { update: (p: object) => Promise<unknown> } } }).jarvis.settings.update({ disabledTools: [] }))
+  await page.evaluate((mid: string) => (window as unknown as { jarvis: { memory: { delete: (id: string) => Promise<unknown> } } }).jarvis.memory.delete(mid), id)
+  await app.close()
+})
+
+test('settings: tool switches and the standing permission persist', async () => {
+  const { app, page } = await launch(profile)
+  await page.keyboard.press('ControlOrMeta+,')
+  await page.getByRole('button', { name: 'Permissions' }).click()
+  const del = page.getByRole('switch', { name: 'Delete a memory' })
+  await expect(del).toHaveAttribute('aria-checked', 'true')
+  await del.click()
+  await expect(del).toHaveAttribute('aria-checked', 'false')
+  const mandate = page.getByRole('switch', { name: 'Save memories without asking' })
+  await expect(mandate).toHaveAttribute('aria-checked', 'false')
+  await mandate.click()
+  await expect(mandate).toHaveAttribute('aria-checked', 'true')
+  // With the mandate on, saving no longer asks.
+  const r = await invoke(page, 'save_memory', { text: 'Uses metric units', scope: 'workspace' })
+  expect(r.output).toContain('Saved')
+  // Restore defaults and remove the test memory.
+  await del.click()
+  await mandate.click()
+  await expect(mandate).toHaveAttribute('aria-checked', 'false')
+  await page.evaluate(async () => {
+    const j = (window as unknown as { jarvis: ToolBridge & { memory: { delete: (id: string) => Promise<unknown> } } }).jarvis
+    const r = await j.memory.list()
+    for (const m of r.value ?? []) if (m.text === 'Uses metric units') await j.memory.delete(m.id)
+  })
   await app.close()
 })

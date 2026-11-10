@@ -11,6 +11,8 @@ interface Props {
   onWorkspace: (w: WorkspaceId) => void
   onTheme: (t: Theme) => void
   mic: 'off' | 'live' | 'muted' | 'paused'
+  /** Requests waiting for the owner's approval. */
+  approvalsWaiting: number
 }
 
 const Mark = (): React.JSX.Element => (
@@ -21,7 +23,7 @@ const Mark = (): React.JSX.Element => (
   </svg>
 )
 
-export function TopBar({ view, onNavigate, settings, kill, onWorkspace, onTheme, mic }: Props): React.JSX.Element {
+export function TopBar({ view, onNavigate, settings, kill, onWorkspace, onTheme, mic, approvalsWaiting }: Props): React.JSX.Element {
   const halted = !!kill?.engaged
   const nextTheme = (t: Theme): Theme => THEMES[(THEMES.indexOf(t) + 1) % THEMES.length] ?? 'gold'
 
@@ -50,6 +52,13 @@ export function TopBar({ view, onNavigate, settings, kill, onWorkspace, onTheme,
         </nav>
 
         <div className="topbar-spacer" />
+
+        {approvalsWaiting > 0 && (
+          <button className="chip chip-approval" onClick={() => onNavigate('dashboard')} title="Review on the dashboard">
+            <span className="approval-dot" aria-hidden="true" />
+            {approvalsWaiting === 1 ? '1 approval waiting' : `${approvalsWaiting} approvals waiting`}
+          </button>
+        )}
 
         {mic !== 'off' && (
           <span className={`chip chip-mic ${mic === 'live' ? 'is-live' : ''}`} role="status">

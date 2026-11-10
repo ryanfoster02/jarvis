@@ -5,6 +5,7 @@
 //  - Session config is GA-shaped: { type: 'realtime', model, instructions, audio: { input, output } }.
 
 import type { HonorificId, PersonaId, RealtimeModelId, VoiceId } from './ipc.ts'
+import { realtimeTools, toolInstructions, type ToolSpec } from './tools.ts'
 import { formatMemorySection } from './memory.ts'
 
 export const OPENAI_API = 'https://api.openai.com/v1'
@@ -23,6 +24,8 @@ export interface SessionOptions {
   output: 'audio' | 'text'
   /** Saved facts for this workspace and globally (Sprint 6). */
   memories?: { global: string[]; workspace: string[] }
+  /** Tools offered this session (Sprint 8). Omitted or empty = no tools. */
+  tools?: ToolSpec[]
 }
 
 const TITLE: Record<HonorificId, string | null> = { none: null, sir: 'sir', maam: "ma'am" }
@@ -81,9 +84,11 @@ export function buildInstructions(
   o: Pick<SessionOptions, 'workspaceName' | 'persona' | 'honorific'> & {
     output?: 'audio' | 'text'
     memories?: SessionOptions['memories']
+    tools?: ToolSpec[]
   },
 ): string {
   const memory = o.memories ? formatMemorySection(o.memories, o.workspaceName) : []
+  const tools = toolInstructions(o.tools ?? [])
   const title = TITLE[o.honorific]
   const persona = o.persona === 'british-butler' ? BRITISH_BUTLER(title) : NEUTRAL(title)
   // In text mode the accent comes from the ElevenLabs voice, so pronunciation rules are dropped.
@@ -98,13 +103,14 @@ export function buildInstructions(
     '',
     ...(o.output === 'text' ? [...SPOKEN_TEXT, ''] : []),
     ...(memory.length ? [...memory, ''] : []),
+    ...tools,
+    '',
     '# Length',
     '- One to three sentences per reply unless the owner asks for more.',
     '',
     '# Limits (always follow)',
-    '- You cannot yet take actions or read email, calendars, files or any other data.',
-    "- You can't save new memories yourself yet. If the owner asks you to remember something, tell them to type /remember followed by the fact, or use the Remember button or the Memory screen.",
-    '- If asked to do any of those, say plainly that the capability is not connected yet.',
+    '- You cannot read email, calendars, files or any other data, and you cannot act beyond the tools listed above.',
+    '- If asked to do something you have no tool for, say plainly that the capability is not connected yet.',
     '- Never pretend to have done something or invent information about the owner.',
     '- You are an original assistant. If asked, do not claim to be a character from a film or imitate a specific real person.',
   ].join('\n')
@@ -116,6 +122,7 @@ export function buildRealtimeSession(o: SessionOptions): Record<string, unknown>
     turn_detection: { type: 'server_vad', interrupt_response: true, create_response: true },
   }
   if (o.transcription) input.transcription = { model: TRANSCRIPTION_MODEL }
+  const tools = o.tools?.length ? { tools: realtimeTools(o.tools), tool_choice: 'auto' } : {}
   if (o.output === 'text') {
     return {
       type: 'realtime',
@@ -123,6 +130,7 @@ export function buildRealtimeSession(o: SessionOptions): Record<string, unknown>
       output_modalities: ['text'],
       instructions: buildInstructions(o),
       audio: { input },
+      ...tools,
     }
   }
   return {
@@ -130,7 +138,22 @@ export function buildRealtimeSession(o: SessionOptions): Record<string, unknown>
     model: o.model,
     instructions: buildInstructions(o),
     audio: { input, output: { voice: o.voice } },
+    ...tools,
   }
+}
+
+/** Function calls in a Realtime `response.done` event's response.output (Sprint 8). */
+export function realtimeToolCalls(response: unknown): Array<{ callId: string; name: string; arguments: string }> {
+  const out = response && typeof response === 'object' ? (response as { output?: unknown }).output : undefined
+  if (!Array.isArray(out)) return []
+  const calls: Array<{ callId: string; name: string; arguments: string }> = []
+  for (const item of out) {
+    if (!item || typeof item !== 'object') continue
+    const i = item as Record<string, unknown>
+    if (i.type !== 'function_call' || typeof i.call_id !== 'string' || typeof i.name !== 'string') continue
+    calls.push({ callId: i.call_id, name: i.name, arguments: typeof i.arguments === 'string' ? i.arguments : '{}' })
+  }
+  return calls
 }
 
 /** Turn an OpenAI error response into a short, actionable message. Never includes the key. */

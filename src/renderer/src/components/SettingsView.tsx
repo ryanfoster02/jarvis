@@ -1,3 +1,4 @@
+import { TOOLS } from '../../../shared/tools.ts'
 import { useRef, useState, type FormEvent } from 'react'
 import {
   ELEVEN_MODELS,
@@ -541,8 +542,9 @@ export function SettingsView({ settings, info, creds, onCreds, onUpdate }: Props
             </div>
             <p className="fine">
               Changes apply the next time you start voice. The microphone is only on while voice is running, and the top
-              bar shows MIC LIVE whenever it is. Stop all ends voice immediately. Jarvis can talk but can&apos;t take
-              actions or read your data yet.
+              bar shows MIC LIVE whenever it is. Stop all ends voice immediately. Jarvis can use only the tools in Settings →
+              Permissions, and asks you before anything that isn&apos;t low risk. Email, calendars and files aren&apos;t
+              connected yet.
             </p>
           </>
         )}
@@ -579,7 +581,58 @@ export function SettingsView({ settings, info, creds, onCreds, onUpdate }: Props
                 </tr>
               </tbody>
             </table>
-            <p className="fine">The agent runtime that applies these rules ships in Phase 2. Today Jarvis can't take any actions.</p>
+
+            <h3 className="subhead">What Jarvis can do</h3>
+            <p>Switched-off tools are never offered to Jarvis. Changes apply to the next typed message and the next voice session.</p>
+            <ul className="tool-list">
+              {Object.values(TOOLS).map((t) => {
+                const on = !settings.disabledTools.includes(t.name)
+                return (
+                  <li key={t.name} className="field">
+                    <div className="field-text">
+                      <h3>
+                        {t.title} <span className={`risk-badge risk-${t.risk}`}>{t.risk}</span>
+                      </h3>
+                      <p>{t.ownerDescription}</p>
+                    </div>
+                    <button
+                      role="switch"
+                      aria-checked={on}
+                      aria-label={t.title}
+                      className="switch"
+                      onClick={() =>
+                        onUpdate({
+                          disabledTools: on ? [...settings.disabledTools, t.name] : settings.disabledTools.filter((n) => n !== t.name),
+                        })
+                      }
+                    />
+                  </li>
+                )
+              })}
+            </ul>
+
+            <h3 className="subhead">Standing permissions</h3>
+            <div className="field">
+              <div className="field-text">
+                <h3>Save memories without asking</h3>
+                <p>
+                  Jarvis saves facts you ask it to remember straight away instead of asking each time. Secrets are still refused,
+                  and every save is in the Activity log. Deleting memories always asks.
+                </p>
+              </div>
+              <button
+                role="switch"
+                aria-checked={settings.autoSaveMemories}
+                aria-label="Save memories without asking"
+                className="switch"
+                disabled={settings.disabledTools.includes('save_memory')}
+                onClick={() => onUpdate({ autoSaveMemories: !settings.autoSaveMemories })}
+              />
+            </div>
+            <p className="fine">
+              Order of precedence: Stop all, then scope, then these switches, then high-risk approval, then standing permissions. Jarvis
+              can&apos;t change any of these settings itself, and unanswered approvals expire after two minutes.
+            </p>
           </>
         )}
 

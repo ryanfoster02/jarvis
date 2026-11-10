@@ -19,6 +19,10 @@ import {
   type VoiceConnectResult,
   type KillSwitchState,
   type Settings,
+  type ActionNote,
+  type ApprovalRequest,
+  type ToolInvokeResult,
+  type ToolRun,
 } from '../shared/ipc.ts'
 
 // The only surface the renderer can reach. Functions only — ipcRenderer itself is never exposed,
@@ -74,6 +78,28 @@ const api = {
   },
   tts: {
     speak: (text: string): Promise<TtsResult> => ipcRenderer.invoke(Channels.ttsSpeak, text),
+  },
+  // Approvals: the renderer can see what is waiting and answer it; main decides everything else.
+  approvals: {
+    list: (): Promise<ApprovalRequest[]> => ipcRenderer.invoke(Channels.approvalsList),
+    decide: (id: string, approve: boolean): Promise<boolean> => ipcRenderer.invoke(Channels.approvalsDecide, id, approve),
+    onChange: (cb: (list: ApprovalRequest[]) => void): (() => void) => {
+      const listener = (_e: IpcRendererEvent, list: ApprovalRequest[]): void => cb(list)
+      ipcRenderer.on(Events.approvalsChanged, listener)
+      return () => ipcRenderer.removeListener(Events.approvalsChanged, listener)
+    },
+  },
+  tools: {
+    /** Action log for the active workspace. */
+    runs: (): Promise<HistoryResult<ToolRun[]>> => ipcRenderer.invoke(Channels.toolRunsList),
+    /** Relay a voice-session tool call (name + JSON arguments) to main, which checks and runs it. */
+    invoke: (name: string, args: string): Promise<ToolInvokeResult> => ipcRenderer.invoke(Channels.toolsInvoke, name, args),
+    /** Fires after every logged action, whatever started it. */
+    onLogged: (cb: (note: ActionNote) => void): (() => void) => {
+      const listener = (_e: IpcRendererEvent, note: ActionNote): void => cb(note)
+      ipcRenderer.on(Events.toolRunLogged, listener)
+      return () => ipcRenderer.removeListener(Events.toolRunLogged, listener)
+    },
   },
 } as const
 

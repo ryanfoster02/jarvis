@@ -4,7 +4,10 @@ import type { VoiceActivity, VoicePhase } from '../voice/useVoice.ts'
 
 export interface Entry {
   id: string
-  role: 'user' | 'assistant' | 'system'
+  /** 'action' = a tool Jarvis used (or tried to); shown in the conversation, kept in the action log. */
+  role: 'user' | 'assistant' | 'system' | 'action'
+  /** For actions: how it ended. */
+  tone?: 'ok' | 'skipped' | 'error'
   text: string
   at: Date
   via: 'text' | 'voice'
@@ -49,7 +52,7 @@ interface Props {
   onOpenSettings: () => void
 }
 
-const WHO: Record<Entry['role'], string> = { user: 'You', assistant: 'Jarvis', system: 'Jarvis system' }
+const WHO: Record<Entry['role'], string> = { user: 'You', assistant: 'Jarvis', system: 'Jarvis system', action: 'Jarvis action' }
 
 const shortDate = (ms: number): string => {
   const d = new Date(ms)
@@ -220,7 +223,7 @@ export function ConversationPanel({ entries, history, onRemember, busy, disabled
           </li>
         )}
         {entries.map((m) => (
-          <li key={m.id} className={`msg msg-${m.role} ${m.streaming ? 'is-streaming' : ''}`}>
+          <li key={m.id} className={`msg msg-${m.role} ${m.streaming ? 'is-streaming' : ''} ${m.tone ? `tone-${m.tone}` : ''}`}>
             <div className="msg-meta">
               <span className="msg-who">{WHO[m.role]}</span>
               <time dateTime={m.at.toISOString()}>

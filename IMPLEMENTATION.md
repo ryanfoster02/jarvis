@@ -1,6 +1,6 @@
 # IMPLEMENTATION
 
-Current phase: Phase 2 / Sprint 7 — Provider interface (Claude)
+Current phase: Phase 2 / Sprint 8 — Tools, permissions, limits
 
 Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ not started
 
@@ -84,20 +84,32 @@ Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ no
 
 **Acceptance:** facts saved in one workspace don't appear in another; global facts appear everywhere; Jarvis uses them in replies (typed and voice); secrets are refused; export writes a JSON file you choose; `npm test` and `npm run test:e2e` pass.
 
-### Sprint 7 — Provider interface (Claude) 🟡
+### Sprint 7 — Provider interface (Claude) ✅ (owner verified tests + e2e 2026-11-09)
 - ✅ Contract: `anthropic` provider + `ANTHROPIC_API_KEY`; `sk-ant-` key validator (OpenAI validator now refuses Claude keys); Claude models in `TEXT_MODELS` with a `provider` field
 - ✅ Pure helpers (`src/shared/anthropic.ts`): request builder (top-level `system`, same persona + memory), history normalisation (user-first, alternating), response parsing (text blocks, cache-aware usage, `max_tokens` / `refusal`), sanitized errors (401/403/404/429/529) — 7 tests
 - ✅ Costs: Claude prices incl. Haiku 5.5's 100k prompt tier — tested
 - ✅ Main: `src/main/anthropic.ts` (verify via `GET /v1/models`, Messages call) + `TextProvider` registry; `chat:send` routes by the model's provider with its own key and an honest "no Anthropic key" message — client exercised against a stubbed `fetch` here
 - ✅ UI: Anthropic key form, typed-replies model picker grouped by provider with "(no key)" and an inline warning, telemetry shows "OpenAI + Claude", empty state works with a Claude key only
 - ✅ e2e: Claude model without key → honest notice; Anthropic form rejects non-Claude keys
-- 🟡 Needs owner verification: `npm run typecheck`, `npm test`, `npm run test:e2e`, and one real Claude reply with your Anthropic key
+- ✅ Owner verified typecheck, tests and e2e
 - ⬜ Per-workspace provider choice (deferred: global setting for now); streaming replies (with Sprint 8 tools)
 
 **Acceptance:** with an Anthropic key saved and a Claude model picked, typed messages get Claude replies in the JARVIS persona using memories; switching back to GPT works; without the key the app says so; voice is unaffected.
 
-### Sprint 8 — Tools, permissions, limits ⬜
-Tool registry with risk levels and scopes; permission engine (permissions → scopes → mandates, high-risk always asks); execution limits enforced; approvals queue UI; execution log; first low-risk tools (time/date, memory read/write).
+### Sprint 8 — Tools, permissions, limits 🟡
+- ✅ Tool registry (`src/shared/tools.ts`): get_time (low), list_memories (low), save_memory (medium), forget_memory (high); strict schemas, argument validation (secrets refused before asking), summaries, provider formats, prompt section that matches what's actually enabled
+- ✅ Permission engine (`src/shared/permissions.ts`): kill switch → scope → switched off → high always asks → low runs → medium needs a mandate or asks — tested
+- ✅ Execution limits enforced (`RunBudget`): steps, time (approval waits excluded), tool calls, spend; 2 typed tasks at once; voice tool calls 30/min — tested
+- ✅ Agent loop (`src/shared/agent.ts`) for OpenAI (reasoning items passed back, `function_call_output`) and Claude (`tool_use` → `tool_result` first) — tested with simulated responses
+- ✅ Main: approvals queue (2-minute expiry, Stop all answers no), executor with re-check after approval, action log (migration 3, `tool_runs`), `chat:send` through the agent loop, `tools:invoke` for voice, live events
+- ✅ Voice: Realtime session offers the enabled tools; function calls relayed to main and answered with `function_call_output`
+- ✅ UI: Approvals cards (risk, summary, countdown, Approve/Deny), Activity list, "N approvals waiting" chip, action notes in the conversation, Settings → Permissions tool switches + "Save memories without asking"
+- ✅ Jarvis saves memories himself ("remember that…"), with your approval by default
+- ✅ Tests: 13 new unit tests + 1 node:sqlite migration test; 2 Drizzle log tests and 2 e2e tests run on the Mac
+- 🟡 Needs owner verification: `npm run typecheck`, `npm test`, `npm run test:e2e`, then with real keys: "remember that I take my coffee black" (typed and by voice), approve it, "what time is it?", "forget that", deny it
+- ⬜ Worker/workflow-level stop (only global Stop all so far); scoped mandates beyond memory; streaming replies
+
+**Acceptance:** Jarvis can check the time, read, save and delete memories; low risk runs, saving asks unless the standing permission is on, deleting always asks; everything appears in Activity; Stop all answers pending approvals with no; limits stop runaway loops; nothing runs while halted.
 
 ## Phase 3 — Integrations & Automation ⬜
 First integration (GitHub, read-only) · allowlist & scopes UI · tool execution with approvals · scheduler (runs only while app is open — stated in UI) · reminders · execution log · worker/workflow kill levels.
