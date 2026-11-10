@@ -49,7 +49,7 @@ test('renderer is isolated: no Node globals, only the narrow jarvis bridge', asy
   expect(globals.require).toBe('undefined')
   expect(globals.process).toBe('undefined')
   expect(globals.module).toBe('undefined')
-  expect(globals.bridge).toEqual(['app', 'chat', 'credentials', 'killSwitch', 'settings', 'tts', 'voice'])
+  expect(globals.bridge).toEqual(['app', 'chat', 'conversations', 'credentials', 'killSwitch', 'settings', 'tts', 'voice'])
 
   // getLastWebPreferences() exists at runtime but is missing from Electron's TypeScript definitions,
   // so it's reached through a narrow cast. If Electron ever removes it, this test fails loudly.
@@ -135,6 +135,7 @@ test('settings open with ⌘, and close with Esc; bad key is rejected before any
 })
 
 test('conversations persist across restarts, stay in their workspace, and delete cleanly', async () => {
+  test.setTimeout(120_000) // three app launches
   let { app, page } = await launch(profile)
   // Store a turn through the same bridge voice transcripts use (typed replies need a real API key).
   const saved = await page.evaluate(async () => {
