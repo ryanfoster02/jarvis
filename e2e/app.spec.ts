@@ -199,10 +199,12 @@ test('memory: add, scope to workspace, refuse secrets, edit, delete, /remember',
   await expect(page.locator('.memory-text', { hasText: 'Owner prefers mornings' })).toBeVisible()
 
   // Edit the global fact, then delete it with confirmation.
-  const item = page.locator('.memory-item', { hasText: 'Owner prefers mornings' })
-  await item.getByRole('button', { name: 'Edit' }).click()
-  await item.getByRole('textbox', { name: 'Edit memory' }).fill('Owner prefers early mornings')
-  await item.getByRole('button', { name: 'Save' }).click()
+  // Once editing starts the item's text becomes a textbox, so it no longer matches a text filter:
+  // target the open editor instead.
+  await page.locator('.memory-item', { hasText: 'Owner prefers mornings' }).getByRole('button', { name: 'Edit' }).click()
+  const editor = page.locator('.memory-item:has(.memory-edit)')
+  await editor.getByRole('textbox', { name: 'Edit memory' }).fill('Owner prefers early mornings')
+  await editor.getByRole('button', { name: 'Save' }).click()
   await expect(page.locator('.memory-text', { hasText: 'Owner prefers early mornings' })).toBeVisible()
   const edited = page.locator('.memory-item', { hasText: 'Owner prefers early mornings' })
   await edited.getByRole('button', { name: 'Delete' }).click()
