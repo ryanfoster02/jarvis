@@ -34,7 +34,9 @@ export async function listConversations(db: Db, ws: WorkspaceId, limit = 100): P
       title: conversations.title,
       createdAt: conversations.createdAt,
       updatedAt: conversations.updatedAt,
-      messageCount: sql<number>`(SELECT count(*) FROM messages m WHERE m.conversation_id = ${conversations.id})`,
+      // Table-qualified on purpose: in a single-table select Drizzle renders ${'$'}{conversations.id} as a bare
+      // "id", which inside this subquery would resolve to messages.id and always count 0.
+      messageCount: sql<number>`(SELECT count(*) FROM messages m WHERE m.conversation_id = "conversations"."id")`,
     })
     .from(conversations)
     .where(eq(conversations.workspaceId, ws))
