@@ -154,7 +154,10 @@ test('Claude for typed replies: key form validates, missing key is reported hone
   await expect(page.locator('.msg-system')).toContainText('no Anthropic key is saved')
   await expect(page.locator('.msg-assistant')).toHaveCount(0)
   // Leave the shared test profile as it was.
-  await page.evaluate(() => window.jarvis.settings.update({ textModel: 'gpt-5.4-mini' }))
+  await page.evaluate(async () => {
+    const j = (window as unknown as { jarvis: { settings: { update: (patch: { textModel: string }) => Promise<unknown> } } }).jarvis
+    await j.settings.update({ textModel: 'gpt-5.4-mini' })
+  })
   await app.close()
 })
 
