@@ -26,7 +26,7 @@ import {
 import { buildRealtimeSession, buildInstructions } from '../src/shared/realtime.ts'
 import { buildProviderRequest } from '../src/shared/text.ts'
 
-const ALL_SCOPES: ToolScope[] = ['clock', 'memory:read', 'memory:write', 'memory:delete']
+const ALL_SCOPES: ToolScope[] = ['clock', 'memory:read', 'memory:write', 'memory:delete', 'github:read']
 const ctx = (o: Partial<PermissionContext> = {}): PermissionContext => ({
   halted: false,
   disabled: [],
@@ -89,7 +89,7 @@ test('summaries are short, readable and show what would be deleted', () => {
 })
 
 test('provider tool formats', () => {
-  const specs = enabledTools(['forget_memory'])
+  const specs = enabledTools(['forget_memory']).filter((t) => !t.scope.startsWith('github'))
   assert.deepEqual(specs.map((t) => t.name), ['get_time', 'list_memories', 'save_memory'])
   const oa = openAITools(specs)[2] as Record<string, unknown>
   assert.equal(oa.type, 'function')
@@ -102,7 +102,7 @@ test('provider tool formats', () => {
 
 test('requests carry tools; instructions match what is actually available', () => {
   const base = { workspaceName: 'Personal', persona: 'british-butler' as const, honorific: 'none' as const, history: [], message: 'hi' }
-  const tools = enabledTools([])
+  const tools = enabledTools([]).filter((t) => !t.scope.startsWith('github'))
   const gpt = buildProviderRequest({ ...base, model: 'gpt-5.4-mini', tools })
   assert.equal((gpt.tools as unknown[]).length, 4)
   assert.deepEqual(gpt.include, ['reasoning.encrypted_content'], 'store:false + tools: reasoning must be returnable')

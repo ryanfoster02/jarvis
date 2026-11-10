@@ -29,6 +29,7 @@ export const Channels = {
   approvalsDecide: 'approvals:decide',
   toolRunsList: 'tools:runs',
   toolsInvoke: 'tools:invoke',
+  githubCheckRepo: 'github:check-repo',
 } as const
 
 /** Main → renderer push events. */
@@ -158,6 +159,8 @@ export interface Settings {
   disabledTools: ToolName[]
   /** Mandate: save memories Jarvis proposes without asking each time. Off by default. */
   autoSaveMemories: boolean
+  /** Scope (SECURITY.md §4): GitHub repositories Jarvis may read, as "owner/name" (lowercase). Empty = none. */
+  githubRepos: string[]
 }
 
 export const DEFAULT_SETTINGS: Settings = Object.freeze({
@@ -176,6 +179,7 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   speakTypedReplies: true,
   disabledTools: [],
   autoSaveMemories: false,
+  githubRepos: [],
 })
 
 /** Execution limits (SECURITY.md §6). Enforced per typed request by RunBudget (Sprint 8). */
@@ -212,12 +216,13 @@ export interface KillSwitchState {
   reason: string | null
 }
 
-export const PROVIDERS = ['openai', 'anthropic', 'elevenlabs'] as const
+export const PROVIDERS = ['openai', 'anthropic', 'elevenlabs', 'github'] as const
 export type ProviderId = (typeof PROVIDERS)[number]
 export const PROVIDER_ENV: Record<ProviderId, string> = {
   openai: 'OPENAI_API_KEY',
   anthropic: 'ANTHROPIC_API_KEY',
   elevenlabs: 'ELEVENLABS_API_KEY',
+  github: 'GITHUB_TOKEN',
 }
 
 export interface ProviderKeyStatus {
@@ -238,6 +243,7 @@ export interface CredentialStatus {
   openai: ProviderKeyStatus
   anthropic: ProviderKeyStatus
   elevenlabs: ProviderKeyStatus
+  github: ProviderKeyStatus
 }
 
 export type CredentialResult = { ok: true; status: CredentialStatus } | { ok: false; message: string }
@@ -454,6 +460,12 @@ export function validateSettingsPatch(input: unknown): Partial<Settings> {
         if (typeof value !== 'boolean') throw new IpcValidationError('autoSaveMemories must be boolean')
         out.autoSaveMemories = value
         break
+      case 'githubRepos':
+        if (!Array.isArray(value) || value.length > MAX_GITHUB_REPOS || !value.every(isRepoName)) {
+          throw new IpcValidationError(`githubRepos must be up to ${MAX_GITHUB_REPOS} repositories written as owner/name`)
+        }
+        out.githubRepos = [...new Set(value.map((r) => r.toLowerCase()))]
+        break
       default:
         throw new IpcValidationError(`unknown setting: ${key}`)
     }
@@ -480,6 +492,9 @@ export function normalizeSettings(stored: unknown): Settings {
   if (typeof stored.speakTypedReplies === 'boolean') s.speakTypedReplies = stored.speakTypedReplies
   if (Array.isArray(stored.disabledTools)) s.disabledTools = [...new Set(stored.disabledTools.filter(isToolName))]
   if (typeof stored.autoSaveMemories === 'boolean') s.autoSaveMemories = stored.autoSaveMemories
+  if (Array.isArray(stored.githubRepos)) {
+    s.githubRepos = [...new Set(stored.githubRepos.filter(isRepoName).map((r) => r.toLowerCase()))].slice(0, MAX_GITHUB_REPOS)
+  }
   return s
 }
 
@@ -513,7 +528,17 @@ export function validateChatHistory(input: unknown): ChatTurn[] {
 
 // ---------- Tools, approvals, action log (Sprint 8; SECURITY.md §3–6) ----------
 
-export const TOOL_NAMES = ['get_time', 'list_memories', 'save_memory', 'forget_memory'] as const
+export const TOOL_NAMES = [
+  'get_time',
+  'list_memories',
+  'save_memory',
+  'forget_memory',
+  'github_list_repos',
+  'github_list_issues',
+  'github_get_issue',
+  'github_recent_commits',
+  'github_read_file',
+] as const
 export type ToolName = (typeof TOOL_NAMES)[number]
 export const isToolName = (v: unknown): v is ToolName => typeof v === 'string' && (TOOL_NAMES as readonly string[]).includes(v)
 
@@ -575,6 +600,36 @@ export function validateToolInvoke(name: unknown, args: unknown): { name: ToolNa
   if (typeof args !== 'string' || args.length > MAX_TOOL_ARGS_CHARS) throw new IpcValidationError('tool arguments must be a JSON string')
   return { name, args }
 }
+
+// ---------- GitHub (Sprint 9) ----------
+
+export const MAX_GITHUB_REPOS = 30
+
+/** "owner/name" per GitHub's rules (owner: letters, digits, single hyphens; name: letters, digits, . _ -). */
+export function isRepoName(v: unknown): v is string {
+  if (typeof v !== 'string' || v.length > 140) return false
+  const m = /^([A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38})\/([A-Za-z0-9._-]{1,100})$/.exec(v)
+  return !!m && m[2] !== '.' && m[2] !== '..'
+}
+
+export function validateRepoName(input: unknown): string {
+  const v = typeof input === 'string' ? input.trim().replace(/^https:\/\/github\.com\//i, '').replace(/\.git$/i, '').replace(/\/$/, '') : input
+  if (!isRepoName(v)) throw new IpcValidationError('Write the repository as owner/name, e.g. octocat/hello-world.')
+  return v.toLowerCase()
+}
+
+/** What Settings shows for a repository after checking it with GitHub. */
+export interface GitHubRepoInfo {
+  fullName: string
+  private: boolean
+  description: string
+  defaultBranch: string
+  openIssues: number
+  pushedAt: string | null
+  url: string
+}
+
+export type GitHubRepoCheck = { ok: true; repo: GitHubRepoInfo } | { ok: false; message: string }
 
 export function validateApprovalId(input: unknown): string {
   if (typeof input !== 'string' || !UUID.test(input)) throw new IpcValidationError('invalid approval id')
@@ -668,9 +723,26 @@ export function validateAnthropicKey(input: unknown): string {
   return key
 }
 
+/**
+ * GitHub personal access tokens. Fine-grained (github_pat_…) is recommended: it can be limited to
+ * chosen repositories and read-only permissions. Classic (ghp_…) is accepted but broader.
+ */
+export function validateGitHubToken(input: unknown): string {
+  if (typeof input !== 'string') throw new IpcValidationError('Token must be text')
+  const key = input.trim()
+  if (key.length > MAX_KEY_CHARS) throw new IpcValidationError('That token is too long')
+  if (!/^(github_pat_[A-Za-z0-9_]{30,}|ghp_[A-Za-z0-9]{30,})$/.test(key)) {
+    throw new IpcValidationError(
+      "That doesn't look like a GitHub personal access token. Fine-grained tokens start with github_pat_ (recommended); classic ones with ghp_.",
+    )
+  }
+  return key
+}
+
 export function validateProviderKey(provider: ProviderId, input: unknown): string {
   if (provider === 'openai') return validateOpenAIKey(input)
   if (provider === 'anthropic') return validateAnthropicKey(input)
+  if (provider === 'github') return validateGitHubToken(input)
   return validateElevenLabsKey(input)
 }
 

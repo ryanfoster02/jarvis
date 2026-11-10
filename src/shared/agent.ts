@@ -94,6 +94,8 @@ export interface ExecutedTool {
   note: ActionNote | null
   /** Time spent waiting for the owner; not charged to the task's time limit. */
   waitedMs: number
+  /** The result carried untrusted external content (taints the rest of the task). */
+  untrusted?: boolean
 }
 
 export interface AgentDeps {
@@ -102,7 +104,7 @@ export interface AgentDeps {
   send: (body: Json) => Promise<SendResult>
   parse: (json: unknown) => { text: string; usage: TextUsage; incomplete: string | null }
   cost: (usage: TextUsage) => number | null
-  execute: (call: ToolCall) => Promise<ExecutedTool>
+  execute: (call: ToolCall, state: { untrusted: boolean }) => Promise<ExecutedTool>
   budget: RunBudget
   halted: () => boolean
 }
@@ -125,6 +127,7 @@ export async function runAgent(d: AgentDeps): Promise<AgentResult> {
   const actions: ActionNote[] = []
   let body = d.body
   let lastText = ''
+  let untrusted = false
 
   for (;;) {
     if (d.halted()) return { ok: false, code: 'halted', message: 'Stop all was engaged while Jarvis was working.', usage, actions }
@@ -159,7 +162,8 @@ export async function runAgent(d: AgentDeps): Promise<AgentResult> {
         results.push({ id: call.id, output: `Not run: ${limit}.`, isError: true })
         continue
       }
-      const r = await d.execute(call)
+      const r = await d.execute(call, { untrusted })
+      if (r.untrusted) untrusted = true
       d.budget.excludeWait(r.waitedMs)
       if (r.note) actions.push(r.note)
       results.push({ id: call.id, output: r.output, isError: r.isError })

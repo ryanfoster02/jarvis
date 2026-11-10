@@ -1518,3 +1518,36 @@ select {
 .tool-list .field h3 .risk-badge {
   margin-left: 6px;
 }
+
+/* ---------- Connections: GitHub allowlist (Sprint 9) ---------- */
+.repo-allowlist {
+  margin-top: 18px;
+}
+.repos {
+  list-style: none;
+  margin: 8px 0 4px;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.repos li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 6px 6px 12px;
+  border: 1px solid var(--line);
+}
+.repo-name {
+  font: 400 var(--t-sm) var(--font-mono);
+}
+.repos .btn {
+  height: 30px;
+}
+.int-status.is-on {
+  color: var(--ok);
+}
+.int-status.is-on::before {
+  background: var(--ok);
+  box-shadow: 0 0 6px var(--ok);
+}

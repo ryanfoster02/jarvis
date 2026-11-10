@@ -12,6 +12,7 @@ const SECRET_PATTERNS: Array<[RegExp, string]> = [
   [/\bsk-[A-Za-z0-9_-]{16,}/, 'an API key'],
   [/\bsk_[A-Za-z0-9]{16,}/, 'an API key'],
   [/\bgh[pousr]_[A-Za-z0-9]{20,}/, 'a GitHub token'],
+  [/\bgithub_pat_[A-Za-z0-9_]{20,}/, 'a GitHub token'],
   [/\bxox[abprs]-[A-Za-z0-9-]{10,}/, 'a Slack token'],
   [/\bAKIA[0-9A-Z]{16}\b/, 'an AWS key'],
   [/-----BEGIN [A-Z ]*PRIVATE KEY-----/, 'a private key'],

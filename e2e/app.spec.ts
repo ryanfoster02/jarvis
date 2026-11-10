@@ -55,6 +55,7 @@ test('renderer is isolated: no Node globals, only the narrow jarvis bridge', asy
     'chat',
     'conversations',
     'credentials',
+    'github',
     'killSwitch',
     'memory',
     'settings',
@@ -354,5 +355,27 @@ test('settings: tool switches and the standing permission persist', async () => 
     const r = await j.memory.list()
     for (const m of r.value ?? []) if (m.text === 'Uses metric units') await j.memory.delete(m.id)
   })
+  await app.close()
+})
+
+test('connections: GitHub token is validated locally; repositories need a connection first', async () => {
+  const { app, page } = await launch(profile)
+  await page.keyboard.press('ControlOrMeta+,')
+  await page.getByRole('button', { name: 'Connections' }).click()
+  const gh = page.locator('.provider').filter({ hasText: 'GitHub' })
+  await expect(gh.locator('.status-line')).toContainText('Not connected')
+  await gh.locator('input[type="password"]').fill('sk-proj-' + 'a'.repeat(40))
+  await gh.getByRole('button', { name: 'Verify and save' }).click()
+  await expect(gh.locator('.form-msg.is-error')).toContainText("doesn't look like a GitHub personal access token")
+  // No token: nothing can be allowed, and the bridge refuses too.
+  await expect(page.getByRole('button', { name: 'Check and allow' })).toBeDisabled()
+  const check = await page.evaluate(() =>
+    (window as unknown as { jarvis: { github: { checkRepo: (r: string) => Promise<{ ok: boolean; message?: string }> } } }).jarvis.github.checkRepo('octocat/hello-world'),
+  )
+  expect(check).toEqual({ ok: false, message: 'Connect GitHub first: add a token above.' })
+  // GitHub tools aren't offered or runnable without a connection and an allowed repo.
+  const r = await invoke(page, 'github_list_repos', {})
+  expect(r.output).toMatch(/^Not run: No access to github:read/)
+  await expect(page.locator('.approval')).toHaveCount(0)
   await app.close()
 })

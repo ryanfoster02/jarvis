@@ -44,7 +44,7 @@ function write(v: VaultFile): void {
 export const encryptionAvailable = (): boolean => safeStorage.isEncryptionAvailable()
 
 // ---------- Development .env fallback ----------
-// Development only (ignored in packaged builds). Reads OPENAI_API_KEY / ANTHROPIC_API_KEY / ELEVENLABS_API_KEY from
+// Development only (ignored in packaged builds). Reads OPENAI_API_KEY / ANTHROPIC_API_KEY / ELEVENLABS_API_KEY / GITHUB_TOKEN from
 // <project>/.env on each use, so edits apply without a restart. Values are kept out of process.env
 // and never reach the renderer. Never use a VITE_-style prefix for secrets: electron-vite would
 // bundle those into the UI.
@@ -110,6 +110,7 @@ export function credentialStatus(): CredentialStatus {
     openai: providerStatus('openai', v),
     anthropic: providerStatus('anthropic', v),
     elevenlabs: providerStatus('elevenlabs', v),
+    github: providerStatus('github', v),
   }
 }
 

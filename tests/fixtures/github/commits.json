@@ -1,0 +1,44 @@
+[
+ {
+  "sha": "4572386fc9fbc86585d267022f85d35dc4461128",
+  "html_url": "https://github.com/ryanfoster02/jarvis/commit/4572386fc9fbc86585d267022f85d35dc4461128",
+  "commit": {
+   "message": "Session report: Sprint 8\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01ApWprJ6zD5sQ9gTLRJeDcK",
+   "author": {
+    "name": "Ryan Foster",
+    "date": "2026-11-10T01:37:54Z"
+   }
+  },
+  "author": {
+   "login": "ryanfoster02"
+  }
+ },
+ {
+  "sha": "5960eb6e7b934be82f4cd8d4840e9eaa95863e55",
+  "html_url": "https://github.com/ryanfoster02/jarvis/commit/5960eb6e7b934be82f4cd8d4840e9eaa95863e55",
+  "commit": {
+   "message": "Sprint 8: tools, permission engine, execution limits, approvals, action log\n\n- Tool registry: get_time (low), list_memories (low), save_memory (medium),\n  forget_memory (high); strict schemas, args validated in main, secrets refused\n  before any approval\n- Permission engine: kill switch > scope > switched off > high always asks >\n  low runs > medium needs a standing permission or asks\n- RunBudget enforces steps, time (approval waits excluded), tool calls and\n  spend per typed request; 2 tasks at once; voice tool calls 30/min\n- Agent loop for OpenAI (reasoning passed back, function_call_output) and\n  Claude (tool_use -> tool_result); voice function calls relayed to main\n- Approvals queue (2-min expiry, Stop all answers no), executor with re-check,\n  tool_runs action log (migration 3), live events\n- UI: approval cards, Activity list, waiting chip, action notes, Settings ->\n  Permissions tool switches and \"Save memories without asking\"\n- Tests: unit (tools, permissions, budget, agent loop, migration), Drizzle log\n  tests, 2 e2e tests driving real approvals; docs updated\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01ApWprJ6zD5sQ9gTLRJeDcK",
+   "author": {
+    "name": "Ryan Foster",
+    "date": "2026-11-10T01:37:46Z"
+   }
+  },
+  "author": {
+   "login": "ryanfoster02"
+  }
+ },
+ {
+  "sha": "845d6178d15d60f15f610d0d2983281fc9930603",
+  "html_url": "https://github.com/ryanfoster02/jarvis/commit/845d6178d15d60f15f610d0d2983281fc9930603",
+  "commit": {
+   "message": "e2e: type the settings bridge call like the other tests\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01ApWprJ6zD5sQ9gTLRJeDcK",
+   "author": {
+    "name": "Ryan Foster",
+    "date": "2026-11-10T01:18:12Z"
+   }
+  },
+  "author": {
+   "login": "ryanfoster02"
+  }
+ }
+]

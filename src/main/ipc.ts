@@ -17,6 +17,8 @@ import {
   textModelProvider,
   validateApprovalId,
   validateToolInvoke,
+  validateRepoName,
+  type GitHubRepoCheck,
   DEFAULT_LIMITS,
   type ApprovalRequest,
   type ToolInvokeResult,
@@ -41,7 +43,8 @@ import { buildRealtimeSession, isTranscriptionConfigError } from '../shared/real
 import { buildProviderRequest, estimateTextCostUsd } from '../shared/text.ts'
 import { runAgent, type AgentResult } from '../shared/agent.ts'
 import { isOffered, RunBudget } from '../shared/permissions.ts'
-import { TOOLS } from '../shared/tools.ts'
+import { specsForRequest, TOOLS } from '../shared/tools.ts'
+import { getRepo, verifyGitHubToken } from './github.ts'
 import { executeTool, permissionContext } from './tools.ts'
 import { answerApproval, listApprovals } from './approvals.ts'
 import { listToolRuns } from './db/toolRuns.ts'
@@ -76,6 +79,8 @@ const limits = {
 const SLOW_DOWN = 'Too many requests in the last minute. Wait a moment and try again.'
 /** Typed-reply tasks in progress (SECURITY.md §6: at most DEFAULT_LIMITS.maxConcurrentAgents). */
 let running = 0
+/** The current voice session has read untrusted content (SECURITY.md §7); reset on each voice connect. */
+let voiceUntrusted = false
 
 export interface HistoryStore {
   database: Database | null
@@ -186,7 +191,10 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
       const toolCtx = { db, ws, workspaceName, source: 'text' as const, settings }
       // Only tools that are switched on and in scope are offered to the model at all.
       const perm = permissionContext(toolCtx)
-      const tools = Object.values(TOOLS).filter((t) => isOffered(t, perm))
+      const tools = specsForRequest(
+        Object.values(TOOLS).filter((t) => isOffered(t, perm)),
+        settings.githubRepos,
+      )
       const body = buildProviderRequest({
         model: settings.textModel,
         workspaceName,
@@ -206,7 +214,7 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
           send: (b) => provider.send(key, b),
           parse: provider.parse,
           cost: (u) => estimateTextCostUsd(settings.textModel, u),
-          execute: (call) => executeTool(call.name, call.arguments, toolCtx),
+          execute: (call, state) => executeTool(call.name, call.arguments, { ...toolCtx, untrusted: state.untrusted }),
           budget: new RunBudget(DEFAULT_LIMITS),
           halted: isHalted,
         })
@@ -410,7 +418,9 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
           ? await verifyKey(key)
           : provider === 'anthropic'
             ? await verifyAnthropicKey(key)
-            : await verifyElevenLabsKey(key)
+            : provider === 'github'
+              ? await verifyGitHubToken(key)
+              : await verifyElevenLabsKey(key)
       if (!check.ok) return { ok: false, message: check.message }
       saveKey(provider, key)
       return { ok: true, status: credentialStatus() }
@@ -500,9 +510,13 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
         output: eleven ? ('text' as const) : ('audio' as const),
         memories: history.database ? await memoriesForPrompt(history.database.db, settings.activeWorkspace) : undefined,
         // Tools are fixed for the voice session; switching one off later is still enforced on every call.
-        tools: Object.values(TOOLS).filter((t) => isOffered(t, permissionContext({ db: history.database?.db ?? null, settings }))),
+        tools: specsForRequest(
+          Object.values(TOOLS).filter((t) => isOffered(t, permissionContext({ db: history.database?.db ?? null, settings }))),
+          settings.githubRepos,
+        ),
       }
 
+      voiceUntrusted = false // new session, clean slate
       let transcription = true
       let res = await createRealtimeCall(key, sdp, buildRealtimeSession({ ...base, transcription }))
       // Transcription of your speech is optional; if OpenAI rejects that setting, connect without it.
@@ -574,9 +588,36 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
         workspaceName: WORKSPACES.find((w) => w.id === ws)?.name ?? 'Personal',
         source: 'voice',
         settings,
+        untrusted: voiceUntrusted,
       })
+      if (r.untrusted) voiceUntrusted = true // rest of this voice session treated as tainted
       if (!r.note) return { ok: false, message: r.output }
       return { ok: true, output: r.output, action: r.note }
+    }),
+  )
+
+  // ---------- GitHub (Sprint 9): check a repository before it goes on the allowlist ----------
+  ipcMain.handle(
+    Channels.githubCheckRepo,
+    guard(async (input: unknown): Promise<GitHubRepoCheck> => {
+      let repo: string
+      try {
+        repo = validateRepoName(input)
+      } catch (err) {
+        if (err instanceof IpcValidationError) return { ok: false, message: err.message }
+        throw err
+      }
+      if (!limits.keys.take()) return { ok: false, message: SLOW_DOWN }
+      const token = getKey('github')
+      if (!token) return { ok: false, message: 'Connect GitHub first: add a token above.' }
+      const r = await getRepo(token, repo)
+      if (!r.ok) {
+        return {
+          ok: false,
+          message: r.status === 404 ? `Can't see ${repo}: it doesn't exist, or your token wasn't given access to it.` : r.message,
+        }
+      }
+      return { ok: true, repo: r.value }
     }),
   )
 }

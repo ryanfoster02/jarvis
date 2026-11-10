@@ -452,6 +452,7 @@ export function App(): React.JSX.Element {
                 runs={runs}
                 halted={halted}
                 onDecide={(id, approve) => void window.jarvis.approvals.decide(id, approve)}
+                github={{ connected: !!creds?.github.configured, repos: settings?.githubRepos.length ?? 0 }}
               />
             </div>
 

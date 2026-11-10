@@ -19,6 +19,9 @@ import { addMemory, deleteMemory, listMemories, MemoryLimitError } from './db/me
 import { logToolRun } from './db/toolRuns.ts'
 import { isHalted } from './killswitch.ts'
 import { loadSettings } from './settings.ts'
+import { getKey } from './vault.ts'
+import { githubGet } from './github.ts'
+import { githubPaths, parseCommits, parseContents, parseIssueDetail, parseIssues, parseRepo, untrusted } from '../shared/github.ts'
 
 // Tool executor (SECURITY.md §3–6). Every call: validate arguments → permission decision →
 // owner approval when required → run → log. The model never chooses the workspace: tools act on
@@ -30,17 +33,25 @@ export interface ToolContext {
   workspaceName: string
   source: ToolSource
   settings: Settings
+  /** This task (typed request or voice session) has already read untrusted content. */
+  untrusted?: boolean
 }
 
-const ALL_SCOPES: ToolScope[] = ['clock', 'memory:read', 'memory:write', 'memory:delete']
+/** Scopes this setup can grant: memory needs the database; GitHub needs a token and at least one allowed repo. */
+export function grantedScopes(ctx: Pick<ToolContext, 'db' | 'settings'>): ToolScope[] {
+  const scopes: ToolScope[] = ['clock']
+  if (ctx.db) scopes.push('memory:read', 'memory:write', 'memory:delete')
+  if (ctx.settings.githubRepos.length > 0 && getKey('github')) scopes.push('github:read')
+  return scopes
+}
 
-export function permissionContext(ctx: Pick<ToolContext, 'db' | 'settings'>): PermissionContext {
+export function permissionContext(ctx: Pick<ToolContext, 'db' | 'settings' | 'untrusted'>): PermissionContext {
   return {
     halted: isHalted(),
     disabled: ctx.settings.disabledTools,
-    // Memory tools need the local database; without it only the clock is available.
-    grantedScopes: ctx.db ? ALL_SCOPES : ['clock'],
+    grantedScopes: grantedScopes(ctx),
     mandates: ctx.settings.autoSaveMemories ? ['memory:write'] : [],
+    untrusted: ctx.untrusted ?? false,
   }
 }
 
@@ -82,9 +93,54 @@ async function record(
   return note
 }
 
+/** GitHub read: the repository must be on the allowlist *now* (re-read from settings, not the model's word). */
+async function gh(repo: string, path: string): Promise<unknown> {
+  if (!loadSettings().githubRepos.includes(repo)) throw new Error(`${repo} is not on your allowed repositories list.`)
+  const token = getKey('github')
+  if (!token) throw new Error('GitHub is not connected.')
+  const r = await githubGet(token, path)
+  if (!r.ok) throw new Error(r.message)
+  return r.value
+}
+
 /** Runs the tool itself. Only called after the permission decision allowed it. */
-async function run(name: ToolName, args: ToolArgs[ToolName], ctx: ToolContext): Promise<{ output: string; detail: string }> {
+async function run(name: ToolName, args: ToolArgs[ToolName], ctx: ToolContext): Promise<{ output: string; detail: string; untrusted?: boolean }> {
   switch (name) {
+    case 'github_list_repos': {
+      const repos = await Promise.all(ctx.settings.githubRepos.map(async (r) => ({ ...parseRepo(await gh(r, githubPaths.repo(r))) })))
+      return { output: untrusted('allowed repositories', repos), detail: `${repos.length} repositories`, untrusted: true }
+    }
+    case 'github_list_issues': {
+      const a = args as ToolArgs['github_list_issues']
+      const items = parseIssues(await gh(a.repo, githubPaths.issues(a.repo, a.state)), a.kind)
+      return { output: untrusted(a.repo, items), detail: `${items.length} found`, untrusted: true }
+    }
+    case 'github_get_issue': {
+      const a = args as ToolArgs['github_get_issue']
+      const [issue, comments] = await Promise.all([gh(a.repo, githubPaths.issue(a.repo, a.number)), gh(a.repo, githubPaths.comments(a.repo, a.number))])
+      const d = parseIssueDetail(issue, comments)
+      return { output: untrusted(`${a.repo}#${a.number}`, d), detail: d.title, untrusted: true }
+    }
+    case 'github_recent_commits': {
+      const a = args as ToolArgs['github_recent_commits']
+      const commits = parseCommits(await gh(a.repo, githubPaths.commits(a.repo, a.branch)))
+      return { output: untrusted(a.repo, commits), detail: `${commits.length} commits`, untrusted: true }
+    }
+    case 'github_read_file': {
+      const a = args as ToolArgs['github_read_file']
+      const c = parseContents(await gh(a.repo, githubPaths.contents(a.repo, a.path, a.ref)), a.path)
+      const detail =
+        c.kind === 'file'
+          ? `${c.text.length.toLocaleString()} characters${c.truncated ? ' (truncated)' : ''}`
+          : c.kind === 'dir'
+            ? `${c.entries.length} entries`
+            : c.kind === 'binary'
+              ? 'Binary file, not shown'
+              : c.kind === 'too_large'
+                ? 'Too large to show'
+                : 'Not a file or folder'
+      return { output: untrusted(`${a.repo}/${a.path}`, c), detail, untrusted: true }
+    }
     case 'get_time': {
       const now = new Date()
       const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -146,6 +202,15 @@ export async function executeTool(rawName: string, rawArgs: unknown, ctx: ToolCo
   }
   const summary = summarizeToolCall(name, args, { memoryText, workspaceName: ctx.workspaceName })
 
+  // Allowlist check before asking or running (the model only sees allowed repos, but never trust that).
+  if (spec.scope === 'github:read' && 'repo' in (args as object)) {
+    const repo = (args as { repo: string }).repo
+    if (!ctx.settings.githubRepos.includes(repo)) {
+      const note = await record(ctx, name, summary, 'blocked', 'skipped', `${repo} is not an allowed repository`, started)
+      return { output: `Not run: ${repo} is not on the owner's allowed repositories list.`, isError: true, note, waitedMs: 0 }
+    }
+  }
+
   const verdict = decide(spec, permissionContext(ctx))
   if (verdict.kind === 'deny') {
     const note = await record(ctx, name, summary, 'blocked', 'skipped', verdict.reason, started)
@@ -165,7 +230,7 @@ export async function executeTool(rawName: string, rawArgs: unknown, ctx: ToolCo
       return { output: ANSWER_TEXT[answer], isError: true, note, waitedMs }
     }
     // Re-check after the wait: Stop all or a switched-off tool still wins.
-    const recheck = decide(spec, permissionContext({ db: ctx.db, settings: loadSettings() }))
+    const recheck = decide(spec, permissionContext({ db: ctx.db, settings: loadSettings(), untrusted: ctx.untrusted }))
     if (recheck.kind === 'deny') {
       const note = await record(ctx, name, summary, 'blocked', 'skipped', recheck.reason, started)
       return { output: `Not run: ${recheck.reason}`, isError: true, note, waitedMs }
@@ -178,7 +243,7 @@ export async function executeTool(rawName: string, rawArgs: unknown, ctx: ToolCo
   try {
     const r = await run(name, args, ctx)
     const note = await record(ctx, name, summary, decision, 'ok', r.detail, started)
-    return { output: r.output, isError: false, note, waitedMs }
+    return { output: r.output, isError: false, note, waitedMs, untrusted: r.untrusted }
   } catch (err) {
     const message =
       err instanceof MemoryLimitError ? err.message : err instanceof Error ? err.message.slice(0, 200) : 'The action failed.'

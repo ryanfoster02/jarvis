@@ -6,7 +6,7 @@ import { LIMITS } from '../../../shared/ratelimit.ts'
 // Planned integrations, in rollout order. None are connected in Sprint 2;
 // status reflects reality, and there are no buttons that do nothing.
 const INTEGRATIONS = [
-  { name: 'GitHub', note: 'First integration, read-only to start' },
+  { name: 'GitHub', note: 'Read-only: issues, pull requests, commits, files' },
   { name: 'Google Calendar', note: 'Planned' },
   { name: 'Gmail', note: 'Planned — drafts only until approved' },
   { name: 'Google Drive', note: 'Planned' },
@@ -30,6 +30,8 @@ interface Props {
   runs: ToolRun[]
   halted: boolean
   onDecide: (id: string, approve: boolean) => void
+  /** Real GitHub state: token saved, and how many repositories are allowed. */
+  github: { connected: boolean; repos: number }
 }
 
 function ApprovalCard({ a, now, onDecide }: { a: ApprovalRequest; now: number; onDecide: Props['onDecide'] }): React.JSX.Element {
@@ -57,7 +59,11 @@ function ApprovalCard({ a, now, onDecide }: { a: ApprovalRequest; now: number; o
   )
 }
 
-export function OpsColumn({ approvals, runs, halted, onDecide }: Props): React.JSX.Element {
+export function OpsColumn({ approvals, runs, halted, onDecide, github }: Props): React.JSX.Element {
+  const status = (name: string): string => {
+    if (name !== 'GitHub' || !github.connected) return 'Not connected'
+    return github.repos === 0 ? 'Connected · no repos allowed' : `Connected · ${github.repos} repo${github.repos === 1 ? '' : 's'}`
+  }
   // Ticks only while something is waiting, for the countdowns.
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -135,7 +141,7 @@ export function OpsColumn({ approvals, runs, halted, onDecide }: Props): React.J
           {INTEGRATIONS.map((i) => (
             <li key={i.name}>
               <span className="int-name">{i.name}</span>
-              <span className="int-status">Not connected</span>
+              <span className={`int-status ${status(i.name).startsWith('Connected') ? 'is-on' : ''}`}>{status(i.name)}</span>
               <span className="int-note">{i.note}</span>
             </li>
           ))}

@@ -21,6 +21,7 @@ Versions verified against official sources on 2026-11-08. Re-verify before major
 | Credentials | Electron `safeStorage` (macOS Keychain-backed) | Sprint 3 ✅ | `userData/vault.json` (mode 600), ciphertext only; main process only. |
 | Speech (TTS) | ElevenLabs REST streaming endpoint | Sprint 3 | `POST /v1/text-to-speech/{voice}/stream`, MP3 44.1 kHz, models `eleven_flash_v2_5` (default) / `eleven_v4_turbo`. Realtime session runs with `output_modalities: ['text']`; replies are chunked by sentence (`src/shared/speech.ts`) and synthesized in main; renderer plays in order with Web Audio. Voices are ElevenLabs' own (no clones of real people). Default Eldrin (6WwXjDDEMyNmFG95zycZ). |
 | Integrations | MCP + official APIs | Phase 3 | Allowlisted. |
+| GitHub | REST API via `fetch` (no SDK, no new dependency) | Sprint 9 | `https://api.github.com`, `Authorization: Bearer`, `X-GitHub-Api-Version: 2026-03-10` (verified 2026-11-09; its breaking changes cover rate_limit, teams, repo settings and SARIF — none used; 2022-11-28 is supported until 2028-03-10). GET only. Fine-grained personal access token (read-only) recommended; classic accepted. |
 | Voice persona | Instructions (`src/shared/realtime.ts`) | Sprint 3 | British butler persona per OpenAI's realtime prompting guide: labelled sections, explicit RP accent rules, original sample phrases. No voice cloning; original character, not an imitation of any actor. |
 
 ## Key decisions

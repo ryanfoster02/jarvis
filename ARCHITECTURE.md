@@ -73,5 +73,16 @@ Tables (Sprint 5): `workspaces` (seeded), `conversations` (workspace_id, title, 
 
 **Workspace isolation is enforced in the repository layer** (`src/main/db/conversations.ts`): every function takes the workspace and scopes every query to it; a conversation from another workspace behaves as not found. Main supplies the active workspace from its own settings; the renderer never passes a workspace id. Typed replies load history from the database, not from the renderer. No credentials in these tables.
 
+## GitHub (Sprint 9)
+```
+Settings → Connections: token (vault) + allowlist (settings.githubRepos, each checked via github:check-repo → GET /repos/{o}/{r})
+model ── github_* tool call (repo ∈ enum of allowed repos) ──▶ executeTool
+  → parseToolArgs (repo format, safe path/ref) → allowlist re-check (fresh settings) → decide (scope github:read)
+  → src/main/github.ts githubGet (GET only) → shared/github.ts parse* (compact) → untrusted("<github_data …>") → model
+```
+- Scope `github:read` is granted only with a token **and** at least one allowed repository.
+- Results are wrapped as untrusted data. Once a typed task or voice session has read GitHub content, `decide` ignores standing permissions (medium risk asks).
+- Status shown in the Ops column (Integrations) and Settings → Connections.
+
 ## Integration boundary (Phase 3)
 Each integration: allowlist entry, status, scopes, credential reference (vault key), tools exposed, revoke action, execution history. External content is tagged untrusted and passed to the model as data, never as instructions.

@@ -1,0 +1,26 @@
+[
+ {
+  "name": "main",
+  "path": "src/main",
+  "type": "dir",
+  "size": 0
+ },
+ {
+  "name": "preload",
+  "path": "src/preload",
+  "type": "dir",
+  "size": 0
+ },
+ {
+  "name": "renderer",
+  "path": "src/renderer",
+  "type": "dir",
+  "size": 0
+ },
+ {
+  "name": "shared",
+  "path": "src/shared",
+  "type": "dir",
+  "size": 0
+ }
+]

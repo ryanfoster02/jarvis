@@ -15,6 +15,11 @@ export interface PermissionContext {
   grantedScopes: readonly ToolScope[]
   /** Scopes covered by a standing permission (mandates). */
   mandates: readonly ToolScope[]
+  /**
+   * The task has already read untrusted content (e.g. GitHub). Anything it proposes next may have been
+   * steered by that content, so standing permissions stop applying: medium risk asks (SECURITY.md §7).
+   */
+  untrusted?: boolean
 }
 
 export type PermissionResult =
@@ -25,11 +30,12 @@ export type PermissionResult =
 export function decide(tool: ToolSpec, ctx: PermissionContext): PermissionResult {
   // Restrictions that refuse outright come first, so nothing below can loosen them.
   if (ctx.halted) return { kind: 'deny', reason: 'Stop all is engaged. No actions run until the owner re-arms.' }
-  if (!ctx.grantedScopes.includes(tool.scope)) return { kind: 'deny', reason: `This workspace has no access to ${tool.scope}.` }
+  if (!ctx.grantedScopes.includes(tool.scope)) return { kind: 'deny', reason: `No access to ${tool.scope}: it isn't connected or set up for this.` }
   if (ctx.disabled.includes(tool.name)) return { kind: 'deny', reason: 'The owner has switched this tool off.' }
   // High risk: always asks. Mandates are never consulted.
   if (tool.risk === 'high') return { kind: 'ask', reason: 'High-risk actions always need the owner’s approval.' }
   if (tool.risk === 'low') return { kind: 'allow', decision: 'auto' }
+  if (ctx.untrusted) return { kind: 'ask', reason: 'This task read untrusted content, so standing permissions don’t apply.' }
   if (ctx.mandates.includes(tool.scope)) return { kind: 'allow', decision: 'mandate' }
   return { kind: 'ask', reason: 'Medium-risk actions need approval unless the owner gave standing permission.' }
 }

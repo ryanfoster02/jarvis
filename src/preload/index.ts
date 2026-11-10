@@ -21,6 +21,7 @@ import {
   type Settings,
   type ActionNote,
   type ApprovalRequest,
+  type GitHubRepoCheck,
   type ToolInvokeResult,
   type ToolRun,
 } from '../shared/ipc.ts'
@@ -88,6 +89,10 @@ const api = {
       ipcRenderer.on(Events.approvalsChanged, listener)
       return () => ipcRenderer.removeListener(Events.approvalsChanged, listener)
     },
+  },
+  github: {
+    /** Ask main to check (with the stored token) that a repository is readable, before allowing it. */
+    checkRepo: (repo: string): Promise<GitHubRepoCheck> => ipcRenderer.invoke(Channels.githubCheckRepo, repo),
   },
   tools: {
     /** Action log for the active workspace. */

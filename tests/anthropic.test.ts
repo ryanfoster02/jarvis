@@ -112,7 +112,7 @@ test('models, providers, keys and settings', () => {
   assert.equal(textModelProvider('claude-haiku-5-5'), 'anthropic')
   assert.equal(textModelProvider('gpt-5.4-mini'), 'openai')
   assert.ok(TEXT_MODELS.some((m) => m.provider === 'anthropic'))
-  assert.deepEqual([...PROVIDERS], ['openai', 'anthropic', 'elevenlabs'])
+  assert.deepEqual([...PROVIDERS], ['openai', 'anthropic', 'elevenlabs', 'github'])
   assert.equal(DEFAULT_SETTINGS.textModel, 'gpt-5.4-mini', 'default unchanged for existing setups')
   assert.deepEqual(validateSettingsPatch({ textModel: 'claude-sonnet-5-5' }), { textModel: 'claude-sonnet-5-5' })
   const key = 'sk-ant-api03-' + 'A1_b-'.repeat(10)

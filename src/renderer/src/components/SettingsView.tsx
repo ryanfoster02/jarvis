@@ -10,6 +10,7 @@ import {
   PROVIDER_ENV,
   SPEECH_ENGINES,
   TEXT_MODELS,
+  MAX_GITHUB_REPOS,
   TEXT_PROVIDER_NAMES,
   TEXT_PROVIDERS,
   textModelProvider,
@@ -57,7 +58,15 @@ interface Props {
 const cap = (v: string): string => v.charAt(0).toUpperCase() + v.slice(1)
 const voiceLabel = (v: VoiceId): string => (v === 'ballad' ? 'Ballad (closest to British)' : cap(v))
 
-const PROVIDER_INFO: Record<ProviderId, { name: string; purpose: string; where: string }> = {
+const PROVIDER_INFO: Record<ProviderId, { name: string; purpose: string; where: string; noun?: 'key' | 'token'; placeholder?: string }> = {
+  github: {
+    name: 'GitHub',
+    noun: 'token',
+    placeholder: 'github_pat_…',
+    purpose: 'Read-only: lets Jarvis read issues, pull requests, commits and files in the repositories you allow below.',
+    where:
+      'github.com → Settings → Developer settings → Fine-grained tokens. Choose "Only select repositories" and give Contents, Issues and Pull requests read-only access (Metadata is added automatically)',
+  },
   openai: {
     name: 'OpenAI',
     purpose: 'Listens and thinks: speech recognition and replies for voice.',
@@ -89,6 +98,8 @@ function KeyForm({
   const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
   const o = creds[provider]
   const info = PROVIDER_INFO[provider]
+  const noun = info.noun ?? 'key'
+  const Noun = noun === 'token' ? 'Token' : 'Key'
 
   const save = async (e: FormEvent): Promise<void> => {
     e.preventDefault()
@@ -100,7 +111,7 @@ function KeyForm({
     if (res.ok) {
       setKey('')
       onCreds(res.status)
-      setMessage({ tone: 'ok', text: `Key verified with ${info.name} and saved to your keychain-protected vault.` })
+      setMessage({ tone: 'ok', text: `${Noun} verified with ${info.name} and saved to your keychain-protected vault.` })
     } else {
       setMessage({ tone: 'error', text: res.message })
     }
@@ -108,7 +119,10 @@ function KeyForm({
 
   const remove = async (): Promise<void> => {
     onCreds(await window.jarvis.credentials.clear(provider))
-    setMessage({ tone: 'ok', text: 'Key removed from this Mac.' })
+    setMessage({
+      tone: 'ok',
+      text: provider === 'github' ? 'Token removed from this Mac. To revoke it completely, delete it on github.com too.' : 'Key removed from this Mac.',
+    })
   }
 
   return (
@@ -120,24 +134,24 @@ function KeyForm({
         {!o.configured
           ? 'Not connected.'
           : o.source === 'env'
-            ? `Key from .env file · ending ${o.last4 ?? '????'}`
-            : `Connected · key ending ${o.last4 ?? '????'}${o.verifiedAt ? ` · verified ${new Date(o.verifiedAt).toLocaleDateString()}` : ''}`}
+            ? `${Noun} from .env file · ending ${o.last4 ?? '????'}`
+            : `Connected · ${noun} ending ${o.last4 ?? '????'}${o.verifiedAt ? ` · verified ${new Date(o.verifiedAt).toLocaleDateString()}` : ''}`}
       </p>
       {o.source === 'env' && (
         <p className="form-msg is-ok">
           Using {PROVIDER_ENV[provider]} from the project&apos;s .env file (development only).
-          {o.vaultOverridden ? ' It overrides the saved key; remove it from .env to use the saved key.' : ''}
+          {o.vaultOverridden ? ` It overrides the saved ${noun}; remove it from .env to use the saved ${noun}.` : ''}
         </p>
       )}
       {o.envError && <p className="form-msg is-error">{o.envError}</p>}
       <form className="key-form" onSubmit={save}>
         <label>
-          <span className="field-label">{o.source === 'vault' ? 'Replace saved key' : 'Save a key in the vault'}</span>
+          <span className="field-label">{o.source === 'vault' ? `Replace saved ${noun}` : `Save a ${noun} in the vault`}</span>
           <input
             type="password"
             value={key}
             onChange={(e) => setKey(e.target.value)}
-            placeholder={provider === 'openai' ? 'sk-…' : 'sk_…'}
+            placeholder={info.placeholder ?? (provider === 'openai' ? 'sk-…' : provider === 'anthropic' ? 'sk-ant-…' : 'sk_…')}
             autoComplete="off"
             spellCheck={false}
             disabled={!creds.encryptionAvailable || saving}
@@ -148,15 +162,104 @@ function KeyForm({
         </button>
         {(o.source === 'vault' || o.vaultOverridden) && (
           <button type="button" className="btn btn-quiet" onClick={() => void remove()}>
-            Remove key
+            Remove {noun}
           </button>
         )}
       </form>
       {message && <p className={`form-msg ${message.tone === 'error' ? 'is-error' : 'is-ok'}`}>{message.text}</p>}
       <p className="fine">
-        Get a key at {info.where}. Or, for development, put {PROVIDER_ENV[provider]} in .env (npm run setup:env).
+        Get a {noun} at {info.where}. Or, for development, put {PROVIDER_ENV[provider]} in .env (npm run setup:env).
       </p>
     </div>
+  )
+}
+
+function GitHubConnection({
+  settings,
+  creds,
+  onCreds,
+  onUpdate,
+}: {
+  settings: Settings
+  creds: CredentialStatus
+  onCreds: (c: CredentialStatus) => void
+  onUpdate: (patch: Partial<Settings>) => void
+}): React.JSX.Element {
+  const [repo, setRepo] = useState('')
+  const [checking, setChecking] = useState(false)
+  const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
+  const connected = creds.github.configured
+  const full = settings.githubRepos.length >= MAX_GITHUB_REPOS
+
+  const allow = async (e: FormEvent): Promise<void> => {
+    e.preventDefault()
+    if (!repo.trim() || checking) return
+    setChecking(true)
+    setMessage(null)
+    const r = await window.jarvis.github.checkRepo(repo)
+    setChecking(false)
+    if (!r.ok) {
+      setMessage({ tone: 'error', text: r.message })
+      return
+    }
+    const name = r.repo.fullName.toLowerCase()
+    if (settings.githubRepos.includes(name)) {
+      setMessage({ tone: 'ok', text: `${r.repo.fullName} is already allowed.` })
+    } else {
+      onUpdate({ githubRepos: [...settings.githubRepos, name] })
+      setMessage({ tone: 'ok', text: `Allowed ${r.repo.fullName} (${r.repo.private ? 'private' : 'public'}). Jarvis can now read it.` })
+    }
+    setRepo('')
+  }
+
+  return (
+    <>
+      <KeyForm provider="github" creds={creds} onCreds={onCreds} />
+      <div className="repo-allowlist" aria-label="Allowed repositories">
+        <h3>Allowed repositories</h3>
+        <p className="fine">
+          Jarvis can read only these, and only to answer you: issues, pull requests, commits and files. It can&apos;t
+          comment, change, merge or push. What it reads from GitHub is treated as untrusted text, never as instructions.
+        </p>
+        {settings.githubRepos.length === 0 ? (
+          <p className="empty-note">{connected ? 'None yet. Add one below.' : 'Connect GitHub above, then add repositories here.'}</p>
+        ) : (
+          <ul className="repos">
+            {settings.githubRepos.map((r) => (
+              <li key={r}>
+                <span className="repo-name">{r}</span>
+                <button
+                  type="button"
+                  className="btn btn-quiet"
+                  aria-label={`Remove ${r}`}
+                  onClick={() => onUpdate({ githubRepos: settings.githubRepos.filter((x) => x !== r) })}
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <form className="key-form" onSubmit={allow}>
+          <label>
+            <span className="field-label">Repository</span>
+            <input
+              value={repo}
+              onChange={(e) => setRepo(e.target.value)}
+              placeholder="owner/name or a github.com link"
+              autoComplete="off"
+              spellCheck={false}
+              disabled={!connected || checking || full}
+            />
+          </label>
+          <button type="submit" className="btn" disabled={!connected || checking || full || !repo.trim()}>
+            {checking ? 'Checking…' : 'Check and allow'}
+          </button>
+        </form>
+        {full && <p className="fine">That&apos;s the maximum of {MAX_GITHUB_REPOS}. Remove one to add another.</p>}
+        {message && <p className={`form-msg ${message.tone === 'error' ? 'is-error' : 'is-ok'}`}>{message.text}</p>}
+      </div>
+    </>
   )
 }
 
@@ -649,13 +752,12 @@ export function SettingsView({ settings, info, creds, onCreds, onUpdate }: Props
         {section === 'connections' && (
           <>
             <h2>Connections</h2>
-            <p className="status-line">
-              <span className="dot dot-off" /> No accounts connected.
-            </p>
             <p>
-              Jarvis only connects to services you approve, one at a time, starting with GitHub in Phase 3. Each
-              connection will show what it can access, a history of what Jarvis did with it, and a button to revoke it.
+              Jarvis only connects to services you set up here, one at a time. Each connection shows what it can reach;
+              everything Jarvis reads is listed under Activity on the dashboard. Email, calendars and files aren&apos;t
+              available yet.
             </p>
+            <GitHubConnection settings={settings} creds={creds} onCreds={onCreds} onUpdate={onUpdate} />
           </>
         )}
 

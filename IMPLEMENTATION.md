@@ -1,6 +1,6 @@
 # IMPLEMENTATION
 
-Current phase: Phase 2 / Sprint 8 — Tools, permissions, limits
+Current phase: Phase 3 / Sprint 9 — GitHub (read-only) + repository allowlist
 
 Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ not started
 
@@ -96,7 +96,7 @@ Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ no
 
 **Acceptance:** with an Anthropic key saved and a Claude model picked, typed messages get Claude replies in the JARVIS persona using memories; switching back to GPT works; without the key the app says so; voice is unaffected.
 
-### Sprint 8 — Tools, permissions, limits 🟡
+### Sprint 8 — Tools, permissions, limits ✅ (owner verified 2026-11-09)
 - ✅ Tool registry (`src/shared/tools.ts`): get_time (low), list_memories (low), save_memory (medium), forget_memory (high); strict schemas, argument validation (secrets refused before asking), summaries, provider formats, prompt section that matches what's actually enabled
 - ✅ Permission engine (`src/shared/permissions.ts`): kill switch → scope → switched off → high always asks → low runs → medium needs a mandate or asks — tested
 - ✅ Execution limits enforced (`RunBudget`): steps, time (approval waits excluded), tool calls, spend; 2 typed tasks at once; voice tool calls 30/min — tested
@@ -106,13 +106,30 @@ Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ no
 - ✅ UI: Approvals cards (risk, summary, countdown, Approve/Deny), Activity list, "N approvals waiting" chip, action notes in the conversation, Settings → Permissions tool switches + "Save memories without asking"
 - ✅ Jarvis saves memories himself ("remember that…"), with your approval by default
 - ✅ Tests: 13 new unit tests + 1 node:sqlite migration test; 2 Drizzle log tests and 2 e2e tests run on the Mac
-- 🟡 Needs owner verification: `npm run typecheck`, `npm test`, `npm run test:e2e`, then with real keys: "remember that I take my coffee black" (typed and by voice), approve it, "what time is it?", "forget that", deny it
+- ✅ Owner verified tests, e2e and live use
 - ⬜ Worker/workflow-level stop (only global Stop all so far); scoped mandates beyond memory; streaming replies
 
 **Acceptance:** Jarvis can check the time, read, save and delete memories; low risk runs, saving asks unless the standing permission is on, deleting always asks; everything appears in Activity; Stop all answers pending approvals with no; limits stop runaway loops; nothing runs while halted.
 
-## Phase 3 — Integrations & Automation ⬜
-First integration (GitHub, read-only) · allowlist & scopes UI · tool execution with approvals · scheduler (runs only while app is open — stated in UI) · reminders · execution log · worker/workflow kill levels.
+## Phase 3 — Integrations & Automation
+Tool execution with approvals and the execution log already landed in Sprint 8.
+
+### Sprint 9 — GitHub (read-only) + repository allowlist 🟡
+- ✅ Contract: `github` credential (`GITHUB_TOKEN`), token validator (fine-grained `github_pat_` recommended, classic `ghp_` accepted), `githubRepos` allowlist setting (≤30, owner/name, links accepted), 5 tool names, `github:check-repo` channel
+- ✅ `src/shared/github.ts`: GET paths (encoded; safe path/ref validation), parsers for repo, issues/PRs, issue + latest 5 comments, commits, file/folder (binary, >1 MB and long files handled), untrusted wrapper, error messages — tested on **real API responses** (fixtures from this repo) plus synthetic issues
+- ✅ Tools (all low risk, scope `github:read`): `github_list_repos`, `github_list_issues`, `github_get_issue`, `github_recent_commits`, `github_read_file`; repo offered as an enum of allowed repos; allowlist re-checked in main
+- ✅ Untrusted-content rule: after reading GitHub content, standing permissions stop applying for that task / voice session — tested
+- ✅ Main: `src/main/github.ts` (GET only), token verify via `GET /user`, repo check before allowing; client run live against api.github.com here (repo, commits, folder, file at a ref, issues, 404)
+- ✅ UI: Settings → Connections (token form with fine-grained instructions, allowlist with check-and-allow and remove), Ops column shows real GitHub status
+- ✅ Tests: 8 new unit tests; 1 new e2e test (token validation, no repo without connection, tools refused without scope)
+- 🟡 Needs owner verification: typecheck, `npm test`, `npm run test:e2e`; then create a fine-grained read-only token, connect it, allow a repo, and ask "what are the open issues in <repo>?", "what changed recently?", "summarise the README"
+- ⬜ Per-workspace allowlists (global for now); GitHub writes (comments, issues) — would be medium/high risk with approvals, not planned until requested
+
+### Sprint 10 — Scheduler & reminders ⬜
+Reminders Jarvis can set (with approval) and you can manage; macOS notifications; runs only while the app is open — stated in the UI; missed reminders shown on next launch.
+
+### Sprint 11 — Worker / workflow stop levels ⬜
+Cancel one running action or one task without Stop all; abort signals threaded through tools and provider calls.
 
 ## Phase 4 — Advanced ⬜
 Bounded subagents (depth 1, ≤2 concurrent) · multi-step workflows · business workflows (leads, CRM, n8n, reports) · Windows/Linux builds · performance.
