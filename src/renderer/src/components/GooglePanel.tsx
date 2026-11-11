@@ -46,6 +46,10 @@ export function GooglePanel(): React.JSX.Element {
         Read-only: Jarvis can see your calendars to answer “what’s on today?” or “when am I free?”, but can’t create, change or
         answer events. Uses your own Google OAuth client (type <em>Desktop app</em>, with the Google Calendar API enabled).
       </p>
+      <p className="fine">
+        If Google says <em>redirect_uri_mismatch</em>, the client isn&apos;t a Desktop app client (a <em>Web application</em> client
+        only accepts fixed addresses). Create a Desktop app client in Google Cloud → Clients and use <em>Change client</em> here.
+      </p>
 
       {!status.encryptionAvailable && (
         <p className="form-msg is-error">This computer can’t store secrets securely, so Google can’t be connected here.</p>
