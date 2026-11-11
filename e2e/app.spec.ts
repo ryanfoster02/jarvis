@@ -118,6 +118,7 @@ test('renderer is isolated: no Node globals, only the narrow jarvis bridge', asy
     'tasks',
     'tools',
     'tts',
+    'updates',
     'voice',
     'webhooks',
     'workflows',
