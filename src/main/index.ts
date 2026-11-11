@@ -4,6 +4,8 @@ import { pathToFileURL } from 'node:url'
 import { registerIpc, type HistoryStore } from './ipc.ts'
 import { openDatabase } from './db/client.ts'
 import { forgetReveal, markStartup, primeMetrics, registerReveal, setDatabasePath } from './perf.ts'
+import { initBackups, stopBackups } from './backups.ts'
+import { startUpdateChecks, stopUpdateChecks } from './updates.ts'
 import { startScheduler, stopScheduler } from './scheduler.ts'
 import { startWorkflowScheduler, stopWorkflowScheduler } from './workflows.ts'
 import { initBackground, onAllWindowsClosed, shouldStartHidden } from './background.ts'
@@ -199,8 +201,8 @@ void app.whenReady().then(() => {
   // Local database (conversations; memory in later sprints). If it can't open, Jarvis still runs
   // and the UI says history is unavailable.
   const history: HistoryStore = { database: null, error: null }
+  const dbPath = join(app.getPath('userData'), 'jarvis.db')
   try {
-    const dbPath = join(app.getPath('userData'), 'jarvis.db')
     history.database = openDatabase(dbPath)
     setDatabasePath(dbPath)
     markStartup('databaseReady')
@@ -209,6 +211,12 @@ void app.whenReady().then(() => {
     console.error('[db] could not open database:', history.error)
   }
   app.on('will-quit', () => history.database?.close())
+  // Daily backups (Sprint 18) and restore; restore swaps history.database in place.
+  initBackups(history, dbPath)
+  app.on('will-quit', stopBackups)
+  // Update check (Sprint 18): daily, only if the owner switched it on.
+  startUpdateChecks()
+  app.on('will-quit', stopUpdateChecks)
 
   registerIpc({ devServerUrl, rendererFileUrl }, history)
   buildMenu()

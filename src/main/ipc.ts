@@ -67,6 +67,10 @@ import {
 import { remindersChanged } from './scheduler.ts'
 import { applyBackground, backgroundStatus } from './background.ts'
 import { dashboardReady, perfSnapshot } from './perf.ts'
+import { checkForUpdates, openLatestRelease } from './updates.ts'
+import type { UpdateCheckResult } from '../shared/updates.ts'
+import { createBackupFile, inspectSource, listAutoBackups, restoreFromToken, showBackupFolder } from './backups.ts'
+import { validateBackupSource, validateRestoreToken, type BackupCreateResult, type BackupInspectResult, type BackupListResult, type BackupRestoreResult } from '../shared/backup.ts'
 import { tasks } from './tasks.ts'
 import { addWebhook, deleteWebhook, findWebhookById, listWebhooks, postWebhook, WebhookError, webhookNames } from './webhooks.ts'
 import { deleteLead, LeadLimitError, LeadNotFoundError, listLeads, saveLead } from './db/leads.ts'
@@ -170,6 +174,41 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
 
   // Performance (Sprint 16): read-only measurements; the renderer reports when the dashboard has its data.
   ipcMain.handle(Channels.perfGet, guard((): PerfSnapshot => perfSnapshot()))
+  // Backups (Sprint 18): main shows every dialog and keeps every path; the renderer gets names and summaries.
+  ipcMain.handle(Channels.backupList, guard((): BackupListResult => listAutoBackups()))
+  ipcMain.handle(Channels.backupCreate, guard((): Promise<BackupCreateResult> => createBackupFile()))
+  ipcMain.handle(
+    Channels.backupInspect,
+    guard(async (source: unknown): Promise<BackupInspectResult> => {
+      try {
+        return await inspectSource(validateBackupSource(source))
+      } catch (err) {
+        if (err instanceof IpcValidationError) return { ok: false, cancelled: false, message: err.message }
+        throw err
+      }
+    }),
+  )
+  ipcMain.handle(
+    Channels.backupRestore,
+    guard(async (token: unknown): Promise<BackupRestoreResult> => {
+      try {
+        return await restoreFromToken(validateRestoreToken(token))
+      } catch (err) {
+        if (err instanceof IpcValidationError) return { ok: false, message: err.message }
+        throw err
+      }
+    }),
+  )
+  ipcMain.handle(Channels.backupShowFolder, guard((): Promise<void> => showBackupFolder()))
+  // Updates (Sprint 18): the owner asks; main fetches the latest release and opens its page.
+  ipcMain.handle(
+    Channels.updatesCheck,
+    guard(
+      (): Promise<UpdateCheckResult> =>
+        limits.keys.take() ? checkForUpdates() : Promise.resolve({ ok: false as const, current: app.getVersion(), message: SLOW_DOWN }),
+    ),
+  )
+  ipcMain.handle(Channels.updatesOpen, guard((): Promise<boolean> => openLatestRelease()))
   ipcMain.handle(Channels.perfDashboardReady, (event) => guard((): void => dashboardReady(event.sender.id))(event))
 
   ipcMain.handle(Channels.killSwitchGet, guard(() => getKillSwitch()))

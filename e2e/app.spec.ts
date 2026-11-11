@@ -104,6 +104,7 @@ test('renderer is isolated: no Node globals, only the narrow jarvis bridge', asy
     'app',
     'approvals',
     'background',
+    'backups',
     'chat',
     'conversations',
     'credentials',
@@ -580,6 +581,94 @@ test('web search: refused without a text-model key (nothing sent, no approval); 
   await again.page.getByRole('button', { name: 'Permissions' }).click()
   await expect(again.page.getByRole('switch', { name: 'Search the web without asking' })).toHaveAttribute('aria-checked', 'true')
   await closeApp(again.app)
+})
+
+test('setup guide: shows real state, links to the right settings, hides and comes back', async () => {
+  const { app, page } = await launch(profile)
+  const guide = page.getByRole('region', { name: 'Get started' })
+  await expect(guide).toBeVisible()
+  // A fresh profile has no keys and no conversations, so nothing is ticked.
+  await expect(guide.getByRole('listitem', { name: 'Add an AI key' })).toBeVisible()
+  await expect(guide.getByRole('listitem', { name: 'Ask Jarvis something' })).toBeVisible()
+  await expect(guide.locator('li.is-done')).toHaveCount(0)
+
+  await guide.getByRole('button', { name: 'Open AI provider settings' }).click()
+  await expect(page.getByRole('heading', { name: 'AI provider', level: 2 })).toBeVisible()
+  await page.keyboard.press('Escape')
+
+  await guide.getByRole('button', { name: 'Hide guide' }).click()
+  await expect(guide).toHaveCount(0)
+  await closeApp(app)
+
+  const again = await launch(profile)
+  await expect(again.page.getByRole('heading', { name: 'Conversation' })).toBeVisible()
+  await expect(again.page.getByRole('region', { name: 'Get started' })).toHaveCount(0)
+  await again.page.keyboard.press('ControlOrMeta+,')
+  await again.page.getByRole('button', { name: 'About', exact: true }).click()
+  await again.page.getByRole('button', { name: 'Show the setup guide again' }).click()
+  await again.page.keyboard.press('Escape')
+  await expect(again.page.getByRole('region', { name: 'Get started' })).toBeVisible()
+  await closeApp(again.app)
+})
+
+test('updates: off by default; the About panel offers a manual check and the daily switch', async () => {
+  const { app, page } = await launch(profile)
+  await page.keyboard.press('ControlOrMeta+,')
+  await page.getByRole('button', { name: 'About', exact: true }).click()
+  const updates = page.getByLabel('Updates')
+  await expect(updates.getByRole('button', { name: 'Check for updates' })).toBeVisible()
+  await expect(updates.getByRole('switch', { name: 'Check automatically once a day' })).toHaveAttribute('aria-checked', 'false')
+  await updates.getByRole('switch', { name: 'Check automatically once a day' }).click()
+  await expect(updates.getByRole('switch', { name: 'Check automatically once a day' })).toHaveAttribute('aria-checked', 'true')
+  await closeApp(app)
+})
+
+test('backups: back up to a file, change data, restore it; a safety copy is kept', async () => {
+  test.setTimeout(LAUNCH_BUDGET + 60_000)
+  const { app, page } = await launch(profile)
+  type Bridge = {
+    memory: {
+      add: (i: { scope: 'global'; text: string }) => Promise<{ ok: boolean }>
+      list: () => Promise<{ ok: boolean; value?: Array<{ text: string }> }>
+    }
+  }
+  const addMemory = (text: string): Promise<{ ok: boolean }> =>
+    page.evaluate((t: string) => (window as unknown as { jarvis: Bridge }).jarvis.memory.add({ scope: 'global', text: t }), text)
+  const memories = async (): Promise<string[]> =>
+    ((await page.evaluate(() => (window as unknown as { jarvis: Bridge }).jarvis.memory.list())).value ?? []).map((m: { text: string }) => m.text).sort()
+
+  expect((await addMemory('Prefers Earl Grey')).ok).toBe(true)
+  const file = join(profile, 'my-backup.db')
+  // The save and open dialogs are main's; answer them as the owner would.
+  await app.evaluate(({ dialog }: typeof import('electron'), p: string) => {
+    dialog.showSaveDialog = (async () => ({ canceled: false, filePath: p })) as unknown as typeof dialog.showSaveDialog
+    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [p] })) as unknown as typeof dialog.showOpenDialog
+  }, file)
+
+  await page.keyboard.press('ControlOrMeta+,')
+  await page.getByRole('button', { name: 'Data', exact: true }).click()
+  await page.getByRole('button', { name: 'Back up now…' }).click()
+  await expect(page.locator('.backups .form-msg')).toContainText('Saved my-backup.db')
+
+  expect((await addMemory('Meeting moved to Friday')).ok).toBe(true)
+  expect(await memories()).toEqual(['Meeting moved to Friday', 'Prefers Earl Grey'])
+
+  await page.getByRole('button', { name: 'Restore from file…' }).click()
+  const confirm = page.getByRole('alertdialog', { name: 'Restore backup' })
+  await expect(confirm).toContainText('my-backup.db')
+  await expect(confirm).toContainText('1 memory')
+  await confirm.getByRole('button', { name: 'Restore' }).click()
+  await expect(page.locator('.backups .form-msg')).toContainText('Restored')
+
+  // The page reloads itself; afterwards the data is the backup's, and the old data is a safety copy.
+  await expect(page.getByRole('heading', { name: 'Conversation' })).toBeVisible({ timeout: 15_000 })
+  await expect.poll(memories).toEqual(['Prefers Earl Grey'])
+  await page.keyboard.press('ControlOrMeta+,')
+  await page.getByRole('button', { name: 'Data', exact: true }).click()
+  await expect(page.getByRole('list', { name: 'Automatic backups' }).getByText('Before a restore')).toBeVisible()
+  // Jarvis still works on the restored database.
+  expect((await addMemory('Restored fine')).ok).toBe(true)
+  await closeApp(app)
 })
 
 test('routines: create from a template, schedule, run honestly without a key, pause, delete', async () => {

@@ -29,6 +29,8 @@ import { StatusTerminal, type Telemetry } from './components/StatusTerminal.tsx'
 import { TopBar, type View } from './components/TopBar.tsx'
 import { useVoice, type VoiceActivity, type VoicePhase } from './voice/useVoice.ts'
 import { shouldCalm } from '../../shared/perf.ts'
+import { SetupGuide } from './components/SetupGuide.tsx'
+import type { SettingsSection } from './components/SettingsView.tsx'
 
 // Screens other than the dashboard load on first visit (Sprint 16), keeping startup lean.
 const SettingsView = lazy(() => import('./components/SettingsView.tsx').then((m) => ({ default: m.SettingsView })))
@@ -106,6 +108,12 @@ export function App(): React.JSX.Element {
   const credsRef = useRef<CredentialStatus | null>(null)
   const [busy, setBusy] = useState(false)
   const [view, setView] = useState<View>('dashboard')
+  // Which Settings section to open when a link (the setup guide) asks for one.
+  const [settingsSection, setSettingsSection] = useState<SettingsSection | undefined>(undefined)
+  const openSettings = useCallback((section: SettingsSection) => {
+    setSettingsSection(section)
+    setView('settings')
+  }, [])
   const [bridgeError, setBridgeError] = useState<string | null>(null)
   const [entries, setEntries] = useState<Entry[]>([])
   const [usage, setUsage] = useState({ tokens: 0, costUsd: 0 as number | null, latencyMs: null as number | null, ttsChars: 0 })
@@ -419,6 +427,7 @@ export function App(): React.JSX.Element {
     const onKey = (e: KeyboardEvent): void => {
       if ((e.metaKey || e.ctrlKey) && e.key === ',') {
         e.preventDefault()
+        setSettingsSection(undefined)
         setView('settings')
       } else if (e.key === 'Escape') {
         setView('dashboard')
@@ -548,7 +557,10 @@ export function App(): React.JSX.Element {
       <div className="starfield" aria-hidden="true" />
       <TopBar
         view={view}
-        onNavigate={setView}
+        onNavigate={(v) => {
+          setSettingsSection(undefined)
+          setView(v)
+        }}
         settings={settings}
         kill={kill}
         onWorkspace={(w) => void update({ activeWorkspace: w })}
@@ -561,6 +573,15 @@ export function App(): React.JSX.Element {
         {view === 'dashboard' ? (
           <div className="dashboard">
             <div className="col-left">
+              {settings && creds && !settings.setupGuideDismissed && (
+                <SetupGuide
+                  settings={settings}
+                  creds={creds}
+                  hasConversations={conversations.length > 0}
+                  onOpenSettings={openSettings}
+                  onDismiss={() => void update({ setupGuideDismissed: true })}
+                />
+              )}
               <StateLegend current={coreState} />
               <OpsColumn
                 approvals={approvals}
@@ -627,6 +648,8 @@ export function App(): React.JSX.Element {
               <WorkflowsView workspaceName={workspace.name} refreshKey={workflowsVersion} halted={halted} />
             ) : settings && creds ? (
               <SettingsView
+                key={settingsSection ?? 'default'}
+                initialSection={settingsSection}
                 settings={settings}
                 info={info}
                 creds={creds}

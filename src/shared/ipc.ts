@@ -53,6 +53,13 @@ export const Channels = {
   webhooksTest: 'webhooks:test',
   perfGet: 'perf:get',
   perfDashboardReady: 'perf:dashboard-ready',
+  backupList: 'backup:list',
+  backupCreate: 'backup:create',
+  backupInspect: 'backup:inspect',
+  backupRestore: 'backup:restore',
+  backupShowFolder: 'backup:show-folder',
+  updatesCheck: 'updates:check',
+  updatesOpen: 'updates:open',
 } as const
 
 /** Main → renderer push events. */
@@ -200,6 +207,10 @@ export interface Settings {
   autoSetReminders: boolean
   /** Standing permission: web searches (they cost money) run without asking each time (Sprint 17). */
   autoWebSearch: boolean
+  /** Check GitHub once a day for a newer JARVIS release (Sprint 18). Off by default: no network call unless asked. */
+  checkForUpdates: boolean
+  /** The owner hid the dashboard's Get started guide (Sprint 18). */
+  setupGuideDismissed: boolean
   /** Show macOS notifications when reminders fire (the in-app alert always shows). */
   reminderNotifications: boolean
   /** Keep running in the menu bar when the window is closed, so reminders still fire. Off by default. */
@@ -227,6 +238,8 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   githubRepos: [],
   autoSetReminders: false,
   autoWebSearch: false,
+  checkForUpdates: false,
+  setupGuideDismissed: false,
   reminderNotifications: true,
   runInBackground: false,
   openAtLogin: false,
@@ -528,6 +541,8 @@ export function validateSettingsPatch(input: unknown): Partial<Settings> {
         break
       case 'autoSetReminders':
       case 'autoWebSearch':
+      case 'checkForUpdates':
+      case 'setupGuideDismissed':
       case 'reminderNotifications':
       case 'runInBackground':
       case 'openAtLogin':
@@ -568,6 +583,8 @@ export function normalizeSettings(stored: unknown): Settings {
   if (typeof stored.autoSaveMemories === 'boolean') s.autoSaveMemories = stored.autoSaveMemories
   if (typeof stored.autoSetReminders === 'boolean') s.autoSetReminders = stored.autoSetReminders
   if (typeof stored.autoWebSearch === 'boolean') s.autoWebSearch = stored.autoWebSearch
+  if (typeof stored.checkForUpdates === 'boolean') s.checkForUpdates = stored.checkForUpdates
+  if (typeof stored.setupGuideDismissed === 'boolean') s.setupGuideDismissed = stored.setupGuideDismissed
   if (typeof stored.reminderNotifications === 'boolean') s.reminderNotifications = stored.reminderNotifications
   if (typeof stored.runInBackground === 'boolean') s.runInBackground = stored.runInBackground
   if (typeof stored.openAtLogin === 'boolean') s.openAtLogin = stored.openAtLogin

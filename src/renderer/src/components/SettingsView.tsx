@@ -36,8 +36,11 @@ import { SpeechQueue } from '../voice/speechQueue.ts'
 import { AiCore, CORE_LABELS, CORE_STATES, type CoreState } from './AiCore.tsx'
 import { ThemeSwitcher } from './ThemeSwitcher.tsx'
 import { formatMB, formatMs, type PerfSnapshot } from '../../../shared/perf.ts'
+import { BackupsPanel } from './BackupsPanel.tsx'
+import type { UpdateCheckResult } from '../../../shared/updates.ts'
 
-type Section = 'appearance' | 'voice' | 'provider' | 'permissions' | 'notifications' | 'connections' | 'about'
+export type SettingsSection = Section
+type Section = 'appearance' | 'voice' | 'provider' | 'permissions' | 'notifications' | 'connections' | 'data' | 'about'
 
 const SECTIONS: Array<[Section, string]> = [
   ['appearance', 'Appearance'],
@@ -46,6 +49,7 @@ const SECTIONS: Array<[Section, string]> = [
   ['permissions', 'Permissions'],
   ['notifications', 'Notifications'],
   ['connections', 'Connections'],
+  ['data', 'Data'],
   ['about', 'About'],
 ]
 
@@ -57,6 +61,8 @@ interface Props {
   creds: CredentialStatus
   onCreds: (c: CredentialStatus) => void
   onUpdate: (patch: Partial<Settings>) => void
+  /** Section to open (the setup guide links straight to one). */
+  initialSection?: SettingsSection
 }
 
 const cap = (v: string): string => v.charAt(0).toUpperCase() + v.slice(1)
@@ -251,6 +257,60 @@ function BackgroundSettings({ settings, onUpdate }: { settings: Settings; onUpda
         </p>
       )}
     </>
+  )
+}
+
+/** Update check (Sprint 18): JARVIS says when a newer release exists and opens its page; it never installs anything. */
+function UpdatesPanel({ settings, onUpdate }: { settings: Settings; onUpdate: (patch: Partial<Settings>) => void }): React.JSX.Element {
+  const [result, setResult] = useState<UpdateCheckResult | null>(null)
+  const [checking, setChecking] = useState(false)
+  const check = async (): Promise<void> => {
+    setChecking(true)
+    setResult(await window.jarvis.updates.check())
+    setChecking(false)
+  }
+  return (
+    <div className="updates" aria-label="Updates">
+      <h3 className="subhead">Updates</h3>
+      <div className="backup-actions">
+        <button className="btn" disabled={checking} onClick={() => void check()}>
+          {checking ? 'Checking…' : 'Check for updates'}
+        </button>
+        {result?.ok && result.newer && (
+          <button className="btn btn-quiet" onClick={() => void window.jarvis.updates.openRelease()}>
+            Open download page
+          </button>
+        )}
+      </div>
+      {result &&
+        (result.ok ? (
+          <p className="form-msg is-ok">
+            {!result.latest
+              ? 'No releases are published yet.'
+              : result.newer
+                ? `JARVIS ${result.latest.version} is available${result.latest.publishedAt ? ` (released ${new Date(result.latest.publishedAt).toLocaleDateString()})` : ''}. You have ${result.current}.`
+                : `You have the latest version (${result.current}).`}
+          </p>
+        ) : (
+          <p className="form-msg is-error">{result.message}</p>
+        ))}
+      <div className="field">
+        <div className="field-text">
+          <h3>Check automatically once a day</h3>
+          <p>
+            Asks GitHub for the latest JARVIS release and notifies you if there's a newer one. Nothing about you is sent, and
+            nothing is downloaded or installed: you download the new version yourself.
+          </p>
+        </div>
+        <button
+          role="switch"
+          aria-checked={settings.checkForUpdates}
+          aria-label="Check automatically once a day"
+          className="switch"
+          onClick={() => onUpdate({ checkForUpdates: !settings.checkForUpdates })}
+        />
+      </div>
+    </div>
   )
 }
 
@@ -676,8 +736,8 @@ function TestVoice({ disabled }: { disabled: boolean }): React.JSX.Element {
   )
 }
 
-export function SettingsView({ settings, info, creds, onCreds, onUpdate }: Props): React.JSX.Element {
-  const [section, setSection] = useState<Section>('appearance')
+export function SettingsView({ settings, info, creds, onCreds, onUpdate, initialSection }: Props): React.JSX.Element {
+  const [section, setSection] = useState<Section>(initialSection ?? 'appearance')
   const [preview, setPreview] = useState<CoreState>('idle')
   const voiceReady =
     creds.openai.configured && (settings.speechEngine === 'openai' || creds.elevenlabs.configured)
@@ -1060,6 +1120,13 @@ export function SettingsView({ settings, info, creds, onCreds, onUpdate }: Props
           </>
         )}
 
+        {section === 'data' && (
+          <>
+            <h2>Data</h2>
+            <BackupsPanel />
+          </>
+        )}
+
         {section === 'about' && (
           <>
             <h2>About</h2>
@@ -1076,6 +1143,14 @@ export function SettingsView({ settings, info, creds, onCreds, onUpdate }: Props
               <p>Reading system details…</p>
             )}
             <p className="fine">Emergency stop: {PT.shortcut('.', true)} from anywhere in Jarvis.</p>
+            <UpdatesPanel settings={settings} onUpdate={onUpdate} />
+            {settings.setupGuideDismissed && (
+              <p>
+                <button className="btn btn-quiet" onClick={() => onUpdate({ setupGuideDismissed: false })}>
+                  Show the setup guide again
+                </button>
+              </p>
+            )}
             <PerformancePanel />
           </>
         )}

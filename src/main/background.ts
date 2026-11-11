@@ -151,6 +151,12 @@ export function onAllWindowsClosed(): boolean {
   return true
 }
 
+/** After a restore (Sprint 18): read reminders from the reopened database. */
+export function setBackgroundDatabase(database: Db | null): void {
+  db = database
+  void refreshNext()
+}
+
 export function initBackground(database: Db | null): void {
   db = database
   onRemindersChanged(() => void refreshNext())

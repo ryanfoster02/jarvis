@@ -38,6 +38,8 @@ import {
   type ToolRun,
 } from '../shared/ipc.ts'
 import type { PerfSnapshot } from '../shared/perf.ts'
+import type { UpdateCheckResult } from '../shared/updates.ts'
+import type { BackupCreateResult, BackupInspectResult, BackupListResult, BackupRestoreResult, BackupSource } from '../shared/backup.ts'
 
 // The only surface the renderer can reach. Functions only — ipcRenderer itself is never exposed,
 // and each method maps to exactly one allowlisted channel.
@@ -152,6 +154,23 @@ const api = {
   background: {
     /** Menu-bar icon and open-at-login state as the OS reports it. */
     status: (): Promise<BackgroundStatus> => ipcRenderer.invoke(Channels.backgroundStatus),
+  },
+  backups: {
+    /** Automatic backups (names, sizes, dates — never paths). */
+    list: (): Promise<BackupListResult> => ipcRenderer.invoke(Channels.backupList),
+    /** Back up now to a file the owner picks in a save dialog (shown by main). */
+    create: (): Promise<BackupCreateResult> => ipcRenderer.invoke(Channels.backupCreate),
+    /** Check a backup (picked in a dialog, or a listed one) and get a one-time token to restore it. */
+    inspect: (source: BackupSource): Promise<BackupInspectResult> => ipcRenderer.invoke(Channels.backupInspect, source),
+    /** Replace current data with the inspected backup (a safety copy is taken first). */
+    restore: (token: string): Promise<BackupRestoreResult> => ipcRenderer.invoke(Channels.backupRestore, token),
+    showFolder: (): Promise<void> => ipcRenderer.invoke(Channels.backupShowFolder),
+  },
+  updates: {
+    /** Ask GitHub for the latest published JARVIS release (main makes the request). */
+    check: (): Promise<UpdateCheckResult> => ipcRenderer.invoke(Channels.updatesCheck),
+    /** Open the release page found by the last check in the browser. */
+    openRelease: (): Promise<boolean> => ipcRenderer.invoke(Channels.updatesOpen),
   },
   perf: {
     /** Startup timeline, memory and CPU per process kind, database size (all measured, nothing estimated). */
