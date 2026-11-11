@@ -599,10 +599,13 @@ test('leads: add with a past next step, pipeline and overdue, change stage, dele
 
   // Jarvis adding a lead asks first (medium risk) and the new lead appears.
   const adding = invoke(page, 'add_lead', { name: 'Grace Hopper', company: 'Navy', email: null, status: 'new', value: null, notes: null, next_step: null, next_date: null })
+  // Approvals live on the dashboard; the top-bar chip takes you there from any screen.
+  await page.locator('.chip-approval').click()
   const card = page.locator('.approval').filter({ hasText: 'Add lead: Grace Hopper (Navy)' })
   await expect(card.locator('.risk-badge')).toHaveText('Medium risk')
   await card.getByRole('button', { name: 'Approve' }).click()
   expect((await adding).output).toContain('Lead added')
+  await page.getByRole('button', { name: 'Leads', exact: true }).click()
   await expect(page.getByRole('listitem', { name: 'Grace Hopper' })).toBeVisible()
 
   await page.getByRole('listitem', { name: 'Ada Lovelace' }).getByRole('button', { name: 'Delete' }).click()
