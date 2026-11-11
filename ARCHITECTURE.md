@@ -111,6 +111,13 @@ Leads view ── leads:list/save/delete ──▶ db/leads.ts (migration 6)    
 ```
 Pure: `src/shared/leads.ts` (validation, patches, `pipelineSummary`), `src/shared/webhooks.ts` (URL rules, payload, data/secret checks). Webhook names are offered to the model as an enum (`specsForRequest`).
 
+## n8n oversight + briefing (Sprint 21)
+```
+Settings → Connections → n8n ── n8n:connect/status/remove ──▶ main/n8n.ts (safeStorage n8n.json; n8nGet = the only call, GET)
+n8n_check_automations (low, automations:read) / Dashboard AutomationsPanel ── automations:report ──▶ GET /api/v1/workflows + /executions?status=error
+Morning briefing: routine template (weekdays 07:30) + toolInstructions briefing line → calendar, reminders, leads, n8n, GitHub
+```
+
 ## Google Calendar (Sprint 19)
 ```
 Settings → Connections → Google ── google:save-client/connect/cancel/disconnect/status ──▶ main/google.ts (safeStorage google.json)

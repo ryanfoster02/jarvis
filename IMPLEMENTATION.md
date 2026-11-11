@@ -1,6 +1,6 @@
 # IMPLEMENTATION
 
-Current phase: Phase 5 / Sprint 20 — Gmail drafts
+Current phase: Phase 5 complete (Sprint 21 — n8n oversight + morning briefing); next: owner verification, then Phase 6 planning
 
 Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ not started
 
@@ -247,8 +247,17 @@ Owner chose to go without an Apple Developer account for now, so no code signing
 - ✅ Tests: 7 unit incl. header-injection refusal, MIME round trip with non-ASCII, and a source scan proving no send endpoint/scope exists; e2e: tool refused without access, Gmail switch, consent URL asks for compose. CI run 42977889823: 168 unit tests per OS; e2e 28 (macOS/Windows), 24 + 5 skipped (Linux)
 - 🟡 Owner: enable the **Gmail API** in the Google Cloud project, switch on Gmail drafts, Reconnect Google, then ask "draft an email to … about …" and check Gmail → Drafts
 
-### Sprint 21 — Automation oversight + morning briefing ⬜
-Self-hosted n8n API (read-only: workflows, failed executions) and a Morning briefing routine: calendar, reminders, overdue leads, GitHub, failed automations — read aloud on request.
+### Sprint 21 — Automation oversight + morning briefing 🟡 (CI green 2026-11-11; live check needs the owner's n8n)
+- ✅ Pure `src/shared/n8n.ts`: address rules (https; http only loopback/private LAN), key shape, list paths, workflow/execution parsing (activeVersionId, archived, recovered retries), report, links, model output
+- ✅ `src/main/n8n.ts`: encrypted address + key, saved only after a successful read; GET-only client
+- ✅ `n8n_check_automations` (low, `automations:read`); dashboard **Automations** panel (only when connected); setup guide counts n8n
+- ✅ **Morning briefing**: the Sprint 13 template merged into one that covers calendar, reminders, overdue leads, n8n failures and GitHub; briefing guidance in the tool instructions so "brief me" works typed or by voice (spoken in Jarvis's voice when voice is on)
+- ✅ Tests: 7 unit (incl. GET-only source check, template names unique, scheduled runs can use every briefing tool); e2e against a real local fake n8n (wrong key refused, every request GET with the key, tool output, dashboard panel). CI run 42980395302: 175 unit tests per OS; e2e 29 (macOS/Windows), 24 + 6 skipped (Linux)
+- Fixed along the way: a second "Morning briefing" template duplicated Sprint 13's (CI caught it)
+- 🟡 Owner: connect n8n, ask "are my automations OK?", then run *Morning briefing* from Routines (or say "brief me")
+
+### Phase 5 summary
+Web research with sources (17), release readiness without signing — backups/restore, update check, draft releases, setup guide (18), Google Calendar read-only (19), Gmail drafts that can't send (20), n8n oversight + morning briefing (21). Every new connection is owner-started, encrypted in main, least-privilege by scope or by construction, and tested against real local servers or a simulated browser where the real service needs the owner's account. Open: code signing (needs an Apple Developer ID), and the owner's live checks of 17–21.
 
 ## Dependencies between stages
 Sprint 3 needs Sprint 1 IPC + vault. Text chat needs Phase 2 provider (an interim direct OpenAI text call may land in Sprint 4). Integrations need permission engine. Scheduler needs permission engine + limits.

@@ -186,3 +186,9 @@ Scope: Electron window/session config, preload bridge, all IPC handlers, credent
 - `gmail_create_draft` is **medium risk with no standing permission**: the owner approves every draft and sees recipients, subject and the start of the body on the card.
 - Input rules: plain addresses only (no display names, comments or line breaks), de-duplicated, at most 20 recipients; one-line subject (no header injection); body ≤ 20,000 characters; anything that looks like a secret is refused before it leaves the machine. The message is built as plain-text RFC 2822 (UTF-8, RFC 2047 subject, base64 body).
 - The model is told to use only addresses the owner gave or that come from the owner's own data, and never to guess one.
+
+## 27. n8n oversight (Sprint 21)
+- **Read-only by construction.** An n8n API key on non-Enterprise plans has full access to the instance (key scopes are Enterprise-only), so JARVIS can't rely on the key: its n8n client has exactly one network call, `GET`, to the workflows and executions list endpoints, with no redirects and a 15 s limit. A unit test checks the source has one `fetch` and no other method; the e2e test runs a real local server and asserts every request was a GET.
+- Address and key are checked with one read before saving, then encrypted with safeStorage (`userData/n8n.json`, 0600); the renderer sees only the host.
+- `https://` is required for instances on the internet; plain `http://` is accepted only for this computer and private network addresses (localhost, 127.0.0.1, ::1, 10/8, 172.16/12, 192.168/16, `.local`), since the key travels in a header. Links to failed runs are offered only for https instances.
+- JARVIS doesn't fetch execution data (`includeData` stays off): only workflow names (the owner's own), statuses and times. `n8n_check_automations` is low risk and can run in scheduled routines.
