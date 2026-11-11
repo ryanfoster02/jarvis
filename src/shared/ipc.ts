@@ -39,6 +39,11 @@ export const Channels = {
   tasksList: 'tasks:list',
   tasksCancel: 'tasks:cancel',
   tasksCancelAction: 'tasks:cancel-action',
+  workflowsList: 'workflows:list',
+  workflowsSave: 'workflows:save',
+  workflowsDelete: 'workflows:delete',
+  workflowsRun: 'workflows:run',
+  workflowsRuns: 'workflows:runs',
 } as const
 
 /** Main → renderer push events. */
@@ -53,6 +58,10 @@ export const Events = {
   reminderFired: 'reminders:fired',
   /** Running tasks changed (carries RunningTask[]). */
   tasksChanged: 'tasks:changed',
+  /** Workflows or their runs changed: reload. */
+  workflowsChanged: 'workflows:changed',
+  /** A workflow run finished (carries WorkflowRunNotice). */
+  workflowFinished: 'workflows:finished',
 } as const
 
 export type Channel = (typeof Channels)[keyof typeof Channels]
@@ -656,7 +665,7 @@ export type ToolInvokeResult = { ok: true; output: string; action: ActionNote } 
  */
 export interface RunningTask {
   id: string
-  kind: 'typed' | 'voice'
+  kind: 'typed' | 'voice' | 'workflow'
   title: string
   startedAt: number
   /** Actions running now. Several when helpers or read-only lookups run in parallel. */
@@ -704,6 +713,53 @@ export interface BackgroundStatus {
   openAtLogin: boolean | null
   /** macOS 13+: 'enabled' | 'requires-approval' | 'not-registered' | 'not-found'; null otherwise. */
   loginItemStatus: string | null
+}
+
+// ---------- Workflows (Sprint 13) ----------
+
+/** Weekly schedule in local time. days: 0 = Sunday … 6 = Saturday. */
+export interface WorkflowSchedule {
+  days: number[]
+  time: string // "HH:mm"
+}
+
+export interface WorkflowRun {
+  id: string
+  workflowId: string
+  trigger: 'manual' | 'schedule'
+  status: 'running' | 'ok' | 'error' | 'cancelled'
+  startedAt: number
+  finishedAt: number | null
+  /** Jarvis's result, or what went wrong. */
+  output: string
+  actions: number
+}
+
+export interface Workflow {
+  id: string
+  workspaceId: WorkspaceId
+  name: string
+  instructions: string
+  schedule: WorkflowSchedule | null
+  enabled: boolean
+  nextRunAt: number | null
+  createdAt: number
+  updatedAt: number
+  lastRun: WorkflowRun | null
+}
+
+export interface WorkflowInput {
+  id?: string
+  name: string
+  instructions: string
+  schedule: WorkflowSchedule | null
+  enabled: boolean
+}
+
+export interface WorkflowRunNotice {
+  run: WorkflowRun
+  workflowName: string
+  workspaceId: WorkspaceId
 }
 
 // ---------- GitHub (Sprint 9) ----------

@@ -25,6 +25,10 @@ import {
   type Reminder,
   type BackgroundStatus,
   type RunningTask,
+  type Workflow,
+  type WorkflowInput,
+  type WorkflowRun,
+  type WorkflowRunNotice,
   type ToolInvokeResult,
   type ToolRun,
 } from '../shared/ipc.ts'
@@ -91,6 +95,23 @@ const api = {
       const listener = (_e: IpcRendererEvent, list: ApprovalRequest[]): void => cb(list)
       ipcRenderer.on(Events.approvalsChanged, listener)
       return () => ipcRenderer.removeListener(Events.approvalsChanged, listener)
+    },
+  },
+  workflows: {
+    list: (): Promise<HistoryResult<Workflow[]>> => ipcRenderer.invoke(Channels.workflowsList),
+    save: (input: WorkflowInput): Promise<HistoryResult<Workflow>> => ipcRenderer.invoke(Channels.workflowsSave, input),
+    delete: (id: string): Promise<HistoryResult<true>> => ipcRenderer.invoke(Channels.workflowsDelete, id),
+    run: (id: string): Promise<HistoryResult<WorkflowRun>> => ipcRenderer.invoke(Channels.workflowsRun, id),
+    runs: (id: string): Promise<HistoryResult<WorkflowRun[]>> => ipcRenderer.invoke(Channels.workflowsRuns, id),
+    onChanged: (cb: () => void): (() => void) => {
+      const listener = (): void => cb()
+      ipcRenderer.on(Events.workflowsChanged, listener)
+      return () => ipcRenderer.removeListener(Events.workflowsChanged, listener)
+    },
+    onFinished: (cb: (n: WorkflowRunNotice) => void): (() => void) => {
+      const listener = (_e: IpcRendererEvent, n: WorkflowRunNotice): void => cb(n)
+      ipcRenderer.on(Events.workflowFinished, listener)
+      return () => ipcRenderer.removeListener(Events.workflowFinished, listener)
     },
   },
   // Stop levels: one action (worker) or one whole request (workflow). Stop all stays on killSwitch.

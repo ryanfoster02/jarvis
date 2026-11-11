@@ -62,6 +62,7 @@ test('renderer is isolated: no Node globals, only the narrow jarvis bridge', asy
     'tools',
     'tts',
     'voice',
+    'workflows',
   ])
 
   // getLastWebPreferences() exists at runtime but is missing from Electron's TypeScript definitions,
@@ -493,5 +494,42 @@ test('helpers: refused without a text-model key; switchable in Permissions', asy
   await page.keyboard.press('ControlOrMeta+,')
   await page.getByRole('button', { name: 'Permissions' }).click()
   await expect(page.getByRole('switch', { name: 'Hand off to a helper' })).toHaveAttribute('aria-checked', 'true')
+  await closeApp(app)
+})
+
+test('routines: create from a template, schedule, run honestly without a key, pause, delete', async () => {
+  test.setTimeout(LAUNCH_BUDGET + 60_000)
+  const { app, page } = await launch(profile)
+  await page.getByRole('button', { name: 'Routines', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Routines', level: 1 })).toBeVisible()
+  await page.getByRole('button', { name: 'New routine' }).click()
+  const editor = page.getByRole('form', { name: 'Routine editor' })
+  await editor.getByRole('button', { name: 'Morning briefing' }).click()
+  await expect(editor.getByLabel('Routine name')).toHaveValue('Morning briefing')
+  await editor.getByRole('button', { name: 'Create' }).click()
+
+  const item = page.getByRole('listitem', { name: 'Morning briefing' })
+  await expect(item).toContainText(/Weekdays at 7:30\sAM · next/)
+
+  // No AI key in the test profile: the run is recorded as failed, with the honest reason.
+  await item.getByRole('button', { name: 'Run now' }).click()
+  const results = item.getByRole('list', { name: 'Results for Morning briefing' })
+  await expect(results.locator('.wf-run').first()).toContainText('Failed')
+  await expect(results.locator('.wf-run').first()).toContainText('No OpenAI key is saved')
+
+  // Pause it: the schedule stays but shows as paused.
+  await item.getByRole('button', { name: 'Edit' }).click()
+  await editor.getByLabel(/^Active/).uncheck()
+  await editor.getByRole('button', { name: 'Save' }).click()
+  await expect(item).toContainText('paused')
+
+  // The result was also posted to the conversation.
+  await page.getByRole('button', { name: 'Dashboard', exact: true }).click()
+  await expect(page.locator('.msg-workflow')).toContainText('Morning briefing (failed)')
+
+  await page.getByRole('button', { name: 'Routines', exact: true }).click()
+  await item.getByRole('button', { name: 'Delete' }).click()
+  await item.getByRole('alertdialog').getByRole('button', { name: 'Delete' }).click()
+  await expect(page.getByText('No routines yet.')).toBeVisible()
   await closeApp(app)
 })

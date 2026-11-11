@@ -90,4 +90,41 @@ export const reminders = sqliteTable(
   (t) => [index('reminders_status_due').on(t.status, t.dueAt), index('reminders_ws_due').on(t.workspaceId, t.dueAt)],
 )
 
-export const schema = { workspaces, conversations, messages, memories, toolRuns, reminders }
+export const workflows = sqliteTable(
+  'workflows',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .$type<WorkspaceId>()
+      .notNull()
+      .references(() => workspaces.id),
+    name: text('name').notNull(),
+    instructions: text('instructions').notNull(),
+    scheduleDays: text('schedule_days'),
+    scheduleTime: text('schedule_time'),
+    enabled: integer('enabled', { mode: 'boolean' }).notNull(),
+    nextRunAt: integer('next_run_at'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (t) => [index('workflows_ws').on(t.workspaceId, t.name), index('workflows_due').on(t.enabled, t.nextRunAt)],
+)
+
+export const workflowRuns = sqliteTable(
+  'workflow_runs',
+  {
+    id: text('id').primaryKey(),
+    workflowId: text('workflow_id')
+      .notNull()
+      .references(() => workflows.id, { onDelete: 'cascade' }),
+    trigger: text('trigger', { enum: ['manual', 'schedule'] }).notNull(),
+    status: text('status', { enum: ['running', 'ok', 'error', 'cancelled'] }).notNull(),
+    startedAt: integer('started_at').notNull(),
+    finishedAt: integer('finished_at'),
+    output: text('output').notNull(),
+    actions: integer('actions').notNull(),
+  },
+  (t) => [index('workflow_runs_wf').on(t.workflowId, t.startedAt)],
+)
+
+export const schema = { workspaces, conversations, messages, memories, toolRuns, reminders, workflows, workflowRuns }

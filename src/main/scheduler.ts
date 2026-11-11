@@ -36,7 +36,8 @@ export const remindersChanged = (): void => {
   for (const fn of changeListeners) fn()
 }
 
-function notify(title: string, body: string): void {
+/** macOS notification (respects Settings → Notifications). Click opens JARVIS. */
+export function notify(title: string, body: string): void {
   if (!loadSettings().reminderNotifications || !Notification.isSupported()) return
   const n = new Notification({ title, body })
   live.add(n)

@@ -21,7 +21,7 @@ test('migrations: apply once, record version, idempotent on reopen', () => {
   assert.equal(schemaVersion(db), MIGRATIONS.length)
   assert.equal(migrate(db), MIGRATIONS.length) // no-op
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all().map((r) => (r as { name: string }).name)
-  assert.deepEqual(tables, ['conversations', 'memories', 'messages', 'reminders', 'tool_runs', 'workspaces'])
+  assert.deepEqual(tables, ['conversations', 'memories', 'messages', 'reminders', 'tool_runs', 'workflow_runs', 'workflows', 'workspaces'])
 })
 
 test('migrations: failed migration rolls back and leaves version unchanged', () => {
@@ -128,4 +128,26 @@ test('reminders table: lifecycle values and text length are enforced', () => {
   assert.throws(() => ins.run('d', 'personal', 'x', 10, 'snoozed', 'user', 1), /CHECK/)
   assert.throws(() => ins.run('e', 'personal', 'x', 10, 'pending', 'model', 1), /CHECK/)
   assert.throws(() => ins.run('f', 'nowhere', 'x', 10, 'pending', 'user', 1), /FOREIGN KEY/)
+})
+
+test('workflow tables: schedule pairs, cascade delete of runs', () => {
+  const db = new DatabaseSync(':memory:')
+  configure(db)
+  migrate(db)
+  seedWorkspaces(db)
+  const ins = db.prepare(
+    'INSERT INTO workflows (id, workspace_id, name, instructions, schedule_days, schedule_time, enabled, created_at, updated_at) VALUES (?,?,?,?,?,?,?,1,1)',
+  )
+  ins.run('w1', 'personal', 'Morning', 'Summarise my day.', '1,2,3,4,5', '07:30', 1)
+  ins.run('w2', 'personal', 'Manual', 'Check the repos.', null, null, 0)
+  assert.throws(() => ins.run('w3', 'personal', 'Half', 'Has days but no time.', '1', null, 1), /CHECK/)
+  assert.throws(() => ins.run('w4', 'personal', 'Bad time', 'Twenty-five o clock.', '1', '25:00', 1), /CHECK/)
+  assert.throws(() => ins.run('w5', 'personal', 'Short', 'too short', null, null, 1), /CHECK/)
+  assert.throws(() => ins.run('w6', 'personal', 'Flag', 'Enabled must be 0/1.', null, null, 2), /CHECK/)
+  const run = db.prepare('INSERT INTO workflow_runs (id, workflow_id, trigger, status, started_at) VALUES (?,?,?,?,?)')
+  run.run('r1', 'w1', 'schedule', 'running', 1)
+  assert.throws(() => run.run('r2', 'w1', 'cron', 'running', 1), /CHECK/)
+  assert.throws(() => run.run('r3', 'w1', 'manual', 'done', 1), /CHECK/)
+  db.prepare("DELETE FROM workflows WHERE id = 'w1'").run()
+  assert.equal((db.prepare('SELECT count(*) AS n FROM workflow_runs').get() as { n: number }).n, 0, 'runs deleted with their routine')
 })

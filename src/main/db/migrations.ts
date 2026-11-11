@@ -76,6 +76,35 @@ export const MIGRATIONS: readonly string[] = [
   CREATE INDEX reminders_status_due ON reminders(status, due_at);
   CREATE INDEX reminders_ws_due ON reminders(workspace_id, due_at);
   `,
+  // 5 — workflows (Sprint 13): saved routines and their runs (last 20 kept per routine).
+  `
+  CREATE TABLE workflows (
+    id             TEXT PRIMARY KEY,
+    workspace_id   TEXT NOT NULL REFERENCES workspaces(id),
+    name           TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 60),
+    instructions   TEXT NOT NULL CHECK (length(instructions) BETWEEN 10 AND 2000),
+    schedule_days  TEXT CHECK (schedule_days IS NULL OR schedule_days GLOB '[0-6]*'),
+    schedule_time  TEXT CHECK (schedule_time IS NULL OR schedule_time GLOB '[01][0-9]:[0-5][0-9]' OR schedule_time GLOB '2[0-3]:[0-5][0-9]'),
+    enabled        INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+    next_run_at    INTEGER,
+    created_at     INTEGER NOT NULL,
+    updated_at     INTEGER NOT NULL,
+    CHECK ((schedule_days IS NULL) = (schedule_time IS NULL))
+  );
+  CREATE INDEX workflows_ws ON workflows(workspace_id, name);
+  CREATE INDEX workflows_due ON workflows(enabled, next_run_at);
+  CREATE TABLE workflow_runs (
+    id           TEXT PRIMARY KEY,
+    workflow_id  TEXT NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+    trigger      TEXT NOT NULL CHECK (trigger IN ('manual', 'schedule')),
+    status       TEXT NOT NULL CHECK (status IN ('running', 'ok', 'error', 'cancelled')),
+    started_at   INTEGER NOT NULL,
+    finished_at  INTEGER,
+    output       TEXT NOT NULL DEFAULT '' CHECK (length(output) <= 4000),
+    actions      INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX workflow_runs_wf ON workflow_runs(workflow_id, started_at);
+  `,
 ]
 
 export function schemaVersion(db: DatabaseSync): number {

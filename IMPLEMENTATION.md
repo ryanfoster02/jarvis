@@ -1,6 +1,6 @@
 # IMPLEMENTATION
 
-Current phase: Phase 4 / Sprint 12 — Bounded helper agents
+Current phase: Phase 4 / Sprint 13 — Workflows (saved routines)
 
 Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ not started
 
@@ -151,7 +151,7 @@ Tool execution with approvals and the execution log already landed in Sprint 8.
 ## Phase 4 — Advanced
 Bounded subagents (depth 1, ≤2 concurrent) · multi-step workflows · business workflows (leads, CRM, n8n, reports) · Windows/Linux builds · performance.
 
-### Sprint 12 — Bounded helper agents 🟡
+### Sprint 12 — Bounded helper agents ✅ (owner moved on 2026-11-10)
 A `delegate` tool hands a focused, self-contained research subtask to a helper agent. Helpers get read-only (low-risk) tools only, never `delegate` (depth 1), their own small budget (counted against the parent request too), and at most 2 run at once. Low-risk calls in one model turn run in parallel, so two helpers work side by side. Helpers show as actions of their request in Running and can be stopped individually.
 - ✅ Contract: `delegate` tool (low risk, scope `agents:delegate`), `HELPER_LIMITS`, `maxConcurrentHelpers: 2`, `RunningTask.actions[]`
 - ✅ Pure: `src/shared/helpers.ts` (validation, depth rule, read-only toolset, prompt, report); `runAgent` runs consecutive low-risk calls in parallel (results in model order), adds tool-internal spend to the budget, reports taint — tested (two helpers overlap; approval-needing calls wait their turn; helper spend hits the cap)
@@ -159,10 +159,18 @@ A `delegate` tool hands a focused, self-contained research subtask to a helper a
 - ✅ Main: `runHelper` in the executor (≤2 app-wide, depth check, provider key, own budget, same stop signal, Activity prefix "Helper ·"); executor refuses non-low-risk tools from helpers; scope granted only with a text-model key; Running shows "Helper: <subtask>"
 - ✅ UI: Running lists every action with its own Stop; limits panel shows helper limits
 - ✅ Tests: 4 new unit tests + registry rewrite; 1 new e2e test (refused without a key; switch in Permissions)
-- 🟡 Needs owner verification: typecheck, `npm test`, `npm run test:e2e`; then with a key ask something with two independent parts, e.g. "compare the open issues in repo A and repo B" (watch two helpers in Running; try stopping one)
+- ✅ Owner moved on (live two-helper check with a key still recommended)
 
-### Sprint 13 — Workflows ⬜
-Saved multi-step routines (e.g. a morning briefing) run on demand or on a schedule, under the same permissions, approvals and limits.
+### Sprint 13 — Workflows (saved routines) 🟡
+Saved routines (name + instructions, optional weekly schedule) per workspace, run on demand or by the scheduler while JARVIS runs. Same agent loop, tools, helpers, limits, stop levels and kill switch as typed requests. Scheduled (unattended) runs get read-only tools only; manual runs use normal approvals. Results kept per routine (last 20) and announced by notification and in the conversation. Starter templates.
+- ✅ Contract: `Workflow`, `WorkflowRun`, `WorkflowInput`, 5 channels + 2 events, `RunningTask.kind 'workflow'`
+- ✅ Pure (`src/shared/workflows.ts`): validation, `nextRun` in local time (incl. DST), schedule wording, run message, read-only toolset for scheduled runs, 3 templates — tested in a fixed time zone
+- ✅ Storage: migration 5 (`workflows`, `workflow_runs`, CHECKs incl. time format — a test caught `25:00` slipping through and the rule was tightened; runs cascade) — constraint test here; Drizzle store (scoped, keeps last 20 runs, stale-run cleanup, no catch-up) — 2 tests on the Mac
+- ✅ Main: `src/main/workflows.ts` (start checks, background run via the shared pipeline, `readOnly` executor guard when scheduled, results, notification, events; 30 s schedule tick, skipped-when-busy recorded); `executeTracked` shared with typed requests
+- ✅ UI: **Routines** screen (templates, editor with days/time/active, Run now, results history, delete with confirmation), routine results in the conversation, Running shows "Routine: …" with Stop request
+- ✅ Tests: 4 new unit tests + SQL test; 2 Drizzle tests and 1 e2e test (template → schedule → honest failed run without a key → pause → delete) on the Mac
+- 🟡 Needs owner verification: typecheck, `npm test`, `npm run test:e2e`; then with a key create a Morning briefing, press Run now, and schedule one a few minutes ahead with the app open
+- ⬜ Run history export; per-routine tool restrictions
 
 ### Sprint 14 — Windows & Linux builds ⬜
 Packaging, platform checks (tray, notifications, login items), CI matrix.

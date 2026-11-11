@@ -1681,3 +1681,165 @@ select {
 .running-actions li {
   grid-template-columns: minmax(0, 1fr) auto auto;
 }
+
+/* ---------- Routines (Sprint 13) ---------- */
+.workflow-editor {
+  display: grid;
+  gap: 12px;
+}
+.workflow-editor input:not([type='checkbox']),
+.workflow-editor textarea {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 75%, transparent);
+  color: var(--ink);
+  font: inherit;
+  outline: none;
+  color-scheme: dark;
+}
+.workflow-editor textarea {
+  min-height: 96px;
+  field-sizing: content;
+  max-height: 260px;
+  resize: none;
+  user-select: text;
+}
+.workflow-editor input:focus,
+.workflow-editor textarea:focus {
+  border-color: var(--accent);
+}
+.wf-field {
+  display: grid;
+  gap: 6px;
+}
+.templates {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 14px;
+}
+.wf-schedule {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+}
+.wf-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--t-sm);
+  color: var(--dim);
+}
+.wf-check input {
+  accent-color: var(--accent);
+}
+.wf-days {
+  display: flex;
+  gap: 4px;
+}
+.wf-day {
+  position: relative;
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  font: 400 var(--t-micro) var(--font-mono);
+  color: var(--dim);
+  cursor: pointer;
+}
+.wf-day input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.wf-day.is-on {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.wf-day:focus-within {
+  outline: 1px solid var(--accent);
+}
+.wf-time {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--t-sm);
+  color: var(--dim);
+}
+.wf-time input {
+  width: auto !important;
+}
+.workflow-item {
+  padding: 12px 0;
+  border-top: 1px solid var(--line-soft);
+}
+.workflow-item:first-child {
+  border-top: none;
+}
+.wf-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+.wf-main {
+  min-width: 0;
+  flex: 1;
+}
+.wf-name {
+  font-size: var(--t-md, 15px);
+  font-weight: 500;
+}
+.wf-status.status-ok {
+  color: var(--ok);
+}
+.wf-status.status-error {
+  color: var(--danger);
+}
+.wf-status.status-running,
+.wf-status.status-cancelled {
+  color: var(--attention);
+}
+.wf-runs {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.wf-run {
+  padding: 8px 12px;
+  border-left: 2px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 50%, transparent);
+}
+.wf-run.status-ok {
+  border-left-color: var(--ok);
+}
+.wf-run.status-error {
+  border-left-color: var(--danger);
+}
+.wf-run.status-cancelled,
+.wf-run.status-running {
+  border-left-color: var(--attention);
+}
+.wf-output {
+  margin-top: 6px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+  font-size: var(--t-sm);
+}
+.msg-workflow p {
+  padding: 9px 13px;
+  border-left: 2px solid var(--ok);
+  background: color-mix(in srgb, var(--ok) 6%, transparent);
+  white-space: pre-wrap;
+}
+.msg-workflow .msg-who {
+  color: var(--ok);
+}
+.msg-workflow.tone-error p {
+  border-left-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 6%, transparent);
+}

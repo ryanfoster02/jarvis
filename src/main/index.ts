@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url'
 import { registerIpc, type HistoryStore } from './ipc.ts'
 import { openDatabase } from './db/client.ts'
 import { startScheduler, stopScheduler } from './scheduler.ts'
+import { startWorkflowScheduler, stopWorkflowScheduler } from './workflows.ts'
 import { initBackground, onAllWindowsClosed, shouldStartHidden } from './background.ts'
 import { registerWindowFactory, showMainWindow } from './windows.ts'
 import { engage } from './killswitch.ts'
@@ -202,6 +203,9 @@ void app.whenReady().then(() => {
   // Reminders fire while the app runs — with background mode, also while the window is closed.
   if (history.database) void startScheduler(history.database.db)
   app.on('will-quit', stopScheduler)
+  // Saved routines on a schedule (Sprint 13): same rule — only while JARVIS runs.
+  if (history.database) void startWorkflowScheduler(history.database.db)
+  app.on('will-quit', stopWorkflowScheduler)
 
   app.on('activate', () => showMainWindow())
 })

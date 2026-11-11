@@ -223,7 +223,7 @@ function RunningSection({ list, onStopTask, onStopAction }: { list: RunningTask[
               </ul>
             )}
             <div className="approval-actions">
-              {t.kind === 'typed' && (
+              {(t.kind === 'typed' || t.kind === 'workflow') && (
                 <button className="btn btn-deny" onClick={() => onStopTask(t.id)}>
                   Stop request
                 </button>

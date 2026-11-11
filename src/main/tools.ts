@@ -14,7 +14,8 @@ import {
   type ToolSource,
   type WorkspaceId,
 } from '../shared/ipc.ts'
-import type { ExecutedTool } from '../shared/agent.ts'
+import type { ExecutedTool, ToolCall } from '../shared/agent.ts'
+import type { TaskHandle } from '../shared/taskRegistry.ts'
 import { decide, isOffered, RunBudget, type PermissionContext } from '../shared/permissions.ts'
 import { parseToolArgs, specsForRequest, summarizeToolCall, ToolArgsError, TOOLS, type ToolArgs, type ToolScope } from '../shared/tools.ts'
 import { requestApproval } from './approvals.ts'
@@ -52,6 +53,31 @@ export interface ToolContext {
   depth?: number
   /** Prefix for Activity summaries (e.g. "Helper · "). */
   summaryPrefix?: string
+  /** Unattended run (a scheduled routine): only low-risk tools, whatever the model asks for. */
+  readOnly?: boolean
+}
+
+/** Running-panel label for an action; helpers show their subtask. */
+export function actionTitle(name: ToolName, args: unknown): string {
+  if (name !== 'delegate') return TOOLS[name].title
+  try {
+    const task = (typeof args === 'string' ? JSON.parse(args) : args) as { task?: unknown }
+    if (typeof task?.task === 'string') return `Helper: ${task.task.replace(/\s+/g, ' ').trim()}`
+  } catch {
+    /* fall through */
+  }
+  return TOOLS.delegate.title
+}
+
+/** Execute a model's tool call as a tracked action of `task`, so it shows in Running and can be stopped. */
+export async function executeTracked(task: TaskHandle, call: ToolCall, ctx: ToolContext): Promise<ExecutedTool> {
+  if (!isToolName(call.name)) return executeTool(call.name, call.arguments, ctx) // refused immediately
+  const action = task.beginAction(call.name, actionTitle(call.name, call.arguments))
+  try {
+    return await executeTool(call.name, call.arguments, { ...ctx, signal: action.signal })
+  } finally {
+    action.end()
+  }
 }
 
 /** A helper that failed still spent money; carry the spend so the parent budget counts it. */
@@ -306,10 +332,13 @@ export async function executeTool(rawName: string, rawArgs: unknown, ctx: ToolCo
   const name = rawName
   const spec = TOOLS[name]
 
-  // Helpers are read-only, whatever their model asks for (it's only offered low-risk tools, but never trust that).
-  if ((ctx.depth ?? 0) > 0 && (spec.risk !== 'low' || name === 'delegate')) {
-    const note = await record(ctx, name, `${ctx.summaryPrefix ?? ''}${spec.title}`, 'blocked', 'skipped', 'Helpers can only use read-only tools', started)
-    return { output: 'Not run: helpers can only use read-only tools.', isError: true, note, waitedMs: 0 }
+  // Helpers and scheduled routines are read-only, whatever their model asks for (they're only offered
+  // low-risk tools, but never trust that).
+  const helper = (ctx.depth ?? 0) > 0
+  if ((helper || ctx.readOnly) && (spec.risk !== 'low' || (helper && name === 'delegate'))) {
+    const who = helper ? 'Helpers' : 'Scheduled routines'
+    const note = await record(ctx, name, `${ctx.summaryPrefix ?? ''}${spec.title}`, 'blocked', 'skipped', `${who} can only use read-only tools`, started)
+    return { output: `Not run: ${who.toLowerCase()} can only use read-only tools.`, isError: true, note, waitedMs: 0 }
   }
 
   let args: ToolArgs[ToolName]

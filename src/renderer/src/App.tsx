@@ -29,6 +29,7 @@ import { describeAction } from '../../shared/tools.ts'
 import { StateLegend } from './components/StateLegend.tsx'
 import { StatusTerminal, type Telemetry } from './components/StatusTerminal.tsx'
 import { TopBar, type View } from './components/TopBar.tsx'
+import { WorkflowsView } from './components/WorkflowsView.tsx'
 import { useVoice, type VoiceActivity, type VoicePhase } from './voice/useVoice.ts'
 
 const ACTIVITY_TO_CORE: Record<VoiceActivity, CoreState> = {
@@ -266,6 +267,23 @@ export function App(): React.JSX.Element {
     return () => {
       offApprovals()
       offLogged()
+    }
+  }, [])
+
+  // ---- Saved routines (Sprint 13): results go to the conversation of their workspace ----
+  const [workflowsVersion, setWorkflowsVersion] = useState(0)
+  useEffect(() => {
+    if (!window.jarvis) return
+    const offChanged = window.jarvis.workflows.onChanged(() => setWorkflowsVersion((v) => v + 1))
+    const offFinished = window.jarvis.workflows.onFinished((n) => {
+      if (n.workspaceId !== settingsRef.current?.activeWorkspace) return
+      const tone = n.run.status === 'ok' ? undefined : 'error'
+      const head = n.run.status === 'ok' ? n.workflowName : `${n.workflowName} (${n.run.status === 'cancelled' ? 'stopped' : 'failed'})`
+      setEntries((e) => [...e, { id: newId(), role: 'workflow', text: `${head}\n${n.run.output}`, at: new Date(), via: 'text', ...(tone ? { tone } : {}) }])
+    })
+    return () => {
+      offChanged()
+      offFinished()
     }
   }, [])
 
@@ -566,6 +584,8 @@ export function App(): React.JSX.Element {
           </div>
         ) : view === 'memory' ? (
           <MemoryView workspaceName={workspace.name} refreshKey={memoryVersion} />
+        ) : view === 'routines' ? (
+          <WorkflowsView workspaceName={workspace.name} refreshKey={workflowsVersion} halted={halted} />
         ) : settings && creds ? (
           <SettingsView
             settings={settings}

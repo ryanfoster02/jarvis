@@ -5,7 +5,7 @@ import type { VoiceActivity, VoicePhase } from '../voice/useVoice.ts'
 export interface Entry {
   id: string
   /** 'action' = a tool Jarvis used (or tried to); shown in the conversation, kept in the action log. */
-  role: 'user' | 'assistant' | 'system' | 'action' | 'reminder'
+  role: 'user' | 'assistant' | 'system' | 'action' | 'reminder' | 'workflow'
   /** For actions: how it ended. */
   tone?: 'ok' | 'skipped' | 'error'
   text: string
@@ -54,7 +54,7 @@ interface Props {
   onOpenSettings: () => void
 }
 
-const WHO: Record<Entry['role'], string> = { user: 'You', assistant: 'Jarvis', system: 'Jarvis system', action: 'Jarvis action', reminder: 'Reminder' }
+const WHO: Record<Entry['role'], string> = { user: 'You', assistant: 'Jarvis', system: 'Jarvis system', action: 'Jarvis action', reminder: 'Reminder', workflow: 'Routine' }
 
 const shortDate = (ms: number): string => {
   const d = new Date(ms)

@@ -22,6 +22,8 @@ import {
   type Reminder,
   type BackgroundStatus,
   type RunningTask,
+  type Workflow,
+  type WorkflowRun,
   isToolName,
   DEFAULT_LIMITS,
   type ApprovalRequest,
@@ -62,8 +64,11 @@ import {
 import { remindersChanged } from './scheduler.ts'
 import { applyBackground, backgroundStatus } from './background.ts'
 import { tasks } from './tasks.ts'
+import { deleteWorkflow, getWorkflow, listRuns, listWorkflows, saveWorkflow, WorkflowLimitError, WorkflowNotFoundError } from './db/workflows.ts'
+import { startWorkflow, WorkflowBusyError, workflowsChanged } from './workflows.ts'
+import { validateWorkflowInput } from '../shared/workflows.ts'
 import { parseWhen, SNOOZE_MINUTES, validateReminderText } from '../shared/reminders.ts'
-import { executeTool, permissionContext } from './tools.ts'
+import { executeTool, executeTracked, permissionContext } from './tools.ts'
 import { answerApproval, listApprovals } from './approvals.ts'
 import { listToolRuns } from './db/toolRuns.ts'
 import { TEXT_PROVIDER_IMPLS } from './textProviders.ts'
@@ -94,18 +99,6 @@ const limits = {
   keys: new RateLimiter(LIMITS.keyChecksPerMinute, 60_000),
   tools: new RateLimiter(LIMITS.toolCallsPerMinute, 60_000),
 }
-/** Running-panel label for an action; helpers show their subtask. */
-function actionTitle(name: ToolName, args: unknown): string {
-  if (name !== 'delegate') return TOOLS[name].title
-  try {
-    const task = (typeof args === 'string' ? JSON.parse(args) : args) as { task?: unknown }
-    if (typeof task?.task === 'string') return `Helper: ${task.task.replace(/\s+/g, ' ').trim()}`
-  } catch {
-    /* fall through */
-  }
-  return TOOLS.delegate.title
-}
-
 const SLOW_DOWN = 'Too many requests in the last minute. Wait a moment and try again.'
 /** The current voice session has read untrusted content (SECURITY.md §7); reset on each voice connect. */
 let voiceUntrusted = false
@@ -251,16 +244,7 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
           send: (b, signal) => provider.send(key, b, signal),
           parse: provider.parse,
           cost: (u) => estimateTextCostUsd(settings.textModel, u),
-          execute: async (call, state) => {
-            const ctx = { ...toolCtx, untrusted: state.untrusted }
-            if (!isToolName(call.name)) return executeTool(call.name, call.arguments, ctx) // refused immediately
-            const action = task.beginAction(call.name, actionTitle(call.name, call.arguments))
-            try {
-              return await executeTool(call.name, call.arguments, { ...ctx, signal: action.signal })
-            } finally {
-              action.end()
-            }
-          },
+          execute: (call, state) => executeTracked(task, call, { ...toolCtx, untrusted: state.untrusted }),
           budget: new RunBudget(DEFAULT_LIMITS),
           halted: isHalted,
           signal: task.signal,
@@ -751,6 +735,84 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
       if (typeof id !== 'string' || id.length > 64) return false
       if (actionId !== undefined && (typeof actionId !== 'string' || actionId.length > 64)) return false
       return tasks.cancelAction(id, actionId)
+    }),
+  )
+
+  // ---------- Workflows / saved routines (Sprint 13), scoped to the active workspace ----------
+  const workflowError = (err: unknown): { ok: false; code: 'invalid_input' | 'not_found'; message: string } => {
+    if (err instanceof IpcValidationError || err instanceof WorkflowLimitError || err instanceof WorkflowBusyError) {
+      return { ok: false, code: 'invalid_input', message: err.message }
+    }
+    if (err instanceof WorkflowNotFoundError) return { ok: false, code: 'not_found', message: err.message }
+    throw err
+  }
+
+  ipcMain.handle(
+    Channels.workflowsList,
+    guard(async (): Promise<HistoryResult<Workflow[]>> => {
+      const db = history.database?.db
+      if (!db) return unavailable()
+      return { ok: true, value: await listWorkflows(db, activeWorkspace()) }
+    }),
+  )
+
+  ipcMain.handle(
+    Channels.workflowsSave,
+    guard(async (input: unknown): Promise<HistoryResult<Workflow>> => {
+      const db = history.database?.db
+      if (!db) return unavailable()
+      try {
+        const w = await saveWorkflow(db, activeWorkspace(), validateWorkflowInput(input))
+        workflowsChanged()
+        return { ok: true, value: w }
+      } catch (err) {
+        return workflowError(err)
+      }
+    }),
+  )
+
+  ipcMain.handle(
+    Channels.workflowsDelete,
+    guard(async (id: unknown): Promise<HistoryResult<true>> => {
+      const db = history.database?.db
+      if (!db) return unavailable()
+      try {
+        await deleteWorkflow(db, activeWorkspace(), validateConversationId(id))
+        workflowsChanged()
+        return { ok: true, value: true }
+      } catch (err) {
+        return workflowError(err)
+      }
+    }),
+  )
+
+  ipcMain.handle(
+    Channels.workflowsRun,
+    guard(async (id: unknown): Promise<HistoryResult<WorkflowRun>> => {
+      const db = history.database?.db
+      if (!db) return unavailable()
+      try {
+        if (!limits.chat.take()) return { ok: false, code: 'invalid_input', message: SLOW_DOWN }
+        const wf = await getWorkflow(db, activeWorkspace(), validateConversationId(id))
+        const { run, done } = await startWorkflow(db, wf, 'manual')
+        void done.catch((err: unknown) => console.error('[workflows] run failed:', err))
+        return { ok: true, value: run } // runs in the background; the result arrives as an event
+      } catch (err) {
+        return workflowError(err)
+      }
+    }),
+  )
+
+  ipcMain.handle(
+    Channels.workflowsRuns,
+    guard(async (id: unknown): Promise<HistoryResult<WorkflowRun[]>> => {
+      const db = history.database?.db
+      if (!db) return unavailable()
+      try {
+        return { ok: true, value: await listRuns(db, activeWorkspace(), validateConversationId(id)) }
+      } catch (err) {
+        return workflowError(err)
+      }
     }),
   )
 }

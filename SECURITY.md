@@ -139,3 +139,10 @@ Scope: Electron window/session config, preload bridge, all IPC handlers, credent
 - **Untrusted propagation.** If a helper read GitHub content, its report is labelled as such and the parent request is treated as having read untrusted content (§16): standing permissions stop applying.
 - **Stop levels.** Each helper is an action of its request: *Stop* on that helper aborts its model calls and lookups; *Stop request* and Stop all stop all helpers. Helper lookups appear in Activity prefixed "Helper ·".
 - **Requires the typed-replies key** (`agents:delegate` scope granted only when the provider behind the chosen text model has a key). Switchable in Settings → Permissions.
+
+## 20. Routines / workflows (Sprint 13)
+- **Owner-authored.** Routines are created and edited only by the owner in the Routines screen (validated in main: name ≤60, instructions 10–2 000 characters, secrets refused, weekly schedule in local time). Jarvis has no tool to create, change or run routines.
+- **Same pipeline.** A run is a typed request whose message is the routine: same agent loop, tools, helpers, permissions, approvals, limits ($1, 2 minutes…), stop levels and kill switch. It counts toward the 2 requests at once.
+- **Unattended = read-only.** Scheduled runs are offered only low-risk tools, and the executor refuses anything else (`readOnly`), so nothing is saved, set, deleted or approved while you may be away; the routine is told to report actions instead. Runs you start yourself use normal approvals.
+- **Only while JARVIS runs.** No OS scheduler or helper. Times missed while JARVIS was closed are skipped (no catch-up burst); a run that was busy at its time is recorded as skipped. Runs interrupted by quitting are closed as stopped at next launch. Stop all prevents runs from starting.
+- **Results** (≤4 000 characters, last 20 per routine) are stored locally, shown in Routines and the conversation, and announced by a notification (respects Settings → Notifications).

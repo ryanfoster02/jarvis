@@ -2,7 +2,7 @@
 
 Local-first, voice-capable desktop assistant. Electron + React + TypeScript (electron-vite).
 
-**Status:** Phase 1 complete (desktop app, dashboard, voice, typed chat, packaging). Phase 2 added memory, Claude for typed replies, and tools with approvals. Phase 3 is complete (GitHub read-only, reminders, menu-bar mode, finer stop controls). Phase 4 has started with bounded helper agents. The UI says what isn't available yet. See [IMPLEMENTATION.md](IMPLEMENTATION.md).
+**Status:** Phase 1 complete (desktop app, dashboard, voice, typed chat, packaging). Phase 2 added memory, Claude for typed replies, and tools with approvals. Phase 3 is complete (GitHub read-only, reminders, menu-bar mode, finer stop controls). Phase 4 has started: bounded helper agents and saved routines. The UI says what isn't available yet. See [IMPLEMENTATION.md](IMPLEMENTATION.md).
 
 ## Requirements
 - macOS (Apple Silicon or Intel). Windows/Linux later.
@@ -61,6 +61,7 @@ Open `.env` and paste your keys after `OPENAI_API_KEY=` and `ELEVENLABS_API_KEY=
 
 ## Using the app
 - **Actions & approvals:** Jarvis can check the time and look up, save and delete memories, typed or by voice ("remember that I take my coffee black", "forget that"). Saving asks you first in the dashboard's **Approvals** panel (or turn on *Save memories without asking* in Settings → Permissions); deleting always asks. Everything Jarvis does or tries is listed under **Activity**. Unanswered requests expire after 2 minutes; **Stop all** answers them with no. Switch any tool off in Settings → Permissions.
+- **Routines:** the **Routines** tab holds saved instructions — e.g. a *Morning briefing* (start from a template). Press **Run now**, or schedule it (days + time). Results appear in the routine's history, in the conversation and as a notification. Scheduled runs only look things up (they never save, set or delete anything while you may be away) and run only while JARVIS is running.
 - **Helpers:** for bigger questions with independent parts ("compare the open issues in my two repos"), Jarvis can hand each part to a helper agent — up to two at once, working in parallel. Helpers can only look things up (read-only tools), can't start helpers of their own, and each has a small budget that also counts toward your request's limit. You'll see them under **Running** with their own **Stop**. Switch off in Settings → Permissions (*Hand off to a helper*).
 - **Stopping things:** while Jarvis is answering, the **Send** button becomes **Stop** (stops that request). The dashboard's **Running** panel shows what's in progress with **Stop action** (just the current step) and **Stop request**. **Stop all** (top bar, ⌘⇧., or the menu-bar icon) still halts everything.
 - **Menu-bar mode:** Settings → Notifications → *Keep running in the menu bar*. Closing the window then leaves JARVIS in the menu bar so reminders still fire (voice always stops with the window). Optional *Open at login* in the installed app. Quit from the menu-bar icon or with ⌘Q.

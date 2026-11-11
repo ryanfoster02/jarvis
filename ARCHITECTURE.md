@@ -103,6 +103,17 @@ tasks:cancel → workflow · tasks:cancel-action → worker · Stop all → task
 tasks:changed event → Ops column "Running" (Stop action / Stop request) + composer Stop button
 ```
 
+## Routines / workflows (Sprint 13)
+```
+Routines view ── workflows:save/delete/run/runs ──▶ db/workflows.ts (workflows, workflow_runs; migration 5)
+workflows:run / scheduler tick (30 s, main/workflows.ts) ──▶ startWorkflow: checks (halted, busy, already running) → startRun
+   └─ execute: buildProviderRequest(persona + memories + workflowMessage, tools = workflowTools(trigger))
+        └─ runAgent (task kind "workflow", executeTracked, parallel low-risk, budget, stop signal; readOnly when scheduled)
+   └─ finishRun → workflows:finished (conversation) + workflows:changed + notification
+startup: closeStaleRuns, rescheduleAll(now) (no catch-up)
+```
+Pure rules in `src/shared/workflows.ts` (validation, `nextRun`, `describeSchedule`, `workflowMessage`, `workflowTools`, templates).
+
 ## Helper agents (Sprint 12)
 ```
 Jarvis (depth 0) ── delegate{task} ×2 in one turn ──▶ runAgent runs low-risk calls in parallel
