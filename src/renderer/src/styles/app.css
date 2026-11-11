@@ -113,7 +113,9 @@ select {
   position: relative;
   height: 100%;
   display: grid;
-  grid-template-rows: 70px 1fr;
+  grid-template-rows: 70px minmax(0, 1fr);
+  /* One column that never grows past the window, whatever its content wants. */
+  grid-template-columns: minmax(0, 1fr);
 }
 .shell[data-halted]::after {
   content: '';
@@ -132,10 +134,14 @@ select {
 .topbar-frame {
   --k: 12px;
   height: 46px;
+  min-width: 0;
   display: flex;
   align-items: center;
-  gap: 26px;
+  gap: clamp(10px, 1.6vw, 26px);
   padding: 0 10px 0 16px;
+}
+.topbar-frame > * {
+  flex-shrink: 0;
 }
 .topbar button,
 .topbar select,
@@ -181,7 +187,8 @@ select {
   text-shadow: 0 0 10px color-mix(in srgb, var(--accent) 55%, transparent);
 }
 .topbar-spacer {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
 }
 .chip {
   display: inline-flex;
@@ -206,6 +213,8 @@ select {
 }
 .chip-select select {
   appearance: none;
+  max-width: 18ch;
+  text-overflow: ellipsis;
   border: none;
   background: none;
   font: inherit;
@@ -264,7 +273,7 @@ select {
 .dashboard {
   height: 100%;
   display: grid;
-  grid-template-columns: minmax(270px, 320px) minmax(320px, 1fr) minmax(320px, 390px);
+  grid-template-columns: minmax(270px, 320px) minmax(0, 1fr) minmax(320px, 390px);
   gap: 22px;
   padding: 18px 22px 22px;
 }
@@ -1928,4 +1937,68 @@ select {
 }
 .webhook-form input:focus {
   border-color: var(--accent);
+}
+
+/* ---------- Fit smaller windows ---------- */
+@media (max-width: 1320px) {
+  .chip-extra {
+    display: none;
+  }
+  .chip-select select {
+    max-width: 17ch;
+  }
+  .nav button {
+    letter-spacing: 0.12em;
+    padding: 8px 7px;
+  }
+  .chip {
+    letter-spacing: 0.1em;
+    padding: 0 10px;
+  }
+  .dashboard {
+    grid-template-columns: minmax(240px, 290px) minmax(0, 1fr) minmax(280px, 350px);
+    gap: 16px;
+    padding: 16px 16px 18px;
+  }
+  .settings {
+    grid-template-columns: 180px minmax(0, 800px);
+    gap: 20px;
+    padding: 18px 20px;
+  }
+}
+@media (max-width: 1120px) {
+  .wordmark {
+    display: none;
+  }
+  .topbar {
+    padding-right: 14px;
+  }
+  .dashboard {
+    grid-template-columns: minmax(220px, 260px) minmax(0, 1fr) minmax(260px, 320px);
+    gap: 12px;
+    padding: 12px;
+  }
+  .telemetry div {
+    padding: 8px;
+  }
+}
+@media (max-width: 960px) {
+  /* Too narrow for three columns: the core gives way and the page scrolls. */
+  .stage {
+    overflow-y: auto;
+  }
+  .dashboard {
+    height: auto;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .dashboard .core-stage {
+    grid-column: 1 / -1;
+    order: -1;
+  }
+  .dashboard .core {
+    width: min(100%, 300px);
+  }
+  .dashboard .conversation {
+    min-height: 520px;
+  }
 }

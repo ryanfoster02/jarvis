@@ -63,7 +63,8 @@ export function TopBar({ view, onNavigate, settings, kill, onWorkspace, onTheme,
         {approvalsWaiting > 0 && (
           <button className="chip chip-approval" onClick={() => onNavigate('dashboard')} title="Review on the dashboard">
             <span className="approval-dot" aria-hidden="true" />
-            {approvalsWaiting === 1 ? '1 approval waiting' : `${approvalsWaiting} approvals waiting`}
+            {approvalsWaiting}
+            <span className="chip-extra">{approvalsWaiting === 1 ? ' approval' : ' approvals'}</span> waiting
           </button>
         )}
 
@@ -91,8 +92,10 @@ export function TopBar({ view, onNavigate, settings, kill, onWorkspace, onTheme,
               className="chip"
               onClick={() => onTheme(nextTheme(settings.theme))}
               title="Switch theme"
+              aria-label={`Theme: ${THEME_NAMES[settings.theme]}`}
             >
-              Theme: {THEME_NAMES[settings.theme]}
+              <span className="chip-extra">Theme: </span>
+              {THEME_NAMES[settings.theme]}
             </button>
           </>
         )}
