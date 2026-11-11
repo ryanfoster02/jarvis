@@ -68,6 +68,8 @@ import { remindersChanged } from './scheduler.ts'
 import { applyBackground, backgroundStatus } from './background.ts'
 import { dashboardReady, perfSnapshot } from './perf.ts'
 import { checkForUpdates, openLatestRelease } from './updates.ts'
+import { automationReport, connectN8n, N8nError, n8nStatus, removeN8n } from './n8n.ts'
+import { validateN8nConnection, type AutomationReportResult, type N8nStatus, type N8nTestResult } from '../shared/n8n.ts'
 import { cancelGoogleConnect, connectGoogle, disconnectGoogle, GoogleError, googleStatus, listEvents, saveGoogleClient, setGmailWanted } from './google.ts'
 import { rangeBounds, validateDashboardRange, validateGoogleClient, type CalendarEventsResult, type GoogleResult, type GoogleStatus } from '../shared/google.ts'
 import type { UpdateCheckResult } from '../shared/updates.ts'
@@ -257,6 +259,34 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
         return { ok: true, events: await listEvents(b.start, b.end), label: b.label }
       } catch (err) {
         if (err instanceof GoogleError || err instanceof IpcValidationError) return { ok: false, message: err.message }
+        throw err
+      }
+    }),
+  )
+  // n8n (Sprint 21): address + key stay in main; the client is GET-only.
+  ipcMain.handle(Channels.n8nStatus, guard((): N8nStatus => n8nStatus()))
+  ipcMain.handle(
+    Channels.n8nConnect,
+    guard(async (input: unknown): Promise<N8nTestResult> => {
+      if (!limits.keys.take()) return { ok: false, message: SLOW_DOWN, status: n8nStatus() }
+      try {
+        const r = await connectN8n(validateN8nConnection(input))
+        return { ok: true, ...r, status: n8nStatus() }
+      } catch (err) {
+        if (err instanceof N8nError || err instanceof IpcValidationError) return { ok: false, message: err.message, status: n8nStatus() }
+        throw err
+      }
+    }),
+  )
+  ipcMain.handle(Channels.n8nRemove, guard((): N8nStatus => removeN8n()))
+  ipcMain.handle(
+    Channels.automationsReport,
+    guard(async (): Promise<AutomationReportResult> => {
+      if (!limits.tools.take()) return { ok: false, message: SLOW_DOWN }
+      try {
+        return { ok: true, ...(await automationReport(24)) }
+      } catch (err) {
+        if (err instanceof N8nError) return { ok: false, message: err.message }
         throw err
       }
     }),

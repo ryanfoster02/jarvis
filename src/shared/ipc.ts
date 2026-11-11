@@ -67,6 +67,10 @@ export const Channels = {
   googleDisconnect: 'google:disconnect',
   calendarEvents: 'calendar:events',
   googleSetGmail: 'google:set-gmail',
+  n8nStatus: 'n8n:status',
+  n8nConnect: 'n8n:connect',
+  n8nRemove: 'n8n:remove',
+  automationsReport: 'automations:report',
 } as const
 
 /** Main → renderer push events. */
@@ -653,6 +657,7 @@ export const TOOL_NAMES = [
   'calendar_list_events',
   'calendar_find_free_time',
   'gmail_create_draft',
+  'n8n_check_automations',
 ] as const
 export type ToolName = (typeof TOOL_NAMES)[number]
 export const isToolName = (v: unknown): v is ToolName => typeof v === 'string' && (TOOL_NAMES as readonly string[]).includes(v)

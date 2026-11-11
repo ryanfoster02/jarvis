@@ -31,14 +31,16 @@ export function SetupGuide({
 }): React.JSX.Element {
   const [webhooks, setWebhooks] = useState(0)
   const [google, setGoogle] = useState(false)
+  const [n8n, setN8n] = useState(false)
   useEffect(() => {
     void window.jarvis.webhooks.list().then((l) => setWebhooks(l.length))
     void window.jarvis.google.status().then((g) => setGoogle(g.connected && !g.needsReconnect))
+    void window.jarvis.n8n.status().then((n) => setN8n(n.configured))
   }, [])
 
   const textKey = creds.openai.configured || creds.anthropic.configured
   const voiceReady = creds.openai.configured && (settings.speechEngine !== 'elevenlabs' || creds.elevenlabs.configured)
-  const connected = (creds.github.configured && settings.githubRepos.length > 0) || webhooks > 0 || google
+  const connected = (creds.github.configured && settings.githubRepos.length > 0) || webhooks > 0 || google || n8n
   const steps: Step[] = [
     {
       id: 'key',
@@ -65,8 +67,8 @@ export function SetupGuide({
     },
     {
       id: 'connect',
-      title: 'Connect Google Calendar, GitHub or a webhook',
-      detail: connected ? 'A connection is set up.' : 'Read your calendar or GitHub, or send to n8n, Zapier or Make.',
+      title: 'Connect Google, n8n, GitHub or a webhook',
+      detail: connected ? 'A connection is set up.' : 'Read your calendar, automations or GitHub, or send to n8n, Zapier or Make.',
       done: connected,
       optional: true,
       action: connected ? undefined : { label: 'Open connections', section: 'connections' },

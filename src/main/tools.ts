@@ -38,6 +38,8 @@ import { buildWebSearchRequest, formatResearchReport, parseWebSearch, WEB_SEARCH
 import { RateLimiter } from '../shared/ratelimit.ts'
 import { calendarConnected, createGmailDraft, gmailReady, listEvents } from './google.ts'
 import { gmailDraftsLink } from '../shared/gmail.ts'
+import { automationReport, n8nConfigured } from './n8n.ts'
+import { formatReportForModel } from '../shared/n8n.ts'
 import { describeEvent, formatEventsForModel, freeSlots, localDate, rangeBounds } from '../shared/google.ts'
 import { addReminder, cancelReminder, getReminder, listReminders, ReminderLimitError, ReminderNotFoundError } from './db/reminders.ts'
 import { remindersChanged } from './scheduler.ts'
@@ -176,6 +178,7 @@ export function grantedScopes(ctx: Pick<ToolContext, 'db' | 'settings'>): ToolSc
   if (ctx.settings.githubRepos.length > 0 && getKey('github')) scopes.push('github:read')
   if (calendarConnected()) scopes.push('calendar:read')
   if (gmailReady()) scopes.push('gmail:draft')
+  if (n8nConfigured()) scopes.push('automations:read')
   return scopes
 }
 
@@ -284,6 +287,15 @@ async function run(
   ctx: ToolContext,
 ): Promise<{ output: string; detail: string; untrusted?: boolean; costUsd?: number; links?: WebLink[] }> {
   switch (name) {
+    case 'n8n_check_automations': {
+      const { report, links } = await automationReport((args as ToolArgs['n8n_check_automations']).hours, ctx.signal)
+      const failures = report.failing.reduce((n, f) => n + f.failures, 0)
+      return {
+        output: formatReportForModel(report),
+        detail: `${report.workflows.active} active · ${failures} failed run${failures === 1 ? '' : 's'}`,
+        links: report.failing.filter((f) => links[f.workflowId]).slice(0, 5).map((f) => ({ title: `Failed run: ${f.name}`, url: links[f.workflowId]! })),
+      }
+    }
     case 'gmail_create_draft': {
       const a = args as ToolArgs['gmail_create_draft']
       const r = await createGmailDraft(a, ctx.signal)

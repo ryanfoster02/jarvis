@@ -38,6 +38,7 @@ import { ThemeSwitcher } from './ThemeSwitcher.tsx'
 import { formatMB, formatMs, type PerfSnapshot } from '../../../shared/perf.ts'
 import { BackupsPanel } from './BackupsPanel.tsx'
 import { GooglePanel } from './GooglePanel.tsx'
+import { N8nPanel } from './N8nPanel.tsx'
 import type { UpdateCheckResult } from '../../../shared/updates.ts'
 
 export type SettingsSection = Section
@@ -1118,6 +1119,7 @@ export function SettingsView({ settings, info, creds, onCreds, onUpdate, initial
             </p>
             <GitHubConnection settings={settings} creds={creds} onCreds={onCreds} onUpdate={onUpdate} />
             <GooglePanel />
+            <N8nPanel />
             <WebhooksPanel encryptionAvailable={creds.encryptionAvailable} />
           </>
         )}

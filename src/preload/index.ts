@@ -39,6 +39,7 @@ import {
 } from '../shared/ipc.ts'
 import type { PerfSnapshot } from '../shared/perf.ts'
 import type { UpdateCheckResult } from '../shared/updates.ts'
+import type { AutomationReportResult, N8nConnectionInput, N8nStatus, N8nTestResult } from '../shared/n8n.ts'
 import type { CalendarEventsResult, GoogleClientInput, GoogleResult, GoogleStatus } from '../shared/google.ts'
 import type { BackupCreateResult, BackupInspectResult, BackupListResult, BackupRestoreResult, BackupSource } from '../shared/backup.ts'
 
@@ -177,6 +178,14 @@ const api = {
     /** Gmail drafts on/off; takes effect at the next Connect. */
     setGmail: (want: boolean): Promise<GoogleResult> => ipcRenderer.invoke(Channels.googleSetGmail, want),
     disconnect: (forgetClient: boolean): Promise<GoogleResult> => ipcRenderer.invoke(Channels.googleDisconnect, forgetClient),
+  },
+  n8n: {
+    status: (): Promise<N8nStatus> => ipcRenderer.invoke(Channels.n8nStatus),
+    /** Checks the address and key with one read, then saves them encrypted. */
+    connect: (input: N8nConnectionInput): Promise<N8nTestResult> => ipcRenderer.invoke(Channels.n8nConnect, input),
+    remove: (): Promise<N8nStatus> => ipcRenderer.invoke(Channels.n8nRemove),
+    /** Workflows and failed runs in the last 24 hours (dashboard). */
+    report: (): Promise<AutomationReportResult> => ipcRenderer.invoke(Channels.automationsReport),
   },
   calendar: {
     /** Today's or tomorrow's events for the dashboard (read-only). */

@@ -31,6 +31,7 @@ import { useVoice, type VoiceActivity, type VoicePhase } from './voice/useVoice.
 import { shouldCalm } from '../../shared/perf.ts'
 import { SetupGuide } from './components/SetupGuide.tsx'
 import { TodayPanel } from './components/TodayPanel.tsx'
+import { AutomationsPanel } from './components/AutomationsPanel.tsx'
 import type { SettingsSection } from './components/SettingsView.tsx'
 
 // Screens other than the dashboard load on first visit (Sprint 16), keeping startup lean.
@@ -584,6 +585,7 @@ export function App(): React.JSX.Element {
                 />
               )}
               <TodayPanel />
+              <AutomationsPanel />
               <StateLegend current={coreState} />
               <OpsColumn
                 approvals={approvals}

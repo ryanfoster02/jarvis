@@ -103,6 +103,12 @@ export const WORKFLOW_TEMPLATES: ReadonlyArray<Omit<WorkflowInput, 'id' | 'enabl
     schedule: null,
   },
   {
+    name: 'Morning briefing',
+    instructions:
+      "Give me my morning briefing. Check today's calendar, reminders due today, overdue leads, and n8n failures in the last 24 hours — whichever of these are connected. Lead with the most important thing (next meeting, something overdue or broken), then the rest in a few short lines. Under 150 words; skip anything empty.",
+    schedule: { days: [1, 2, 3, 4, 5], time: '07:30' },
+  },
+  {
     name: 'Weekly pipeline report',
     instructions:
       'List my open leads. Report how many are at each stage and their total value, then list any whose next-step date has passed, oldest first, with the next step. End with the three leads I should follow up on this week and why.',

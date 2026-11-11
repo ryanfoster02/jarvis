@@ -29,6 +29,7 @@ export type ToolScope =
   | 'web:search'
   | 'calendar:read'
   | 'gmail:draft'
+  | 'automations:read'
 
 export interface ToolArgs {
   get_time: Record<string, never>
@@ -54,6 +55,7 @@ export interface ToolArgs {
   /** `date` is today, tomorrow or YYYY-MM-DD; hours are local, 0–24. */
   calendar_find_free_time: { date: string; minMinutes: number; fromHour: number; toHour: number }
   gmail_create_draft: DraftInput
+  n8n_check_automations: { hours: number }
 }
 
 export interface ToolSpec {
@@ -424,6 +426,26 @@ const GMAIL_TOOLS = {
   },
 } satisfies Partial<Record<ToolName, ToolSpec>>
 
+// ---------- n8n oversight (Sprint 21) ----------
+
+const AUTOMATION_TOOLS = {
+  n8n_check_automations: {
+    name: 'n8n_check_automations',
+    title: 'Check your automations',
+    ownerDescription: 'Reads your n8n workflows and failed runs. Read-only: Jarvis can’t run, fix or change workflows.',
+    description:
+      'Checks the owner\'s self-hosted n8n: how many workflows are active and which failed in the last `hours` (1–168; 24 for "today/overnight", 168 for "this week"). Read-only: you cannot run, retry, activate or edit workflows.',
+    risk: 'low',
+    scope: 'automations:read',
+    parameters: {
+      type: 'object',
+      properties: { hours: { type: 'integer', description: 'Look-back window in hours, 1–168.' } },
+      required: ['hours'],
+      additionalProperties: false,
+    },
+  },
+} satisfies Partial<Record<ToolName, ToolSpec>>
+
 export const TOOLS: Record<ToolName, ToolSpec> = {
   ...CORE_TOOLS,
   ...GITHUB_TOOLS,
@@ -433,6 +455,7 @@ export const TOOLS: Record<ToolName, ToolSpec> = {
   ...RESEARCH_TOOLS,
   ...CALENDAR_TOOLS,
   ...GMAIL_TOOLS,
+  ...AUTOMATION_TOOLS,
 }
 
 /**
@@ -560,6 +583,12 @@ export function parseToolArgs<N extends ToolName>(name: N, raw: unknown, now: nu
         if (err instanceof IpcValidationError) throw new ToolArgsError(err.message)
         throw err
       }
+    }
+    case 'n8n_check_automations': {
+      only(o, ['hours'])
+      const h = o.hours ?? 24
+      if (typeof h !== 'number' || !Number.isInteger(h) || h < 1 || h > 168) throw new ToolArgsError('hours must be a whole number from 1 to 168.')
+      return { hours: h } as ToolArgs[N]
     }
     case 'gmail_create_draft': {
       only(o, ['to', 'cc', 'subject', 'body'])
@@ -724,6 +753,10 @@ export function summarizeToolCall(
       const parts = Object.entries(a.patch).map(([k, v]) => `${k === 'nextStep' ? 'next step' : k === 'nextDate' ? 'next date' : k}: ${String(v)}`)
       return clip(`Update lead${extra.leadName ? ` "${extra.leadName}"` : ''} → ${parts.join(', ')}`, 280)
     }
+    case 'n8n_check_automations': {
+      const h = (args as ToolArgs['n8n_check_automations']).hours
+      return `Check n8n automations (last ${h % 24 === 0 ? `${h / 24} day${h === 24 ? '' : 's'}` : `${h} h`})`
+    }
     case 'gmail_create_draft':
       return draftSummary(args as ToolArgs['gmail_create_draft'])
     case 'calendar_list_events': {
@@ -797,6 +830,15 @@ export function toolInstructions(specs: ToolSpec[]): string[] {
   if (has('calendar_list_events')) {
     lines.push(
       '- Calendar tools read the owner\'s Google Calendar (read-only). Use them for "what\'s on my schedule", "am I free…". You cannot create, move or reply to events; say so if asked.',
+    )
+  }
+  if (has('n8n_check_automations')) {
+    lines.push('- n8n_check_automations reads the owner\'s n8n (read-only). Report failures plainly; you can\'t fix or rerun them.')
+  }
+  const briefingTools = (['calendar_list_events', 'list_reminders', 'list_leads', 'n8n_check_automations'] as const).filter(has)
+  if (briefingTools.length >= 2) {
+    lines.push(
+      `- Morning briefing (when the owner asks for a briefing, rundown or "what's my day"): use ${briefingTools.join(', ')} as available, then give one short spoken-style summary — most important first (next meeting, anything overdue or failing), under 150 words. Skip empty sections.`,
     )
   }
   if (has('gmail_create_draft')) {

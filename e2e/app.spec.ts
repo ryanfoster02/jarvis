@@ -114,6 +114,7 @@ test('renderer is isolated: no Node globals, only the narrow jarvis bridge', asy
     'killSwitch',
     'leads',
     'memory',
+    'n8n',
     'perf',
     'reminders',
     'settings',
@@ -641,6 +642,68 @@ test('google: calendar and Gmail tools need a connection; client validated; Gmai
   await google.getByRole('button', { name: 'Remove' }).click()
   await expect(google.getByLabel('Google client ID')).toBeVisible()
   await closeApp(app)
+})
+
+test('n8n: a real local n8n receives only GETs with the key; tool and dashboard report the failed run', async () => {
+  test.setTimeout(LAUNCH_BUDGET + 60_000)
+  const KEY = 'n8n_api_test_key_0123456789abcdef'
+  const seen: Array<{ method: string; url: string; key: string | undefined }> = []
+  const server = createServer((req, res) => {
+    seen.push({ method: req.method ?? '', url: req.url ?? '', key: req.headers['x-n8n-api-key'] as string | undefined })
+    const json = (code: number, body: unknown): void => {
+      res.writeHead(code, { 'Content-Type': 'application/json' }).end(JSON.stringify(body))
+    }
+    if (req.headers['x-n8n-api-key'] !== KEY) return json(401, { message: 'unauthorized' })
+    if (req.url?.startsWith('/api/v1/workflows')) {
+      return json(200, { data: [{ id: 'a', name: 'Lead sync', activeVersionId: 'v1' }, { id: 'b', name: 'Invoices', activeVersionId: null }], nextCursor: null })
+    }
+    if (req.url?.startsWith('/api/v1/executions')) {
+      return json(200, { data: [{ id: 7, workflowId: 'a', status: 'error', mode: 'trigger', startedAt: new Date(Date.now() - 3_600_000).toISOString() }], nextCursor: null })
+    }
+    json(404, { message: 'not found' })
+  })
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()))
+  const port = (server.address() as { port: number }).port
+  try {
+    const { app, page } = await launch(profile)
+    const before = await invoke(page, 'n8n_check_automations', { hours: 24 })
+    expect(before.output).toMatch(/^Not run: No access to automations:read/)
+    await requireSecureStorage(page)
+
+    await page.keyboard.press('ControlOrMeta+,')
+    await page.getByRole('button', { name: 'Connections', exact: true }).click()
+    const panel = page.getByLabel('n8n', { exact: true })
+    await panel.getByLabel('n8n address').fill(`http://127.0.0.1:${port}/api/v1`)
+    await panel.getByLabel('n8n API key').fill('wrong_key_0123456789abcdefghij')
+    await panel.getByRole('button', { name: 'Connect n8n' }).click()
+    await expect(panel.locator('.form-msg.is-error')).toContainText('rejected the API key')
+    await panel.getByLabel('n8n API key').fill(KEY)
+    await panel.getByRole('button', { name: 'Connect n8n' }).click()
+    await expect(panel.locator('.form-msg.is-ok')).toContainText('Connected: 2 workflows, 1 active.')
+    await expect(panel.getByText(`Connected · 127.0.0.1:${port}`)).toBeVisible()
+
+    const r = await invoke(page, 'n8n_check_automations', { hours: 24 })
+    expect(r.output).toContain('2 workflows (1 active)')
+    expect(r.output).toContain('Lead sync: 1 failed run')
+
+    await page.keyboard.press('Escape')
+    const auto = page.getByRole('region', { name: 'Automations' })
+    await expect(auto).toContainText('1 failing in the last 24 h')
+    await expect(auto).toContainText('Lead sync')
+
+    // Read-only by construction: every request JARVIS made was a GET with the key in the header.
+    expect(seen.length).toBeGreaterThan(3)
+    expect(seen.every((s) => s.method === 'GET')).toBe(true)
+    expect(seen.filter((s) => s.key === KEY).every((s) => /^\/api\/v1\/(workflows|executions)\?/.test(s.url))).toBe(true)
+
+    await page.keyboard.press('ControlOrMeta+,')
+    await page.getByRole('button', { name: 'Connections', exact: true }).click()
+    await page.getByLabel('n8n', { exact: true }).getByRole('button', { name: 'Remove n8n' }).click()
+    await expect(page.getByLabel('n8n', { exact: true }).getByLabel('n8n address')).toBeVisible()
+    await closeApp(app)
+  } finally {
+    server.close()
+  }
 })
 
 test('setup guide: shows real state, links to the right settings, hides and comes back', async () => {

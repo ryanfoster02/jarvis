@@ -2212,3 +2212,13 @@ select {
   color: var(--dim);
   font-size: var(--t-xs);
 }
+
+/* ---------- Automations (Sprint 21) ---------- */
+.automations-ok {
+  color: var(--ok);
+  margin-bottom: 6px;
+}
+.automations-bad {
+  color: var(--attention);
+  margin-bottom: 8px;
+}
