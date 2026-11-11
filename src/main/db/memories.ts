@@ -26,7 +26,7 @@ const visibleFrom = (ws: WorkspaceId) =>
 
 /** Global + this workspace's memories, newest first. */
 export async function listMemories(db: Db, ws: WorkspaceId): Promise<Memory[]> {
-  return db.select().from(memories).where(visibleFrom(ws)).orderBy(desc(memories.updatedAt), desc(memories.id))
+  return db.select().from(memories).where(visibleFrom(ws)).orderBy(desc(memories.updatedAt), desc(sql`memories.rowid`))
 }
 
 export async function addMemory(

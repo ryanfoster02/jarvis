@@ -57,7 +57,7 @@ export async function getMessages(db: Db, ws: WorkspaceId, conversationId: strin
     .select()
     .from(messages)
     .where(eq(messages.conversationId, conversationId))
-    .orderBy(asc(messages.createdAt), asc(messages.id))
+    .orderBy(asc(messages.createdAt), asc(sql`messages.rowid`))
 }
 
 /**
@@ -98,7 +98,7 @@ export async function recentTurns(db: Db, ws: WorkspaceId, conversationId: strin
     .select({ role: messages.role, text: messages.text })
     .from(messages)
     .where(eq(messages.conversationId, conversationId))
-    .orderBy(desc(messages.createdAt), desc(messages.id))
+    .orderBy(desc(messages.createdAt), desc(sql`messages.rowid`))
     .limit(limit)
   return rows.reverse()
 }
