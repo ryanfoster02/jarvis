@@ -1,6 +1,6 @@
 # IMPLEMENTATION
 
-Current phase: Phase 5 / Sprint 17 — Web research
+Current phase: Phase 5 / Sprint 18 — Release readiness
 
 Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ not started
 
@@ -220,8 +220,15 @@ Planned with the owner 2026-11-10. Fills the vision's remaining example requests
 - Not verified: OpenAI does not document a per-request search cap that I could confirm, so for OpenAI models the cap of 3 is asked of the model and the actual count is billed to the budget; Anthropic enforces `max_uses: 3`
 - 🟡 Owner: ask "research <a company> and tell me what they do" with a key; check the source links and the cost in the terminal
 
-### Sprint 18 — Release readiness ⬜
-macOS code signing + notarization (needs the owner's Apple Developer account), auto-update (new dependency, recorded in STACK.md), database backup/export, first-run setup guide.
+### Sprint 18 — Release readiness ✅ without signing (CI green 2026-11-11)
+Owner chose to go without an Apple Developer account for now, so no code signing/notarization. Auto-update was replaced by an update *check*: unsigned macOS apps can't auto-update safely, and JARVIS shouldn't silently install code. No new dependencies.
+- ✅ **Backups** (`src/shared/backup.ts`, `src/main/db/backup.ts`, `src/main/backups.ts`): daily `VACUUM INTO` snapshot (last 7), *Back up now…* to a chosen file, restore from a listed backup or a file — inspected (integrity, JARVIS schema, not newer), counts confirmed by the owner, safety copy first, swapped in place (schedulers and menu-bar reminder re-pointed), fallback to the safety copy. Settings → **Data**
+- ✅ **Update check** (`src/shared/updates.ts`, `src/main/updates.ts`): this repo's latest published release only; *Check for updates* + daily switch (off by default) in Settings → About; opens the release page, never installs
+- ✅ **Release workflow** `.github/workflows/release.yml`: on a `v*.*.*` tag matching package.json, builds unsigned installers on all three OSes into a **draft** release; the owner publishes it
+- ✅ **Setup guide**: *Get started* on the dashboard from real state (AI key, a conversation, voice, a connection), buttons open the right Settings section, *Hide guide* / *Show the setup guide again*
+- ✅ Tests: 7 backup unit tests (live WAL snapshot, junk/foreign/newer refused, daily + pruning, restore with stale WAL), 3 update tests; e2e: back up → change → restore → data rolled back + safety copy listed; setup guide; updates panel. CI run 42972807220: 150 unit tests on each OS; e2e 27 passed (macOS/Windows), 24 + 4 skipped (Linux)
+- ⬜ Code signing + notarization (needs an Apple Developer ID); Windows signing optional
+- 🟡 Owner: first release — `npm version minor` then `git push --follow-tags`, check the draft on GitHub, publish it, then *Check for updates* in an older build
 
 ### Sprint 19 — Google Calendar (read-only) ⬜
 Google OAuth (desktop loopback + PKCE, tokens encrypted in main), `list_events` / free-time tools, Today panel. Creating events later, with approval.

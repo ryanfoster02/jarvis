@@ -111,6 +111,16 @@ Leads view ── leads:list/save/delete ──▶ db/leads.ts (migration 6)    
 ```
 Pure: `src/shared/leads.ts` (validation, patches, `pipelineSummary`), `src/shared/webhooks.ts` (URL rules, payload, data/secret checks). Webhook names are offered to the model as an enum (`specsForRequest`).
 
+## Backups, updates, releases (Sprint 18)
+```
+Settings → Data ── backup:list/create/inspect/restore/show-folder ──▶ main/backups.ts (dialogs, tokens)
+   → db/backup.ts: VACUUM INTO snapshot · inspectBackup (read-only) · replaceDatabaseFile
+   restore: safety copy → stop schedulers → close → swap → openDatabase → restart schedulers → renderer reloads
+Daily: initBackups → runDailyBackup (20 s after start, then every 6 h; keeps 7)
+Settings → About ── updates:check/open ──▶ main/updates.ts → GET api.github.com/repos/ryanfoster02/jarvis/releases/latest
+Tag v*.*.* ──▶ .github/workflows/release.yml → draft release with unsigned installers (owner publishes)
+```
+
 ## Web research (Sprint 17)
 ```
 web_search (medium, web:search) ── executeTool → runWebSearch: getKey(provider) · RateLimiter(10/min)
