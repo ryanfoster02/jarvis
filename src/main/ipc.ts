@@ -48,6 +48,7 @@ import { buildProviderRequest, estimateTextCostUsd } from '../shared/text.ts'
 import { runAgent, type AgentResult } from '../shared/agent.ts'
 import { isOffered, RunBudget } from '../shared/permissions.ts'
 import { specsForRequest, TOOLS } from '../shared/tools.ts'
+import { isParallelSafe } from '../shared/helpers.ts'
 import { getRepo, verifyGitHubToken } from './github.ts'
 import {
   addReminder,
@@ -93,6 +94,18 @@ const limits = {
   keys: new RateLimiter(LIMITS.keyChecksPerMinute, 60_000),
   tools: new RateLimiter(LIMITS.toolCallsPerMinute, 60_000),
 }
+/** Running-panel label for an action; helpers show their subtask. */
+function actionTitle(name: ToolName, args: unknown): string {
+  if (name !== 'delegate') return TOOLS[name].title
+  try {
+    const task = (typeof args === 'string' ? JSON.parse(args) : args) as { task?: unknown }
+    if (typeof task?.task === 'string') return `Helper: ${task.task.replace(/\s+/g, ' ').trim()}`
+  } catch {
+    /* fall through */
+  }
+  return TOOLS.delegate.title
+}
+
 const SLOW_DOWN = 'Too many requests in the last minute. Wait a moment and try again.'
 /** The current voice session has read untrusted content (SECURITY.md §7); reset on each voice connect. */
 let voiceUntrusted = false
@@ -241,7 +254,7 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
           execute: async (call, state) => {
             const ctx = { ...toolCtx, untrusted: state.untrusted }
             if (!isToolName(call.name)) return executeTool(call.name, call.arguments, ctx) // refused immediately
-            const action = task.beginAction(call.name, TOOLS[call.name].title)
+            const action = task.beginAction(call.name, actionTitle(call.name, call.arguments))
             try {
               return await executeTool(call.name, call.arguments, { ...ctx, signal: action.signal })
             } finally {
@@ -251,6 +264,8 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
           budget: new RunBudget(DEFAULT_LIMITS),
           halted: isHalted,
           signal: task.signal,
+          // Low-risk calls in one turn (lookups, helpers) run side by side; anything that may ask waits its turn.
+          parallelSafe: (n) => isParallelSafe(isToolName(n) ? TOOLS[n] : undefined),
         })
       } finally {
         task.end()
@@ -732,6 +747,10 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
   )
   ipcMain.handle(
     Channels.tasksCancelAction,
-    guard((id: unknown): boolean => (typeof id === 'string' && id.length <= 64 ? tasks.cancelAction(id) : false)),
+    guard((id: unknown, actionId: unknown): boolean => {
+      if (typeof id !== 'string' || id.length > 64) return false
+      if (actionId !== undefined && (typeof actionId !== 'string' || actionId.length > 64)) return false
+      return tasks.cancelAction(id, actionId)
+    }),
   )
 }

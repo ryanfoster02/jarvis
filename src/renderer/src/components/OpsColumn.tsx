@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { DEFAULT_LIMITS, type ApprovalRequest, type Reminder, type RunningTask, type ToolRun } from '../../../shared/ipc.ts'
+import { DEFAULT_LIMITS, HELPER_LIMITS, type ApprovalRequest, type Reminder, type RunningTask, type ToolRun } from '../../../shared/ipc.ts'
 import { formatWhen } from '../../../shared/reminders.ts'
 import { DECISION_LABEL } from '../../../shared/tools.ts'
 import { LIMITS } from '../../../shared/ratelimit.ts'
@@ -19,7 +19,9 @@ const LIMIT_ROWS: Array<[string, string]> = [
   ['Time per task', `${DEFAULT_LIMITS.maxSeconds} s`],
   ['Tool calls per task', String(DEFAULT_LIMITS.maxToolCalls)],
   ['Spend per task', `$${DEFAULT_LIMITS.maxCostUsd.toFixed(2)}`],
-  ['Tasks at once', `${DEFAULT_LIMITS.maxConcurrentAgents}, no nesting`],
+  ['Requests at once', String(DEFAULT_LIMITS.maxConcurrentAgents)],
+  ['Helpers at once', `${DEFAULT_LIMITS.maxConcurrentHelpers} · read-only`],
+  ['Per helper', `${HELPER_LIMITS.maxIterations} steps · ${HELPER_LIMITS.maxSeconds} s · $${HELPER_LIMITS.maxCostUsd.toFixed(2)}`],
 ]
 
 const RISK_LABEL = { low: 'Low risk', medium: 'Medium risk', high: 'High risk' } as const
@@ -36,7 +38,7 @@ interface Props {
   reminders: Reminder[]
   running: RunningTask[]
   onStopTask: (id: string) => void
-  onStopAction: (id: string) => void
+  onStopAction: (taskId: string, actionId: string) => void
   reminderActions: {
     add: (text: string, dueAt: number) => Promise<string | null>
     cancel: (id: string) => void
@@ -201,17 +203,26 @@ function RunningSection({ list, onStopTask, onStopAction }: { list: RunningTask[
               </span>
               <span className="approval-meta">{secs(t.startedAt)}</span>
             </div>
-            {t.action && (
-              <p className="approval-summary">
-                Now: {t.action.title} · {secs(t.action.startedAt)}
-              </p>
+            {t.actions.length > 0 && (
+              <ul className="running-actions">
+                {t.actions.map((a) => (
+                  <li key={a.id}>
+                    <span className="running-action-title" title={a.title}>
+                      Now: {a.title}
+                    </span>
+                    <span className="approval-meta">{secs(a.startedAt)}</span>
+                    <button
+                      className="reminder-cancel"
+                      aria-label={`Stop action: ${a.title}`}
+                      onClick={() => onStopAction(t.id, a.id)}
+                    >
+                      Stop
+                    </button>
+                  </li>
+                ))}
+              </ul>
             )}
             <div className="approval-actions">
-              {t.action && (
-                <button className="btn btn-quiet" onClick={() => onStopAction(t.id)}>
-                  Stop action
-                </button>
-              )}
               {t.kind === 'typed' && (
                 <button className="btn btn-deny" onClick={() => onStopTask(t.id)}>
                   Stop request
@@ -304,7 +315,7 @@ export function OpsColumn({
         <p className="fine">
           {halted
             ? 'Stop all is engaged: no actions run until you re-arm.'
-            : `Enforced for every typed request. Voice actions are capped at ${LIMITS.toolCallsPerMinute} a minute; helper agents arrive in Phase 4.`}
+            : `Enforced for every typed request. Voice actions are capped at ${LIMITS.toolCallsPerMinute} a minute. Helper spend counts toward the request that started them.`}
         </p>
       </section>
 

@@ -217,6 +217,8 @@ export interface ExecutionLimits {
   maxCostUsd: number
   maxSubagentDepth: number
   maxConcurrentAgents: number
+  /** Helper agents running at once, app-wide (Sprint 12). */
+  maxConcurrentHelpers: number
 }
 
 export const DEFAULT_LIMITS: ExecutionLimits = Object.freeze({
@@ -226,6 +228,18 @@ export const DEFAULT_LIMITS: ExecutionLimits = Object.freeze({
   maxCostUsd: 1,
   maxSubagentDepth: 1,
   maxConcurrentAgents: 2,
+  maxConcurrentHelpers: 2,
+})
+
+/** Each helper agent's own budget (its spend also counts against the request that started it). */
+export const HELPER_LIMITS: ExecutionLimits = Object.freeze({
+  maxIterations: 6,
+  maxSeconds: 90,
+  maxToolCalls: 8,
+  maxCostUsd: 0.25,
+  maxSubagentDepth: 0, // helpers can't start helpers
+  maxConcurrentAgents: 1,
+  maxConcurrentHelpers: 0,
 })
 
 export interface AppInfo {
@@ -581,6 +595,7 @@ export const TOOL_NAMES = [
   'set_reminder',
   'list_reminders',
   'cancel_reminder',
+  'delegate',
 ] as const
 export type ToolName = (typeof TOOL_NAMES)[number]
 export const isToolName = (v: unknown): v is ToolName => typeof v === 'string' && (TOOL_NAMES as readonly string[]).includes(v)
@@ -644,7 +659,8 @@ export interface RunningTask {
   kind: 'typed' | 'voice'
   title: string
   startedAt: number
-  action: { tool: ToolName; title: string; startedAt: number } | null
+  /** Actions running now. Several when helpers or read-only lookups run in parallel. */
+  actions: Array<{ id: string; tool: ToolName; title: string; startedAt: number }>
 }
 
 /** Max size of a tool's JSON arguments from the model. */

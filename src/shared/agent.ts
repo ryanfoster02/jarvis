@@ -96,6 +96,8 @@ export interface ExecutedTool {
   waitedMs: number
   /** The result carried untrusted external content (taints the rest of the task). */
   untrusted?: boolean
+  /** Spend inside the tool (a helper agent's model calls); counted against this task's budget. */
+  costUsd?: number
 }
 
 export interface AgentDeps {
@@ -109,6 +111,8 @@ export interface AgentDeps {
   halted: () => boolean
   /** Workflow-level stop for this request (SECURITY.md §5). */
   signal?: AbortSignal
+  /** Calls that may run side by side within one model turn (low risk: no approvals). Default: none. */
+  parallelSafe?: (toolName: string) => boolean
 }
 
 export type AgentResult =
@@ -120,6 +124,8 @@ export type AgentResult =
       /** Why the run ended early (a limit), or null. */
       stopped: string | null
       incomplete: string | null
+      /** Some tool result carried untrusted content (helpers report this upward). */
+      untrusted: boolean
     }
   | { ok: false; code: 'halted' | 'cancelled' | 'network' | 'api_error'; message: string; usage: TextUsage; actions: ActionNote[] }
 
@@ -138,7 +144,7 @@ export async function runAgent(d: AgentDeps): Promise<AgentResult> {
     if (d.halted()) return halted()
     if (d.signal?.aborted) return cancelled()
     const stop = d.budget.nextIteration()
-    if (stop) return { ok: true, text: lastText, usage, actions, stopped: stop, incomplete: null }
+    if (stop) return { ok: true, text: lastText, usage, actions, stopped: stop, incomplete: null, untrusted }
 
     const res = await d.send(body, d.signal)
     if (d.halted()) return halted()
@@ -154,30 +160,45 @@ export async function runAgent(d: AgentDeps): Promise<AgentResult> {
 
     const calls = adapter.calls(res.value)
     if (calls.length === 0) {
-      return { ok: true, text: parsed.text || lastText, usage, actions, stopped: null, incomplete: parsed.incomplete }
+      return { ok: true, text: parsed.text || lastText, usage, actions, stopped: null, incomplete: parsed.incomplete, untrusted }
     }
 
-    const results: ToolResult[] = []
-    for (const call of calls) {
+    // Calls run in order; consecutive parallel-safe calls (low risk, e.g. two helpers) run together.
+    // Results always go back in the model's original order, one per call.
+    const results: ToolResult[] = new Array<ToolResult>(calls.length)
+    const runOne = async (call: ToolCall, i: number): Promise<void> => {
       // Every call gets a result (both APIs require it), even when it is not run.
       if (d.halted()) {
-        results.push({ id: call.id, output: 'Not run: Stop all was engaged.', isError: true })
-        continue
+        results[i] = { id: call.id, output: 'Not run: Stop all was engaged.', isError: true }
+        return
       }
       if (d.signal?.aborted) {
-        results.push({ id: call.id, output: 'Not run: the owner stopped this request.', isError: true })
-        continue
+        results[i] = { id: call.id, output: 'Not run: the owner stopped this request.', isError: true }
+        return
       }
       const limit = d.budget.nextToolCall()
       if (limit) {
-        results.push({ id: call.id, output: `Not run: ${limit}.`, isError: true })
-        continue
+        results[i] = { id: call.id, output: `Not run: ${limit}.`, isError: true }
+        return
       }
       const r = await d.execute(call, { untrusted })
       if (r.untrusted) untrusted = true
       d.budget.excludeWait(r.waitedMs)
+      d.budget.addCost(r.costUsd ?? null)
       if (r.note) actions.push(r.note)
-      results.push({ id: call.id, output: r.output, isError: r.isError })
+      results[i] = { id: call.id, output: r.output, isError: r.isError }
+    }
+    for (let i = 0; i < calls.length; ) {
+      const call = calls[i] as ToolCall
+      if (d.parallelSafe?.(call.name)) {
+        let j = i
+        while (j < calls.length && d.parallelSafe((calls[j] as ToolCall).name)) j++
+        await Promise.all(calls.slice(i, j).map((c, k) => runOne(c, i + k)))
+        i = j
+      } else {
+        await runOne(call, i)
+        i++
+      }
     }
     if (d.signal?.aborted) return cancelled()
     body = adapter.append(body, res.value, results)

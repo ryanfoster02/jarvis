@@ -1,6 +1,6 @@
 # IMPLEMENTATION
 
-Current phase: Phase 3 / Sprint 11 — Background mode + worker/workflow stop levels
+Current phase: Phase 4 / Sprint 12 — Bounded helper agents
 
 Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ not started
 
@@ -136,7 +136,7 @@ Tool execution with approvals and the execution log already landed in Sprint 8.
 - ⬜ Repeating reminders
 - ➡ Reminders while the window is closed: background mode, approved by the owner 2026-11-09 (Sprint 11)
 
-### Sprint 11 — Background mode + worker / workflow stop levels 🟡
+### Sprint 11 — Background mode + worker / workflow stop levels ✅ (owner verified e2e 2026-11-10)
 **Background mode (owner-approved 2026-11-09).** Opt-in "keep running in the menu bar": closing the window leaves the scheduler running behind a menu-bar icon (open, next reminder, Stop all / Re-arm, quit). Optional open at login (installed app; macOS may ask you to approve it in Login Items). No separate helper process; voice and the microphone never run without the window. One instance at a time.
 
 **Stop levels.** Cancel one running action (worker) or a whole request (workflow) without Stop all; abort signals threaded through provider calls, approvals and GitHub reads; a Running list in the dashboard and a Stop button while Jarvis is answering.
@@ -145,11 +145,30 @@ Tool execution with approvals and the execution log already landed in Sprint 8.
 - ✅ Stop levels: `TaskRegistry` (`src/shared/taskRegistry.ts`) — tested; signals through `runAgent` (tested), OpenAI/Anthropic/GitHub fetches, approvals (withdrawn on stop) and the executor (logged "Cancelled by you"); Stop all cancels all tasks; `tasks:*` IPC + live event
 - ✅ UI: "Running" in the Ops column (current action, elapsed time, Stop action / Stop request), Stop button in the composer while Jarvis answers; actions that ran before a stop still show in the conversation
 - ✅ Tests: 4 new unit tests (registry, stop levels in the agent loop); 2 new e2e tests (background switches; stopping an action withdraws its approval)
-- 🟡 Needs owner verification: typecheck, `npm test`, `npm run test:e2e`; then turn on menu-bar mode, close the window, and let a reminder fire; in the installed app (`npm run dist:mac`) try *Open at login*; ask a long question and press Stop
+- ✅ Owner verified the full e2e suite (after making the harness robust to slow launches: warm-up launch, explicit launch limits, forced cleanup)
 - ⬜ Background mode for voice (by design: voice needs the window)
 
-## Phase 4 — Advanced ⬜
+## Phase 4 — Advanced
 Bounded subagents (depth 1, ≤2 concurrent) · multi-step workflows · business workflows (leads, CRM, n8n, reports) · Windows/Linux builds · performance.
+
+### Sprint 12 — Bounded helper agents 🟡
+A `delegate` tool hands a focused, self-contained research subtask to a helper agent. Helpers get read-only (low-risk) tools only, never `delegate` (depth 1), their own small budget (counted against the parent request too), and at most 2 run at once. Low-risk calls in one model turn run in parallel, so two helpers work side by side. Helpers show as actions of their request in Running and can be stopped individually.
+- ✅ Contract: `delegate` tool (low risk, scope `agents:delegate`), `HELPER_LIMITS`, `maxConcurrentHelpers: 2`, `RunningTask.actions[]`
+- ✅ Pure: `src/shared/helpers.ts` (validation, depth rule, read-only toolset, prompt, report); `runAgent` runs consecutive low-risk calls in parallel (results in model order), adds tool-internal spend to the budget, reports taint — tested (two helpers overlap; approval-needing calls wait their turn; helper spend hits the cap)
+- ✅ Registry: several actions per task, stop one by id — tested
+- ✅ Main: `runHelper` in the executor (≤2 app-wide, depth check, provider key, own budget, same stop signal, Activity prefix "Helper ·"); executor refuses non-low-risk tools from helpers; scope granted only with a text-model key; Running shows "Helper: <subtask>"
+- ✅ UI: Running lists every action with its own Stop; limits panel shows helper limits
+- ✅ Tests: 4 new unit tests + registry rewrite; 1 new e2e test (refused without a key; switch in Permissions)
+- 🟡 Needs owner verification: typecheck, `npm test`, `npm run test:e2e`; then with a key ask something with two independent parts, e.g. "compare the open issues in repo A and repo B" (watch two helpers in Running; try stopping one)
+
+### Sprint 13 — Workflows ⬜
+Saved multi-step routines (e.g. a morning briefing) run on demand or on a schedule, under the same permissions, approvals and limits.
+
+### Sprint 14 — Windows & Linux builds ⬜
+Packaging, platform checks (tray, notifications, login items), CI matrix.
+
+### Sprint 15 — Business workflows ⬜
+Leads/CRM/n8n/report integrations — scope to be agreed with the owner first.
 
 ## Dependencies between stages
 Sprint 3 needs Sprint 1 IPC + vault. Text chat needs Phase 2 provider (an interim direct OpenAI text call may land in Sprint 4). Integrations need permission engine. Scheduler needs permission engine + limits.

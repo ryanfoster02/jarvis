@@ -1,18 +1,19 @@
 // Running tasks and their stop levels (SECURITY.md §5). Pure (no Electron); unit-tested.
-//  - workflow: cancel(taskId) aborts the whole request and whatever action it is running;
-//  - worker:   cancelAction(taskId) aborts only the current action — the request carries on and
-//              the model is told the action was stopped;
+//  - workflow: cancel(taskId) aborts the whole request and every action it is running;
+//  - worker:   cancelAction(taskId, actionId) aborts one action (a tool call or a helper agent) —
+//              the request carries on and the model is told the action was stopped;
 //  - global:   cancelAll() — wired to Stop all.
 
 import type { RunningTask, ToolName } from './ipc.ts'
 
 interface Entry {
-  info: RunningTask
+  info: Omit<RunningTask, 'actions'>
   controller: AbortController
-  action: AbortController | null
+  actions: Map<string, { controller: AbortController; info: RunningTask['actions'][number] }>
 }
 
 export interface ActionHandle {
+  id: string
   /** Aborts if the action or its task is cancelled. */
   signal: AbortSignal
   end: () => void
@@ -42,9 +43,9 @@ export class TaskRegistry {
   start(kind: RunningTask['kind'], title: string): TaskHandle {
     const id = crypto.randomUUID()
     const entry: Entry = {
-      info: { id, kind, title: title.length > 80 ? `${title.slice(0, 79)}…` : title, startedAt: this.now(), action: null },
+      info: { id, kind, title: title.length > 80 ? `${title.slice(0, 79)}…` : title, startedAt: this.now() },
       controller: new AbortController(),
-      action: null,
+      actions: new Map(),
     }
     this.tasks.set(id, entry)
     this.changed()
@@ -52,17 +53,16 @@ export class TaskRegistry {
       id,
       signal: entry.controller.signal,
       beginAction: (tool, actionTitle) => {
-        const ac = new AbortController()
-        entry.action = ac
-        entry.info = { ...entry.info, action: { tool, title: actionTitle, startedAt: this.now() } }
+        const actionId = crypto.randomUUID()
+        const controller = new AbortController()
+        const short = actionTitle.length > 80 ? `${actionTitle.slice(0, 79)}…` : actionTitle
+        entry.actions.set(actionId, { controller, info: { id: actionId, tool, title: short, startedAt: this.now() } })
         this.changed()
         return {
-          signal: AbortSignal.any([entry.controller.signal, ac.signal]),
+          id: actionId,
+          signal: AbortSignal.any([entry.controller.signal, controller.signal]),
           end: () => {
-            if (entry.action !== ac) return
-            entry.action = null
-            entry.info = { ...entry.info, action: null }
-            if (this.tasks.has(id)) this.changed()
+            if (entry.actions.delete(actionId) && this.tasks.has(id)) this.changed()
           },
         }
       },
@@ -73,7 +73,9 @@ export class TaskRegistry {
   }
 
   list(): RunningTask[] {
-    return [...this.tasks.values()].map((e) => e.info).sort((a, b) => a.startedAt - b.startedAt)
+    return [...this.tasks.values()]
+      .map((e) => ({ ...e.info, actions: [...e.actions.values()].map((a) => a.info).sort((x, y) => x.startedAt - y.startedAt) }))
+      .sort((a, b) => a.startedAt - b.startedAt)
   }
 
   count(kind: RunningTask['kind']): number {
@@ -88,11 +90,13 @@ export class TaskRegistry {
     return true
   }
 
-  /** Worker level: only the action running now. */
-  cancelAction(id: string): boolean {
-    const e = this.tasks.get(id)
-    if (!e?.action || e.action.signal.aborted) return false
-    e.action.abort(new Error('Action cancelled by the owner'))
+  /** Worker level: one action. Without an action id, the only/oldest running action. */
+  cancelAction(taskId: string, actionId?: string): boolean {
+    const e = this.tasks.get(taskId)
+    if (!e) return false
+    const a = actionId ? e.actions.get(actionId) : [...e.actions.values()].sort((x, y) => x.info.startedAt - y.info.startedAt)[0]
+    if (!a || a.controller.signal.aborted) return false
+    a.controller.abort(new Error('Action cancelled by the owner'))
     return true
   }
 

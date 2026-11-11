@@ -1651,3 +1651,33 @@ select {
   background: color-mix(in srgb, var(--danger) 14%, transparent) !important;
   color: #ffb3ba !important;
 }
+.running-actions {
+  list-style: none;
+  margin: 6px 0 8px;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.running-actions li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  align-items: baseline;
+  font-size: var(--t-sm);
+  color: var(--dim);
+}
+.running-action-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.running-task,
+.approvals > li {
+  min-width: 0;
+}
+.running-task .approval-title {
+  min-width: 0;
+}
+.running-actions li {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}

@@ -130,3 +130,12 @@ Scope: Electron window/session config, preload bridge, all IPC handlers, credent
 - **Menu-bar menu**: open JARVIS, next reminder, Stop all / Re-arm, quit. It shows no conversation content beyond the next reminder's first 40 characters.
 - **Open at login** (separate switch; requires menu-bar mode; installed app only): registered through Electron's `setLoginItemSettings` (macOS 13+ `SMAppService`). The UI shows what macOS reports, including *requires approval*; ad-hoc-signed builds may be refused, and the UI says so rather than pretending. When opened at login, JARVIS starts in the menu bar without a window.
 - **Single instance**: a second launch focuses the running one.
+
+## 19. Helper agents (Sprint 12)
+- **Depth 1, ≤2 at once.** Only Jarvis (depth 0) can call `delegate`; helpers are never offered it, and the executor refuses it from depth 1 (`canDelegate`). At most `maxConcurrentHelpers` (2) run app-wide; a third is refused with a clear message.
+- **Read-only.** Helpers are offered only low-risk tools (`helperTools`), and the executor independently refuses anything else from a helper — so a helper can never raise an approval, save, delete or set anything.
+- **Own budget, counted upward.** Each helper has `HELPER_LIMITS` (6 steps, 90 s, 8 tool calls, $0.25); its spend is also added to the request that started it, so the request's $1 cap still holds.
+- **No conversation access.** A helper sees only the subtask text Jarvis writes (≤1 500 characters) and what its read-only tools return; no history, no persona, no memories in its prompt.
+- **Untrusted propagation.** If a helper read GitHub content, its report is labelled as such and the parent request is treated as having read untrusted content (§16): standing permissions stop applying.
+- **Stop levels.** Each helper is an action of its request: *Stop* on that helper aborts its model calls and lookups; *Stop request* and Stop all stop all helpers. Helper lookups appear in Activity prefixed "Helper ·".
+- **Requires the typed-replies key** (`agents:delegate` scope granted only when the provider behind the chosen text model has a key). Switchable in Settings → Permissions.

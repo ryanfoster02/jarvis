@@ -519,7 +519,7 @@ export function App(): React.JSX.Element {
                 reminderActions={reminderActions}
                 running={running}
                 onStopTask={(id) => void window.jarvis.tasks.cancel(id)}
-                onStopAction={(id) => void window.jarvis.tasks.cancelAction(id)}
+                onStopAction={(id, actionId) => void window.jarvis.tasks.cancelAction(id, actionId)}
               />
             </div>
 

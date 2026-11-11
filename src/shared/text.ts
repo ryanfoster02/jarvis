@@ -17,10 +17,13 @@ export interface TextRequestOptions {
   memories?: { global: string[]; workspace: string[] }
   /** Tools offered for this message (Sprint 8). */
   tools?: ToolSpec[]
+  /** Replaces the persona prompt entirely (helper agents, Sprint 12). */
+  instructions?: string
 }
 
 /** Same persona, memory and limits as voice; replies are short plain sentences that also read well aloud. */
 export function textInstructions(o: TextRequestOptions): string {
+  if (o.instructions !== undefined) return o.instructions
   return buildInstructions({
     workspaceName: o.workspaceName,
     persona: o.persona,

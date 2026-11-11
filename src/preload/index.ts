@@ -97,7 +97,7 @@ const api = {
   tasks: {
     list: (): Promise<RunningTask[]> => ipcRenderer.invoke(Channels.tasksList),
     cancel: (id: string): Promise<boolean> => ipcRenderer.invoke(Channels.tasksCancel, id),
-    cancelAction: (id: string): Promise<boolean> => ipcRenderer.invoke(Channels.tasksCancelAction, id),
+    cancelAction: (id: string, actionId?: string): Promise<boolean> => ipcRenderer.invoke(Channels.tasksCancelAction, id, actionId),
     onChange: (cb: (list: RunningTask[]) => void): (() => void) => {
       const listener = (_e: IpcRendererEvent, list: RunningTask[]): void => cb(list)
       ipcRenderer.on(Events.tasksChanged, listener)

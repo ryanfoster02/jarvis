@@ -472,7 +472,7 @@ test('stop levels: stopping a running action withdraws its approval and logs it'
   await expect(running.locator('.running-task')).toContainText('Voice: Save a memory')
   await expect(running.locator('.running-task')).toContainText('Now: Save a memory')
   await expect(page.locator('.approval').filter({ hasText: 'Should be stopped' })).toBeVisible()
-  await running.getByRole('button', { name: 'Stop action' }).click()
+  await running.getByRole('button', { name: 'Stop action: Save a memory' }).click()
   expect((await pending).output).toContain('stopped this action')
   await expect(page.locator('.approval')).toHaveCount(0)
   await expect(running).toHaveCount(0) // section disappears when nothing runs
@@ -482,5 +482,16 @@ test('stop levels: stopping a running action withdraws its approval and logs it'
     (window as unknown as { jarvis: ToolBridge }).jarvis.memory.list(),
   )
   expect(memories.value?.some((m) => m.text === 'Should be stopped')).toBe(false)
+  await closeApp(app)
+})
+
+test('helpers: refused without a text-model key; switchable in Permissions', async () => {
+  const { app, page } = await launch(profile)
+  const r = await invoke(page, 'delegate', { task: 'List the open issues in octocat/hello-world and summarise them.' })
+  expect(r.output).toMatch(/^Not run: No access to agents:delegate/)
+  await expect(page.locator('.approval')).toHaveCount(0)
+  await page.keyboard.press('ControlOrMeta+,')
+  await page.getByRole('button', { name: 'Permissions' }).click()
+  await expect(page.getByRole('switch', { name: 'Hand off to a helper' })).toHaveAttribute('aria-checked', 'true')
   await closeApp(app)
 })

@@ -4,6 +4,7 @@
 
 import { GitHubArgError, validateRef, validateRepoPath } from './github.ts'
 import { formatWhen, parseWhen, validateReminderText } from './reminders.ts'
+import { validateHelperTask } from './helpers.ts'
 import { IpcValidationError, isRepoName, type ActionNote, type MemoryScope, type RiskLevel, type ToolDecision, type ToolName } from './ipc.ts'
 import { validateMemoryText } from './memory.ts'
 
@@ -16,6 +17,7 @@ export type ToolScope =
   | 'reminders:read'
   | 'reminders:write'
   | 'reminders:cancel'
+  | 'agents:delegate'
 
 export interface ToolArgs {
   get_time: Record<string, never>
@@ -31,6 +33,7 @@ export interface ToolArgs {
   set_reminder: { text: string; dueAt: number }
   list_reminders: Record<string, never>
   cancel_reminder: { id: string }
+  delegate: { task: string }
 }
 
 export interface ToolSpec {
@@ -203,7 +206,30 @@ const REMINDER_TOOLS = {
   },
 } satisfies Partial<Record<ToolName, ToolSpec>>
 
-export const TOOLS: Record<ToolName, ToolSpec> = { ...CORE_TOOLS, ...GITHUB_TOOLS, ...REMINDER_TOOLS }
+// ---------- Helper agents (Sprint 12) ----------
+
+const AGENT_TOOLS = {
+  delegate: {
+    name: 'delegate',
+    title: 'Hand off to a helper',
+    ownerDescription:
+      'Gives a focused research subtask to a helper agent with read-only tools and its own small budget. Up to 2 at once; helpers can’t start helpers.',
+    description:
+      'Gives one focused, self-contained research subtask to a helper agent that can only use read-only tools (time, memories, reminders, allowed GitHub repositories). Use it for independent parts of a bigger question — call it up to twice in one turn to work in parallel. The helper cannot see this conversation, so put everything it needs in `task`. Returns a short report.',
+    risk: 'low',
+    scope: 'agents:delegate',
+    parameters: {
+      type: 'object',
+      properties: {
+        task: { type: 'string', description: 'The subtask, with all needed context (repository names, what to look for, what to report). Under 1500 characters.' },
+      },
+      required: ['task'],
+      additionalProperties: false,
+    },
+  },
+} satisfies Partial<Record<ToolName, ToolSpec>>
+
+export const TOOLS: Record<ToolName, ToolSpec> = { ...CORE_TOOLS, ...GITHUB_TOOLS, ...REMINDER_TOOLS, ...AGENT_TOOLS }
 
 /**
  * Specs as offered for one request: GitHub tools get an enum of exactly the allowed repositories,
@@ -302,6 +328,15 @@ export function parseToolArgs<N extends ToolName>(name: N, raw: unknown, now: nu
         throw err
       }
     }
+    case 'delegate': {
+      only(o, ['task'])
+      try {
+        return { task: validateHelperTask(o.task) } as ToolArgs[N]
+      } catch (err) {
+        if (err instanceof IpcValidationError) throw new ToolArgsError(err.message)
+        throw err
+      }
+    }
     case 'cancel_reminder': {
       only(o, ['id'])
       if (typeof o.id !== 'string' || !MEMORY_ID.test(o.id)) throw new ToolArgsError('id must be a reminder ID from list_reminders.')
@@ -382,6 +417,8 @@ export function summarizeToolCall(
       return 'Read upcoming reminders'
     case 'cancel_reminder':
       return clip(extra.reminderText ? `Cancel reminder: "${extra.reminderText}"` : 'Cancel a reminder', 280)
+    case 'delegate':
+      return clip(`Helper: ${(args as ToolArgs['delegate']).task}`, 280)
   }
 }
 
@@ -425,6 +462,11 @@ export function toolInstructions(specs: ToolSpec[]): string[] {
   if (has('set_reminder')) {
     lines.push(
       '- set_reminder: use the owner\'s local time; check get_time when the date matters. Reminders alert only while the app is open.',
+    )
+  }
+  if (has('delegate')) {
+    lines.push(
+      '- delegate: for bigger questions with independent parts (e.g. two repositories), hand each part to a helper — up to two in one turn — then combine their reports. Helpers are read-only and cannot see this conversation. Don’t delegate simple lookups.',
     )
   }
   if (specs.some((t) => t.scope === 'github:read')) {

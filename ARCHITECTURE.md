@@ -103,6 +103,16 @@ tasks:cancel → workflow · tasks:cancel-action → worker · Stop all → task
 tasks:changed event → Ops column "Running" (Stop action / Stop request) + composer Stop button
 ```
 
+## Helper agents (Sprint 12)
+```
+Jarvis (depth 0) ── delegate{task} ×2 in one turn ──▶ runAgent runs low-risk calls in parallel
+   └─ executeTool('delegate') → runHelper (main/tools.ts): ≤2 app-wide, depth check, key check
+        └─ runAgent(helper prompt, helperTools = low-risk only, HELPER_LIMITS, same stop signal)
+             └─ executeTool(… depth 1, "Helper · ") — anything not low risk refused
+        ← helperReport(text, stopped, readUntrusted) + costUsd → parent budget, untrusted → parent taint
+```
+Pure parts: `src/shared/helpers.ts` (task validation, `canDelegate`, `helperTools`, `isParallelSafe`, prompt, report) and the parallel batching in `src/shared/agent.ts`. `TaskRegistry` tracks several actions per task so each helper can be stopped on its own.
+
 ## Background mode (Sprint 11)
 `src/main/background.ts`: menu-bar `Tray` (template icon from `trayIcon.ts`, menu rebuilt on reminder/kill-switch changes and every minute), `setLoginItemSettings`, `shouldStartHidden()` (opened at login → no window), `onAllWindowsClosed()` (keep running + hide Dock icon when on). `src/main/windows.ts` reopens the window for the tray, notifications, a second launch and the Dock. Settings `runInBackground`, `openAtLogin`; status via `background:status`.
 

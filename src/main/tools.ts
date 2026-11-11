@@ -1,7 +1,11 @@
 import { BrowserWindow } from 'electron'
 import {
+  DEFAULT_LIMITS,
   Events,
+  HELPER_LIMITS,
   isToolName,
+  TEXT_PROVIDER_NAMES,
+  textModelProvider,
   type ActionNote,
   type Settings,
   type ToolDecision,
@@ -11,14 +15,18 @@ import {
   type WorkspaceId,
 } from '../shared/ipc.ts'
 import type { ExecutedTool } from '../shared/agent.ts'
-import { decide, type PermissionContext } from '../shared/permissions.ts'
-import { parseToolArgs, summarizeToolCall, ToolArgsError, TOOLS, type ToolArgs, type ToolScope } from '../shared/tools.ts'
+import { decide, isOffered, RunBudget, type PermissionContext } from '../shared/permissions.ts'
+import { parseToolArgs, specsForRequest, summarizeToolCall, ToolArgsError, TOOLS, type ToolArgs, type ToolScope } from '../shared/tools.ts'
 import { requestApproval } from './approvals.ts'
 import type { Db } from './db/conversations.ts'
 import { addMemory, deleteMemory, listMemories, MemoryLimitError } from './db/memories.ts'
 import { logToolRun } from './db/toolRuns.ts'
 import { isHalted } from './killswitch.ts'
 import { loadSettings } from './settings.ts'
+import { runAgent } from '../shared/agent.ts'
+import { canDelegate, helperInstructions, helperReport, helperTools, isParallelSafe } from '../shared/helpers.ts'
+import { buildProviderRequest, estimateTextCostUsd } from '../shared/text.ts'
+import { TEXT_PROVIDER_IMPLS } from './textProviders.ts'
 import { getKey } from './vault.ts'
 import { addReminder, cancelReminder, getReminder, listReminders, ReminderLimitError, ReminderNotFoundError } from './db/reminders.ts'
 import { remindersChanged } from './scheduler.ts'
@@ -40,12 +48,86 @@ export interface ToolContext {
   untrusted?: boolean
   /** Stops this action (worker) or its whole request (workflow). */
   signal?: AbortSignal
+  /** 0 = Jarvis, 1 = a helper agent (Sprint 12). Helpers can't delegate. */
+  depth?: number
+  /** Prefix for Activity summaries (e.g. "Helper · "). */
+  summaryPrefix?: string
+}
+
+/** A helper that failed still spent money; carry the spend so the parent budget counts it. */
+class HelperError extends Error {
+  readonly costUsd: number
+  constructor(message: string, costUsd: number) {
+    super(message)
+    this.name = 'HelperError'
+    this.costUsd = costUsd
+  }
+}
+
+let activeHelpers = 0
+
+/** Runs one bounded helper agent (SECURITY.md §19). Read-only tools, own budget, depth 1, ≤2 at once. */
+async function runHelper(task: string, ctx: ToolContext): Promise<{ output: string; detail: string; untrusted: boolean; costUsd: number }> {
+  if (!canDelegate(ctx.depth ?? 0, DEFAULT_LIMITS)) throw new Error('Helpers cannot start helpers.')
+  if (activeHelpers >= DEFAULT_LIMITS.maxConcurrentHelpers) {
+    throw new Error(`${DEFAULT_LIMITS.maxConcurrentHelpers} helpers are already working. Wait for one to finish, then try again.`)
+  }
+  const providerId = textModelProvider(ctx.settings.textModel)
+  const key = getKey(providerId)
+  if (!key) throw new Error(`Helpers use the typed-replies model, and no ${TEXT_PROVIDER_NAMES[providerId]} key is saved.`)
+  const provider = TEXT_PROVIDER_IMPLS[providerId]
+  const helperCtx: ToolContext = { ...ctx, depth: 1, summaryPrefix: 'Helper · ' }
+  const tools = specsForRequest(
+    helperTools(Object.values(TOOLS).filter((t) => isOffered(t, permissionContext(helperCtx)))),
+    ctx.settings.githubRepos,
+  )
+  const body = buildProviderRequest({
+    model: ctx.settings.textModel,
+    workspaceName: ctx.workspaceName,
+    persona: 'neutral',
+    honorific: 'none',
+    history: [],
+    message: task,
+    tools,
+    instructions: helperInstructions(tools, ctx.workspaceName),
+  })
+  let spent = 0
+  activeHelpers++
+  try {
+    const r = await runAgent({
+      provider: providerId,
+      body,
+      send: (b, signal) => provider.send(key, b, signal),
+      parse: provider.parse,
+      cost: (u) => {
+        const c = estimateTextCostUsd(ctx.settings.textModel, u)
+        spent += c ?? 0
+        return c
+      },
+      execute: (call, state) => executeTool(call.name, call.arguments, { ...helperCtx, untrusted: (ctx.untrusted ?? false) || state.untrusted }),
+      budget: new RunBudget(HELPER_LIMITS),
+      halted: isHalted,
+      signal: ctx.signal,
+      parallelSafe: (n) => isParallelSafe(isToolName(n) ? TOOLS[n] : undefined),
+    })
+    if (!r.ok) throw new HelperError(`Helper could not finish: ${r.message}`, spent)
+    return {
+      output: helperReport({ text: r.text, stopped: r.stopped, readUntrusted: r.untrusted }),
+      detail: `${r.actions.length} lookup${r.actions.length === 1 ? '' : 's'}${r.stopped ? ' · stopped at its limit' : ''}`,
+      untrusted: r.untrusted,
+      costUsd: spent,
+    }
+  } finally {
+    activeHelpers--
+  }
 }
 
 /** Scopes this setup can grant: memory needs the database; GitHub needs a token and at least one allowed repo. */
 export function grantedScopes(ctx: Pick<ToolContext, 'db' | 'settings'>): ToolScope[] {
   const scopes: ToolScope[] = ['clock']
   if (ctx.db) scopes.push('memory:read', 'memory:write', 'memory:delete', 'reminders:read', 'reminders:write', 'reminders:cancel')
+  // Helpers run on the typed-replies model, so they need that provider's key.
+  if (getKey(textModelProvider(ctx.settings.textModel))) scopes.push('agents:delegate')
   if (ctx.settings.githubRepos.length > 0 && getKey('github')) scopes.push('github:read')
   return scopes
 }
@@ -115,8 +197,14 @@ async function gh(repo: string, path: string, signal?: AbortSignal): Promise<unk
 }
 
 /** Runs the tool itself. Only called after the permission decision allowed it. */
-async function run(name: ToolName, args: ToolArgs[ToolName], ctx: ToolContext): Promise<{ output: string; detail: string; untrusted?: boolean }> {
+async function run(
+  name: ToolName,
+  args: ToolArgs[ToolName],
+  ctx: ToolContext,
+): Promise<{ output: string; detail: string; untrusted?: boolean; costUsd?: number }> {
   switch (name) {
+    case 'delegate':
+      return runHelper((args as ToolArgs['delegate']).task, ctx)
     case 'set_reminder': {
       const a = args as ToolArgs['set_reminder']
       if (!ctx.db) throw new Error('Reminders are unavailable (database not open).')
@@ -218,6 +306,12 @@ export async function executeTool(rawName: string, rawArgs: unknown, ctx: ToolCo
   const name = rawName
   const spec = TOOLS[name]
 
+  // Helpers are read-only, whatever their model asks for (it's only offered low-risk tools, but never trust that).
+  if ((ctx.depth ?? 0) > 0 && (spec.risk !== 'low' || name === 'delegate')) {
+    const note = await record(ctx, name, `${ctx.summaryPrefix ?? ''}${spec.title}`, 'blocked', 'skipped', 'Helpers can only use read-only tools', started)
+    return { output: 'Not run: helpers can only use read-only tools.', isError: true, note, waitedMs: 0 }
+  }
+
   let args: ToolArgs[ToolName]
   try {
     args = parseToolArgs(name, rawArgs)
@@ -251,7 +345,7 @@ export async function executeTool(rawName: string, rawArgs: unknown, ctx: ToolCo
       return { output: 'Not run: no upcoming reminder with that ID in this workspace. Use list_reminders to find it.', isError: true, note, waitedMs: 0 }
     }
   }
-  const summary = summarizeToolCall(name, args, { memoryText, reminderText, workspaceName: ctx.workspaceName })
+  const summary = (ctx.summaryPrefix ?? '') + summarizeToolCall(name, args, { memoryText, reminderText, workspaceName: ctx.workspaceName })
 
   // Allowlist check before asking or running (the model only sees allowed repos, but never trust that).
   if (spec.scope === 'github:read' && 'repo' in (args as object)) {
@@ -299,11 +393,12 @@ export async function executeTool(rawName: string, rawArgs: unknown, ctx: ToolCo
   try {
     const r = await run(name, args, ctx)
     const note = await record(ctx, name, summary, decision, 'ok', r.detail, started)
-    return { output: r.output, isError: false, note, waitedMs, untrusted: r.untrusted }
+    return { output: r.output, isError: false, note, waitedMs, untrusted: r.untrusted, costUsd: r.costUsd }
   } catch (err) {
+    const costUsd = err instanceof HelperError ? err.costUsd : undefined
     if (ctx.signal?.aborted) {
       const note = await record(ctx, name, summary, decision, 'skipped', 'Cancelled by you', started)
-      return { output: CANCELLED_TEXT, isError: true, note, waitedMs }
+      return { output: CANCELLED_TEXT, isError: true, note, waitedMs, costUsd }
     }
     const message =
       err instanceof MemoryLimitError || err instanceof ReminderLimitError
@@ -312,6 +407,6 @@ export async function executeTool(rawName: string, rawArgs: unknown, ctx: ToolCo
           ? err.message.slice(0, 200)
           : 'The action failed.'
     const note = await record(ctx, name, summary, decision, 'error', message, started)
-    return { output: `Failed: ${message}`, isError: true, note, waitedMs }
+    return { output: `Failed: ${message}`, isError: true, note, waitedMs, costUsd }
   }
 }
