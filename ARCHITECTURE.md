@@ -111,6 +111,14 @@ Leads view ── leads:list/save/delete ──▶ db/leads.ts (migration 6)    
 ```
 Pure: `src/shared/leads.ts` (validation, patches, `pipelineSummary`), `src/shared/webhooks.ts` (URL rules, payload, data/secret checks). Webhook names are offered to the model as an enum (`specsForRequest`).
 
+## Performance (Sprint 16)
+```
+main/index.ts  markStartup(appReady, databaseReady) · window reveal = first of ready-to-show | perf:dashboard-ready (windowShown)
+renderer App   first conversation load → perf:dashboard-ready · data-calm on <html> (shared/perf.ts shouldCalm) pauses animations
+Settings→About perf:get → main/perf.ts: startup rows + app.getAppMetrics grouped (shared/perf.ts) + DB file size
+```
+Renderer is minified; non-dashboard screens are `React.lazy` chunks. `scripts/check-bundle.mjs` enforces the startup JS budget in CI.
+
 ## Platforms (Sprint 14)
 - `src/shared/platform.ts` (`detectPlatform`, `platformText`) gives the renderer per-OS shortcuts (⌘ vs Ctrl) and wording (menu bar vs system tray, keychain, settings paths); `src/renderer/src/platform.ts` detects the OS from the user agent.
 - Main: Windows sets an AppUserModelID (notifications), non-mac windows auto-hide the menu bar and get a File menu, the tray uses a template icon on macOS and a gold icon elsewhere, login items per OS (`background.ts`), Linux refuses `basic_text` key storage (`vault.ts`).

@@ -1,6 +1,6 @@
 # IMPLEMENTATION
 
-Current phase: Phase 4 / Sprint 15 — Business workflows (webhooks + leads)
+Current phase: Phase 4 / Sprint 16 — Performance
 
 Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ not started
 
@@ -184,7 +184,7 @@ Packaging for Windows (NSIS installer) and Linux (AppImage, .deb); platform fixe
 - ⚠ Linux CI has no usable keyring: after 3 attempts (unlocked GNOME Keyring; GNOME session; `--password-store=gnome-libsecret`) I stopped, per the project rules. JARVIS correctly refuses weak storage there, so the 3 key-form tests skip with a reason and a new test verifies the refusal. Saving keys on a real Linux desktop is still unverified
 - ⬜ Code signing (Apple Developer ID, Windows certificate) before sharing builds with anyone else
 
-### Sprint 15 — Business workflows (webhooks + leads) 🟡
+### Sprint 15 — Business workflows (webhooks + leads) ✅ (owner set up a real webhook 2026-11-10)
 Vendor-neutral first (owner didn't name specific tools): **webhooks** to n8n / Zapier / Make / any CRM automation (owner-registered, encrypted at rest, every send is high risk = approval each time, never from scheduled routines), and a local **leads** pipeline per workspace (owner UI; Jarvis can list, add and update with approval) plus a weekly pipeline-report routine template. Vendor connectors (HubSpot, Pipedrive, …) later, once the owner picks one.
 - ✅ Pure: `src/shared/leads.ts`, `src/shared/webhooks.ts` + 4 tools (list_leads low, add/update_lead medium, send_webhook high; webhook enum) — 5 unit tests
 - ✅ Storage: migration 6 `leads` (CHECKs) — SQL test; Drizzle store — test on Mac/CI
@@ -192,7 +192,19 @@ Vendor-neutral first (owner didn't name specific tools): **webhooks** to n8n / Z
 - ✅ UI: **Leads** screen (pipeline by stage, overdue, inline stage change, add/edit/delete); Settings → Connections → Webhooks (add, test, remove)
 - ✅ e2e: leads flow incl. Jarvis adding with approval; webhooks against a **real local HTTP receiver** (test ping with secret header, denied send arrives nowhere, approved send arrives exactly)
 - ✅ CI back on `npm ci` (lock file pushed by the owner)
-- 🟡 Needs owner verification with a real n8n (or Zapier/Make) workflow
+- ✅ Owner set up a real webhook (2026-11-10)
+- ✅ Fixed after release: pipeline cards reused the main area's `.stage` class (screens couldn't scroll); the app now fits its window down to the 1024 px minimum (shell column pinned, compact chips/columns)
+
+### Sprint 16 — Performance ✅ (CI green on all three, 2026-11-10)
+Measure first, then fix what the measurements show. Every number below comes from CI runs or a recorded local test; nothing is estimated.
+- ✅ **Measured:** startup timeline (app ready → database open → window shown → dashboard ready, ms since process start) and per-process memory/CPU (`app.getAppMetrics`) — pure `src/shared/perf.ts`, `src/main/perf.ts`, `perf:get` / `perf:dashboard-ready` IPC; **Settings → About → Performance** shows them with "Measure again"
+- ✅ **Renderer bundle:** electron-vite leaves the renderer unminified by default → minified; Memory, Leads, Routines and Settings load on first visit. Startup JavaScript **825 kB → 278 kB (87 kB gzip)**; lazy screens 4.8–28 kB each. `npm run check:bundle` (budget 320 kB) runs in CI after the build
+- ✅ **Linux window delay:** CI's new timeline showed `ready-to-show` arriving 3.2 s after the dashboard was drawn (356 ms). The window now appears at whichever comes first → Linux window shown **3230 ms → 313 ms**
+- ✅ **Idle cost:** the animated core kept the GPU busy even when nobody was looking. Animation now pauses while the window is hidden, or in the background while Jarvis stands by (approvals, running tasks, voice keep moving). Local test (software-rendered Chromium, so absolute numbers are inflated): GPU process ~100% of a core → **0%** when paused. Tried and reverted: splitting the core into GPU layers — no measurable gain here (removed the glow re-filtering but added compositing); not shipped without proof
+- ✅ **SQLite:** `synchronous = NORMAL` with WAL (fewer disk syncs; no corruption risk), `PRAGMA optimize` on close; indexes were already right for every hot query
+- ✅ **CI startup (run 42967596774, ms since launch):** macOS window 910 / dashboard 1030 · Windows 375 / 524 · Linux 313 / 314. Memory at rest 347–454 MB (all processes)
+- ✅ Tests: 4 unit (perf), 1 DB (pragmas), 1 e2e (timeline order, usage, panel, startup ceiling 20 s); 131 unit tests on each OS
+- ⬜ Owner check on the Mac: Settings → About → Performance after a normal launch; Activity Monitor with Jarvis in the background
 
 ## Dependencies between stages
 Sprint 3 needs Sprint 1 IPC + vault. Text chat needs Phase 2 provider (an interim direct OpenAI text call may land in Sprint 4). Integrations need permission engine. Scheduler needs permission engine + limits.

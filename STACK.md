@@ -31,6 +31,7 @@ Versions verified against official sources on 2026-11-08. Re-verify before major
 2. **No Tailwind in Sprint 1** — three themes are cleanest as CSS variables; avoids a dependency before the design system exists.
 3. **Realtime voice via WebRTC "unified interface"** — the renderer creates the SDP offer; the main process posts it with the session config to `POST /v1/realtime/calls` using the stored key and returns the answer SDP. The renderer never holds any credential (not even an ephemeral one) and makes no HTTP calls to OpenAI, so CSP `connect-src` stays `'self'`. Audio flows peer-to-peer between the renderer and OpenAI.
 4. **Settings stay JSON**; conversations (and, from Sprint 6, memory) live in `userData/jarvis.db`.
+5. **Renderer minified, main/preload not** (Sprint 16) — electron-vite defaults to no minification; the renderer is parsed at every launch, so it's minified (esbuild, already part of Vite — no new dependency). Main and preload stay readable for stack traces.
 
 ## Electron binary download
 Electron 45 has no install script; its binary is fetched by its own `install-electron` bin. electron-vite 5 only checks `node_modules/electron/path.txt` and doesn't download it. `scripts/ensure-electron.mjs` runs Electron's installer when the binary is missing (hooked to `postinstall` in soft mode, plus `predev` / `prepreview`).
