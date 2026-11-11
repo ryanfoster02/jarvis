@@ -111,6 +111,14 @@ Leads view ── leads:list/save/delete ──▶ db/leads.ts (migration 6)    
 ```
 Pure: `src/shared/leads.ts` (validation, patches, `pipelineSummary`), `src/shared/webhooks.ts` (URL rules, payload, data/secret checks). Webhook names are offered to the model as an enum (`specsForRequest`).
 
+## Google Calendar (Sprint 19)
+```
+Settings → Connections → Google ── google:save-client/connect/cancel/disconnect/status ──▶ main/google.ts (safeStorage google.json)
+  connect → googleOAuth.runLoopbackFlow: PKCE + state → shell.openExternal(consent) → 127.0.0.1:<port> redirect → token exchange
+calendar_list_events / calendar_find_free_time (low, calendar:read) ──▶ listEvents → calendarList (cached) + events per calendar
+Dashboard TodayPanel ── calendar:events('today') ──▶ listEvents
+```
+
 ## Backups, updates, releases (Sprint 18)
 ```
 Settings → Data ── backup:list/create/inspect/restore/show-folder ──▶ main/backups.ts (dialogs, tokens)

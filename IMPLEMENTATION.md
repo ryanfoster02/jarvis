@@ -1,6 +1,6 @@
 # IMPLEMENTATION
 
-Current phase: Phase 5 / Sprint 18 — Release readiness
+Current phase: Phase 5 / Sprint 19 — Google Calendar (read-only)
 
 Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ not started
 
@@ -230,8 +230,15 @@ Owner chose to go without an Apple Developer account for now, so no code signing
 - ⬜ Code signing + notarization (needs an Apple Developer ID); Windows signing optional
 - 🟡 Owner: first release — `npm version minor` then `git push --follow-tags`, check the draft on GitHub, publish it, then *Check for updates* in an older build
 
-### Sprint 19 — Google Calendar (read-only) ⬜
-Google OAuth (desktop loopback + PKCE, tokens encrypted in main), `list_events` / free-time tools, Today panel. Creating events later, with approval.
+### Sprint 19 — Google Calendar (read-only) 🟡 (CI green 2026-11-11; live sign-in needs the owner's client)
+- ✅ Pure `src/shared/google.ts`: client validation, auth URL (PKCE S256, state, offline + consent), callback + token parsing, error wording (incl. Testing-mode 7-day expiry), calendar list/events parsing (all-day, cancelled, working location, declined, free, safe links), merging, local ranges (DST-safe), RFC3339 with offset, free slots, model output
+- ✅ `src/main/googleOAuth.ts` (Node only): loopback listener + exchange + refresh with injected fetch/browser — tested end to end with a simulated browser and fake token endpoint (forged state, denial, timeout, cancel)
+- ✅ `src/main/google.ts`: encrypted client + tokens, connect/cancel/disconnect (revoke), token refresh, calendar list (10-min cache) + events across shown calendars
+- ✅ Tools (low risk, `calendar:read`, only while connected): `calendar_list_events`, `calendar_find_free_time`; output untrusted
+- ✅ UI: Settings → Connections → Google; dashboard **Today** panel (only when connected, refreshes every 5 min and on focus, Join link for Meet); setup guide counts Google
+- ✅ e2e: tools refused without a connection; bad client ID rejected; real loopback sign-in in the packaged app with the browser played by the test (scopes, PKCE, forged state refused, decline handled); remove
+- ✅ CI run 42975030533: 161 unit tests on each OS; e2e 28 passed (macOS/Windows), 24 + 5 skipped (Linux, no keyring)
+- 🟡 Owner: save the client, Connect Google, then ask "what's on my calendar today?" and "when am I free tomorrow for an hour?" 
 
 ### Sprint 20 — Gmail drafts ⬜
 Same Google connection, compose scope: Jarvis creates drafts in Gmail (medium risk, approval); sending stays with the owner in Gmail.
