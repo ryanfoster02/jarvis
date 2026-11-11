@@ -38,6 +38,8 @@ export function GooglePanel(): React.JSX.Element {
 
   if (!status) return <div aria-label="Google" />
   const showForm = !status.clientSaved || editing
+  // Gmail switched on, but the current sign-in doesn't include it yet.
+  const gmailPending = status.connected && status.gmailWanted && !status.gmailGranted
 
   return (
     <div className="repo-allowlist google-panel" aria-label="Google">
@@ -112,9 +114,9 @@ export function GooglePanel(): React.JSX.Element {
                   Cancel sign-in
                 </button>
               </>
-            ) : !status.connected || status.needsReconnect ? (
+            ) : !status.connected || status.needsReconnect || gmailPending ? (
               <button className="btn" onClick={() => void connect()}>
-                {status.needsReconnect ? 'Reconnect Google' : 'Connect Google'}
+                {status.connected ? 'Reconnect Google' : 'Connect Google'}
               </button>
             ) : (
               <button
@@ -137,6 +139,32 @@ export function GooglePanel(): React.JSX.Element {
         </>
       )}
       {msg && <p className={`form-msg ${msg.error ? 'is-error' : 'is-ok'}`}>{msg.text}</p>}
+
+      {status.clientSaved && !showForm && (
+        <div className="field">
+          <div className="field-text">
+            <h3>Let Jarvis write Gmail drafts</h3>
+            <p>
+              Jarvis can save emails as drafts in your Gmail when you ask (it asks before each one). It never sends: you
+              review and send drafts in Gmail. Needs the Gmail API enabled in your Google Cloud project. Google has no
+              drafts-only permission, so its consent screen will say “send email” — JARVIS has no code that sends.
+            </p>
+            {gmailPending && <p className="form-msg is-error">Reconnect Google to give Jarvis Gmail draft access.</p>}
+            {status.gmailWanted && status.gmailGranted && !status.needsReconnect && <p className="form-msg is-ok">Gmail drafts are allowed.</p>}
+          </div>
+          <button
+            role="switch"
+            aria-checked={status.gmailWanted}
+            aria-label="Let Jarvis write Gmail drafts"
+            className="switch"
+            onClick={() =>
+              void window.jarvis.google
+                .setGmail(!status.gmailWanted)
+                .then((r) => apply(r, r.status.gmailWanted ? (r.status.connected ? 'Now reconnect Google to allow Gmail drafts.' : 'Gmail drafts will be included when you connect.') : 'Gmail drafts switched off.'))
+            }
+          />
+        </div>
+      )}
     </div>
   )
 }

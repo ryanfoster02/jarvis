@@ -6,6 +6,8 @@ import {
   eventsPath,
   GOOGLE_CALENDAR_API,
   GOOGLE_REVOKE_URL,
+  GMAIL_COMPOSE_SCOPE,
+  googleScopes,
   mergeEvents,
   parseCalendarList,
   parseEvents,
@@ -16,6 +18,7 @@ import {
   type GoogleTokens,
 } from '../shared/google.ts'
 import { GoogleAuthError, refreshAccessToken, runLoopbackFlow } from './googleOAuth.ts'
+import { draftRequestBody, GMAIL_DRAFTS_URL, parseDraftResponse, type DraftInput } from '../shared/gmail.ts'
 import { encryptionAvailable } from './vault.ts'
 
 // Google connection (Sprint 19). The OAuth client (ID + secret) and the tokens are encrypted with
@@ -36,7 +39,13 @@ interface Stored {
   email: string | null
   connectedAt: number | null
   needsReconnect: boolean
+  /** Owner switched on Gmail drafts (Sprint 20). Missing in files from Sprint 19 = false. */
+  wantGmail?: boolean
+  /** Scopes Google granted in the current sign-in. */
+  scopes?: string[]
 }
+
+type Meta = Omit<Stored, 'version' | 'cipher'>
 
 export class GoogleError extends Error {}
 
@@ -61,7 +70,7 @@ function secretsOf(s: Stored | null): Secrets | null {
   }
 }
 
-function save(secrets: Secrets, meta: Omit<Stored, 'version' | 'cipher'>): void {
+function save(secrets: Secrets, meta: Meta): void {
   if (!encryptionAvailable()) throw new GoogleError('This computer can’t store secrets securely, so Google can’t be connected.')
   mkdirSync(app.getPath('userData'), { recursive: true })
   const stored: Stored = { version: 1, cipher: safeStorage.encryptString(JSON.stringify(secrets)).toString('base64'), ...meta }
@@ -84,7 +93,32 @@ export function googleStatus(): GoogleStatus {
     connectedAt: s?.connectedAt ?? null,
     needsReconnect: !!s?.needsReconnect,
     connecting: flow !== null,
+    gmailWanted: !!s?.wantGmail,
+    gmailGranted: !!sec?.refreshToken && (s?.scopes ?? []).includes(GMAIL_COMPOSE_SCOPE),
   }
+}
+
+/** Gmail drafts can be written right now (scope check for the tool). */
+export function gmailReady(): boolean {
+  const st = googleStatus()
+  return st.gmailWanted && st.gmailGranted && !st.needsReconnect
+}
+
+const metaOf = (s: Stored | null): Meta => ({
+  email: s?.email ?? null,
+  connectedAt: s?.connectedAt ?? null,
+  needsReconnect: !!s?.needsReconnect,
+  wantGmail: !!s?.wantGmail,
+  scopes: s?.scopes ?? [],
+})
+
+/** Switching Gmail drafts on takes effect at the next Connect (Google grants scopes per sign-in). */
+export function setGmailWanted(want: boolean): GoogleStatus {
+  const stored = load()
+  const sec = secretsOf(stored)
+  if (!sec) throw new GoogleError('Save your Google OAuth client first.')
+  save(sec, { ...metaOf(stored), wantGmail: want })
+  return googleStatus()
 }
 
 /** Calendar access is usable right now (scope check for the tools). */
@@ -106,9 +140,7 @@ export function saveGoogleClient(input: GoogleClientInput): GoogleStatus {
       accessToken: same ? prev?.accessToken ?? null : null,
       expiresAt: same ? prev?.expiresAt ?? 0 : 0,
     },
-    same && stored
-      ? { email: stored.email, connectedAt: stored.connectedAt, needsReconnect: stored.needsReconnect }
-      : { email: null, connectedAt: null, needsReconnect: false },
+    same && stored ? metaOf(stored) : { ...metaOf(null), wantGmail: !!stored?.wantGmail },
   )
   return googleStatus()
 }
@@ -120,9 +152,11 @@ export async function connectGoogle(): Promise<GoogleStatus> {
   const sec = secretsOf(load())
   if (!sec?.clientId) throw new GoogleError('Save your Google OAuth client ID first.')
   if (flow) throw new GoogleError('A Google sign-in is already open in your browser.')
+  const wantGmail = !!load()?.wantGmail
   flow = new AbortController()
   try {
     const t = await runLoopbackFlow({
+      scopes: googleScopes(wantGmail),
       clientId: sec.clientId,
       clientSecret: sec.clientSecret,
       openUrl: (url) => shell.openExternal(url),
@@ -131,7 +165,7 @@ export async function connectGoogle(): Promise<GoogleStatus> {
     })
     save(
       { ...sec, refreshToken: t.refreshToken, accessToken: t.accessToken, expiresAt: t.expiresAt },
-      { email: t.email, connectedAt: Date.now(), needsReconnect: false },
+      { email: t.email, connectedAt: Date.now(), needsReconnect: false, wantGmail, scopes: t.scopes },
     )
     calendarCache = null
     return googleStatus()
@@ -167,7 +201,7 @@ export async function disconnectGoogle(forgetClient: boolean): Promise<GoogleSta
   if (forgetClient || !sec) {
     rmSync(file(), { force: true })
   } else {
-    save({ ...sec, refreshToken: null, accessToken: null, expiresAt: 0 }, { email: null, connectedAt: null, needsReconnect: false })
+    save({ ...sec, refreshToken: null, accessToken: null, expiresAt: 0 }, { ...metaOf(null), wantGmail: !!load()?.wantGmail })
   }
   return googleStatus()
 }
@@ -183,15 +217,18 @@ async function accessToken(signal?: AbortSignal): Promise<string> {
     t = await refreshAccessToken({ clientId: sec.clientId, clientSecret: sec.clientSecret, refreshToken: sec.refreshToken, fetchFn: nodeFetch, signal })
   } catch (err) {
     if (err instanceof GoogleAuthError) {
-      if (err.reconnect && stored) save(sec, { email: stored.email, connectedAt: stored.connectedAt, needsReconnect: true })
+      if (err.reconnect && stored) save(sec, { ...metaOf(stored), needsReconnect: true })
       throw new GoogleError(err.message)
     }
     throw err
   }
   save({ ...sec, accessToken: t.accessToken, refreshToken: t.refreshToken, expiresAt: t.expiresAt }, {
+    ...metaOf(stored),
     email: t.email ?? stored?.email ?? null,
     connectedAt: stored?.connectedAt ?? Date.now(),
     needsReconnect: false,
+    // A refresh reports the scopes of the grant; keep the earlier list if it doesn't.
+    scopes: t.scopes.length ? t.scopes : (stored?.scopes ?? []),
   })
   return t.accessToken
 }
@@ -232,4 +269,36 @@ export async function listEvents(start: number, end: number, signal?: AbortSigna
   const cals = await calendars(signal)
   const lists = await Promise.all(cals.map(async (c) => parseEvents(await calendarGet(eventsPath(c.id, start, end), signal), c.name)))
   return mergeEvents(lists).filter((e) => e.end > start && e.start < end)
+}
+
+/**
+ * Creates one Gmail draft (Sprint 20). This is the only Gmail request JARVIS can make: there is no
+ * code anywhere that sends mail — the owner reviews and sends drafts in Gmail.
+ */
+export async function createGmailDraft(d: DraftInput, signal?: AbortSignal): Promise<{ draftId: string; email: string | null }> {
+  if (!gmailReady()) throw new GoogleError('Gmail drafts are not switched on and connected. Settings → Connections → Google.')
+  const token = await accessToken(signal)
+  let res: Response
+  try {
+    res = await fetch(GMAIL_DRAFTS_URL, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(draftRequestBody(d)),
+      redirect: 'error',
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(20_000)]) : AbortSignal.timeout(20_000),
+    })
+  } catch (err) {
+    if (signal?.aborted) throw err
+    throw new GoogleError("Couldn't reach Gmail. Check the internet connection.")
+  }
+  const text = await res.text()
+  if (!res.ok) throw new GoogleError(describeApiError(res.status, text, 'Gmail'))
+  let parsed: ReturnType<typeof parseDraftResponse> = null
+  try {
+    parsed = parseDraftResponse(JSON.parse(text))
+  } catch {
+    /* handled below */
+  }
+  if (!parsed) throw new GoogleError('Gmail did not confirm the draft.')
+  return { draftId: parsed.draftId, email: load()?.email ?? null }
 }

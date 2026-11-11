@@ -174,6 +174,8 @@ const api = {
     /** Opens Google's consent page in the browser; resolves when the owner finishes (or after 5 minutes). */
     connect: (): Promise<GoogleResult> => ipcRenderer.invoke(Channels.googleConnect),
     cancel: (): Promise<void> => ipcRenderer.invoke(Channels.googleCancel),
+    /** Gmail drafts on/off; takes effect at the next Connect. */
+    setGmail: (want: boolean): Promise<GoogleResult> => ipcRenderer.invoke(Channels.googleSetGmail, want),
     disconnect: (forgetClient: boolean): Promise<GoogleResult> => ipcRenderer.invoke(Channels.googleDisconnect, forgetClient),
   },
   calendar: {

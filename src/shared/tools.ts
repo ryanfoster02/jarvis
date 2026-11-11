@@ -9,6 +9,7 @@ import { validateDate, validateLeadInput } from './leads.ts'
 import { parseWebhookData, validateWebhookMessage } from './webhooks.ts'
 import { validateSearchQuery } from './websearch.ts'
 import { CALENDAR_RANGES, localDate, type CalendarRange } from './google.ts'
+import { draftSummary, validateDraftInput, type DraftInput } from './gmail.ts'
 import { IpcValidationError, isRepoName, type ActionNote, type LeadInput, type LeadStatus, type MemoryScope, type RiskLevel, type ToolDecision, type ToolName } from './ipc.ts'
 import { validateMemoryText } from './memory.ts'
 
@@ -27,6 +28,7 @@ export type ToolScope =
   | 'webhooks:send'
   | 'web:search'
   | 'calendar:read'
+  | 'gmail:draft'
 
 export interface ToolArgs {
   get_time: Record<string, never>
@@ -51,6 +53,7 @@ export interface ToolArgs {
   calendar_list_events: { range: CalendarRange; date: string | null }
   /** `date` is today, tomorrow or YYYY-MM-DD; hours are local, 0–24. */
   calendar_find_free_time: { date: string; minMinutes: number; fromHour: number; toHour: number }
+  gmail_create_draft: DraftInput
 }
 
 export interface ToolSpec {
@@ -396,6 +399,31 @@ const CALENDAR_TOOLS = {
   },
 } satisfies Partial<Record<ToolName, ToolSpec>>
 
+// ---------- Gmail drafts (Sprint 20) ----------
+
+const GMAIL_TOOLS = {
+  gmail_create_draft: {
+    name: 'gmail_create_draft',
+    title: 'Write a Gmail draft',
+    ownerDescription: 'Saves an email as a draft in your Gmail. Never sends: you review and send it in Gmail. Asks you first.',
+    description:
+      'Saves one plain-text email as a draft in the owner\'s Gmail. It is NOT sent; the owner reviews and sends it in Gmail. Use when the owner asks you to draft or write an email. Use only addresses the owner gave or that come from their own data (leads, calendar); never guess an address — ask. Write in the owner\'s voice, signed as the owner. Never include secrets.',
+    risk: 'medium',
+    scope: 'gmail:draft',
+    parameters: {
+      type: 'object',
+      properties: {
+        to: { type: 'array', items: { type: 'string' }, description: 'Recipient email addresses.' },
+        cc: { type: ['array', 'null'], items: { type: 'string' }, description: 'CC addresses, or null.' },
+        subject: { type: 'string', description: 'One-line subject.' },
+        body: { type: 'string', description: 'Plain-text body, with greeting and sign-off.' },
+      },
+      required: ['to', 'cc', 'subject', 'body'],
+      additionalProperties: false,
+    },
+  },
+} satisfies Partial<Record<ToolName, ToolSpec>>
+
 export const TOOLS: Record<ToolName, ToolSpec> = {
   ...CORE_TOOLS,
   ...GITHUB_TOOLS,
@@ -404,6 +432,7 @@ export const TOOLS: Record<ToolName, ToolSpec> = {
   ...BUSINESS_TOOLS,
   ...RESEARCH_TOOLS,
   ...CALENDAR_TOOLS,
+  ...GMAIL_TOOLS,
 }
 
 /**
@@ -531,6 +560,10 @@ export function parseToolArgs<N extends ToolName>(name: N, raw: unknown, now: nu
         if (err instanceof IpcValidationError) throw new ToolArgsError(err.message)
         throw err
       }
+    }
+    case 'gmail_create_draft': {
+      only(o, ['to', 'cc', 'subject', 'body'])
+      return ipcArgs(() => validateDraftInput({ to: o.to, cc: o.cc, subject: o.subject, body: o.body })) as ToolArgs[N]
     }
     case 'calendar_list_events': {
       only(o, ['range', 'date'])
@@ -691,6 +724,8 @@ export function summarizeToolCall(
       const parts = Object.entries(a.patch).map(([k, v]) => `${k === 'nextStep' ? 'next step' : k === 'nextDate' ? 'next date' : k}: ${String(v)}`)
       return clip(`Update lead${extra.leadName ? ` "${extra.leadName}"` : ''} → ${parts.join(', ')}`, 280)
     }
+    case 'gmail_create_draft':
+      return draftSummary(args as ToolArgs['gmail_create_draft'])
     case 'calendar_list_events': {
       const a = args as ToolArgs['calendar_list_events']
       return `Read your calendar (${a.range === 'date' ? a.date : a.range.replace(/_/g, ' ')})`
@@ -763,6 +798,13 @@ export function toolInstructions(specs: ToolSpec[]): string[] {
     lines.push(
       '- Calendar tools read the owner\'s Google Calendar (read-only). Use them for "what\'s on my schedule", "am I free…". You cannot create, move or reply to events; say so if asked.',
     )
+  }
+  if (has('gmail_create_draft')) {
+    lines.push(
+      '- gmail_create_draft saves a draft in the owner\'s Gmail; it never sends. Say it is a draft waiting in Gmail. You cannot send email or read the inbox.',
+    )
+  } else {
+    lines.push('- You cannot write or send email here. Offer the text in your reply instead.')
   }
   if (has('web_search')) {
     lines.push(

@@ -68,7 +68,7 @@ import { remindersChanged } from './scheduler.ts'
 import { applyBackground, backgroundStatus } from './background.ts'
 import { dashboardReady, perfSnapshot } from './perf.ts'
 import { checkForUpdates, openLatestRelease } from './updates.ts'
-import { cancelGoogleConnect, connectGoogle, disconnectGoogle, GoogleError, googleStatus, listEvents, saveGoogleClient } from './google.ts'
+import { cancelGoogleConnect, connectGoogle, disconnectGoogle, GoogleError, googleStatus, listEvents, saveGoogleClient, setGmailWanted } from './google.ts'
 import { rangeBounds, validateDashboardRange, validateGoogleClient, type CalendarEventsResult, type GoogleResult, type GoogleStatus } from '../shared/google.ts'
 import type { UpdateCheckResult } from '../shared/updates.ts'
 import { createBackupFile, inspectSource, listAutoBackups, restoreFromToken, showBackupFolder } from './backups.ts'
@@ -230,6 +230,17 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
     }),
   )
   ipcMain.handle(Channels.googleCancel, guard((): void => cancelGoogleConnect()))
+  ipcMain.handle(
+    Channels.googleSetGmail,
+    guard((want: unknown): GoogleResult => {
+      if (typeof want !== 'boolean') return { ok: false, message: 'want must be true or false', status: googleStatus() }
+      try {
+        return { ok: true, status: setGmailWanted(want) }
+      } catch (err) {
+        return googleFail(err)
+      }
+    }),
+  )
   ipcMain.handle(
     Channels.googleDisconnect,
     guard(async (forgetClient: unknown): Promise<GoogleResult> => {

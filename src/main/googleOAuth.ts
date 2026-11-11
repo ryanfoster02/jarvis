@@ -60,6 +60,8 @@ async function postForm(fetchFn: FetchFn, params: Record<string, string>, signal
 
 export interface FlowOptions {
   clientId: string
+  /** Scopes to ask for (defaults to the read-only calendar set). */
+  scopes?: readonly string[]
   clientSecret: string | null
   /** Opens the consent page in the owner's browser. */
   openUrl: (url: string) => Promise<void> | void
@@ -113,7 +115,7 @@ export async function runLoopbackFlow(o: FlowOptions): Promise<GoogleTokens> {
   o.signal?.addEventListener('abort', onAbort, { once: true })
 
   try {
-    await o.openUrl(buildAuthUrl({ clientId: o.clientId, redirectUri, codeChallenge: challenge, state }))
+    await o.openUrl(buildAuthUrl({ clientId: o.clientId, redirectUri, codeChallenge: challenge, state, scopes: o.scopes }))
     const r = await result
     if ('error' in r) {
       if (r.error === 'timeout') throw new GoogleAuthError('Google sign-in timed out. Try again and finish in the browser within 5 minutes.')

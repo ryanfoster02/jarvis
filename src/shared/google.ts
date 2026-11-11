@@ -20,6 +20,13 @@ export const GOOGLE_CALENDAR_API = 'https://www.googleapis.com/calendar/v3'
 export const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.readonly'
 /** Read-only calendar, plus the account's email so Settings can show which account is connected. */
 export const GOOGLE_SCOPES = ['openid', 'email', CALENDAR_SCOPE] as const
+/** Gmail drafts (Sprint 20), only when the owner switches it on. Also allows sending — JARVIS has no code that sends. */
+export const GMAIL_COMPOSE_SCOPE = 'https://www.googleapis.com/auth/gmail.compose'
+
+/** Installed apps can't add scopes later, so every sign-in asks for the full set the owner wants. */
+export function googleScopes(withGmail: boolean): string[] {
+  return withGmail ? [...GOOGLE_SCOPES, GMAIL_COMPOSE_SCOPE] : [...GOOGLE_SCOPES]
+}
 
 // ---------- Client and OAuth ----------
 
@@ -49,12 +56,12 @@ export function validateGoogleClient(input: unknown): GoogleClientInput {
   return { clientId: id, clientSecret: secret }
 }
 
-export function buildAuthUrl(o: { clientId: string; redirectUri: string; codeChallenge: string; state: string }): string {
+export function buildAuthUrl(o: { clientId: string; redirectUri: string; codeChallenge: string; state: string; scopes?: readonly string[] }): string {
   const p = new URLSearchParams({
     client_id: o.clientId,
     redirect_uri: o.redirectUri,
     response_type: 'code',
-    scope: GOOGLE_SCOPES.join(' '),
+    scope: (o.scopes ?? GOOGLE_SCOPES).join(' '),
     code_challenge: o.codeChallenge,
     code_challenge_method: 'S256',
     state: o.state,
@@ -137,7 +144,7 @@ export function describeTokenError(status: number, body: string): { message: str
   return { message: `Google sign-in failed (${error || status}).`, reconnect: false }
 }
 
-export function describeApiError(status: number, body: string): string {
+export function describeApiError(status: number, body: string, api: 'Calendar' | 'Gmail' = 'Calendar'): string {
   let reason = ''
   try {
     const j = JSON.parse(body) as { error?: { message?: unknown; errors?: Array<{ reason?: unknown }> } }
@@ -147,11 +154,15 @@ export function describeApiError(status: number, body: string): string {
   }
   if (status === 401) return 'Google sign-in is no longer valid. Reconnect Google in Settings → Connections.'
   if (status === 403 && /accessNotConfigured|SERVICE_DISABLED|has not been used/i.test(body)) {
-    return 'The Google Calendar API is not enabled for your OAuth project. Enable it in the Google Cloud console (APIs & Services → Library).'
+    return `The ${api === 'Gmail' ? 'Gmail' : 'Google Calendar'} API is not enabled for your OAuth project. Enable it in the Google Cloud console (APIs & Services → Library).`
   }
-  if (status === 403 && /insufficient/i.test(body)) return 'JARVIS was not given calendar access. Reconnect Google and allow calendar access.'
+  if (status === 403 && /insufficient/i.test(body)) {
+    return api === 'Gmail'
+      ? 'JARVIS was not given Gmail draft access. Turn on Gmail drafts in Settings → Connections → Google and reconnect.'
+      : 'JARVIS was not given calendar access. Reconnect Google and allow calendar access.'
+  }
   if (status === 403 || status === 429) return `Google is limiting requests${reason ? ` (${reason})` : ''}. Try again shortly.`
-  return `Google Calendar error (${status}${reason ? `: ${reason}` : ''}).`
+  return `${api === 'Gmail' ? 'Gmail' : 'Google Calendar'} error (${status}${reason ? `: ${reason}` : ''}).`
 }
 
 // ---------- Calendar ----------
@@ -375,6 +386,10 @@ export interface GoogleStatus {
   needsReconnect: boolean
   /** A browser sign-in is in progress. */
   connecting: boolean
+  /** The owner switched on Gmail drafts (Sprint 20). */
+  gmailWanted: boolean
+  /** Google granted the drafts scope in the current sign-in. */
+  gmailGranted: boolean
 }
 
 export type GoogleResult = { ok: true; status: GoogleStatus } | { ok: false; message: string; status: GoogleStatus }

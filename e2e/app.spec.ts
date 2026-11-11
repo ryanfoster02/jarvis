@@ -586,11 +586,13 @@ test('web search: refused without a text-model key (nothing sent, no approval); 
   await closeApp(again.app)
 })
 
-test('google: calendar tools need a connection; client validated; real loopback sign-in, declined in the browser', async () => {
+test('google: calendar and Gmail tools need a connection; client validated; Gmail opt-in; real loopback sign-in, declined', async () => {
   test.setTimeout(LAUNCH_BUDGET + 60_000)
   const { app, page } = await launch(profile)
   const r = await invoke(page, 'calendar_list_events', { range: 'today', date: null })
   expect(r.output).toMatch(/^Not run: No access to calendar:read/)
+  const draft = await invoke(page, 'gmail_create_draft', { to: ['ada@example.com'], cc: null, subject: 'Hi', body: 'Hello' })
+  expect(draft.output).toMatch(/^Not run: No access to gmail:draft/)
   await requireSecureStorage(page)
 
   await page.keyboard.press('ControlOrMeta+,')
@@ -603,6 +605,11 @@ test('google: calendar tools need a connection; client validated; real loopback 
   await google.getByLabel('Google client secret').fill('GOCSPX-abcdefghijklmnop')
   await google.getByRole('button', { name: 'Save client' }).click()
   await expect(google.getByText('from project 123456789012')).toBeVisible()
+  // Gmail drafts are opt-in; switched on before connecting, the sign-in asks for them too.
+  const gmail = google.getByRole('switch', { name: 'Let Jarvis write Gmail drafts' })
+  await expect(gmail).toHaveAttribute('aria-checked', 'false')
+  await gmail.click()
+  await expect(gmail).toHaveAttribute('aria-checked', 'true')
 
   // The browser is the owner's: capture the consent URL instead of opening one, then play the browser.
   await app.evaluate(({ shell }: typeof import('electron')) => {
@@ -618,7 +625,9 @@ test('google: calendar tools need a connection; client validated; real loopback 
     .poll(() => app.evaluate(() => (globalThis as unknown as { opened: string[] }).opened[0] ?? ''))
     .toMatch(/^https:\/\/accounts\.google\.com\/o\/oauth2\/v2\/auth\?/)
   const consent = new URL(await app.evaluate(() => (globalThis as unknown as { opened: string[] }).opened[0] ?? ''))
-  expect(consent.searchParams.get('scope')).toBe('openid email https://www.googleapis.com/auth/calendar.readonly')
+  expect(consent.searchParams.get('scope')).toBe(
+    'openid email https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/gmail.compose',
+  )
   expect(consent.searchParams.get('code_challenge_method')).toBe('S256')
   const redirect = consent.searchParams.get('redirect_uri') ?? ''
   expect(redirect).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)

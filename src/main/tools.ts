@@ -36,7 +36,8 @@ import { findWebhook, postWebhook, webhookNames } from './webhooks.ts'
 import { webhookHost, webhookPayload } from '../shared/webhooks.ts'
 import { buildWebSearchRequest, formatResearchReport, parseWebSearch, WEB_SEARCH, webSearchCostUsd } from '../shared/websearch.ts'
 import { RateLimiter } from '../shared/ratelimit.ts'
-import { calendarConnected, listEvents } from './google.ts'
+import { calendarConnected, createGmailDraft, gmailReady, listEvents } from './google.ts'
+import { gmailDraftsLink } from '../shared/gmail.ts'
 import { describeEvent, formatEventsForModel, freeSlots, localDate, rangeBounds } from '../shared/google.ts'
 import { addReminder, cancelReminder, getReminder, listReminders, ReminderLimitError, ReminderNotFoundError } from './db/reminders.ts'
 import { remindersChanged } from './scheduler.ts'
@@ -174,6 +175,7 @@ export function grantedScopes(ctx: Pick<ToolContext, 'db' | 'settings'>): ToolSc
   if (getKey(textModelProvider(ctx.settings.textModel))) scopes.push('agents:delegate', 'web:search')
   if (ctx.settings.githubRepos.length > 0 && getKey('github')) scopes.push('github:read')
   if (calendarConnected()) scopes.push('calendar:read')
+  if (gmailReady()) scopes.push('gmail:draft')
   return scopes
 }
 
@@ -282,6 +284,15 @@ async function run(
   ctx: ToolContext,
 ): Promise<{ output: string; detail: string; untrusted?: boolean; costUsd?: number; links?: WebLink[] }> {
   switch (name) {
+    case 'gmail_create_draft': {
+      const a = args as ToolArgs['gmail_create_draft']
+      const r = await createGmailDraft(a, ctx.signal)
+      return {
+        output: `Draft saved in the owner's Gmail (not sent) to ${a.to.join(', ')}${a.cc.length ? `, cc ${a.cc.join(', ')}` : ''}: "${a.subject}". The owner reviews and sends it from Gmail's Drafts.`,
+        detail: `Draft to ${a.to[0]}${a.to.length + a.cc.length > 1 ? ` +${a.to.length + a.cc.length - 1}` : ''} · not sent`,
+        links: [{ title: 'Open Gmail drafts', url: gmailDraftsLink(r.email) }],
+      }
+    }
     case 'calendar_list_events': {
       const a = args as ToolArgs['calendar_list_events']
       const b = rangeBounds(a.range, Date.now(), a.date)
