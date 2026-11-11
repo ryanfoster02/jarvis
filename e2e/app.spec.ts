@@ -1,24 +1,15 @@
-import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { test, expect, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { closeAll, closeApp, launchApp, LAUNCH_BUDGET } from './electron'
 
 // Launches the production build (out/) with a throwaway profile: no real settings, keys or .env.
-const root = join(__dirname, '..')
-
-/** Time to allow per app launch in tests that restart JARVIS (launches take 15–45 s on the owner's Mac). */
-const LAUNCH_BUDGET = 60_000
+// Shared launch/shutdown helpers and the warm-up launch live in e2e/electron.ts and e2e/global-setup.ts.
 
 async function launch(userData: string): Promise<{ app: ElectronApplication; page: Page }> {
-  // Load the built renderer from disk (as a packaged app would): drop the dev-server URL.
-  const env: Record<string, string> = Object.fromEntries(
-    Object.entries(process.env).filter((e): e is [string, string] => typeof e[1] === 'string' && e[0] !== 'ELECTRON_RENDERER_URL'),
-  )
-  env.JARVIS_USER_DATA = userData
-  const app = await electron.launch({ args: [root], cwd: root, env })
-  const page = await app.firstWindow()
-  await page.waitForLoadState('domcontentloaded')
-  await expect(page.locator('.wordmark')).toHaveText('JARVIS')
+  const { app, page } = await launchApp(userData)
+  await expect(page.locator('.wordmark')).toHaveText('JARVIS', { timeout: 15_000 })
   return { app, page }
 }
 
@@ -26,7 +17,10 @@ let profile: string
 test.beforeEach(() => {
   profile = mkdtempSync(join(tmpdir(), 'jarvis-e2e-'))
 })
-test.afterEach(() => {
+test.afterEach(async () => {
+  // A test that failed or timed out may have left JARVIS running: shut it down (force if needed)
+  // so the next test starts clean and Playwright's teardown never hangs.
+  await closeAll()
   rmSync(profile, { recursive: true, force: true })
 })
 
@@ -35,7 +29,7 @@ test('launches to the dashboard in the standing-by state', async () => {
   await expect(page).toHaveTitle('J.A.R.V.I.S.')
   await expect(page.locator('.core-state')).toHaveText('STANDING BY')
   await expect(page.getByRole('heading', { name: 'Conversation' })).toBeVisible()
-  await app.close()
+  await closeApp(app)
 })
 
 test('renderer is isolated: no Node globals, only the narrow jarvis bridge', async () => {
@@ -80,7 +74,7 @@ test('renderer is isolated: no Node globals, only the narrow jarvis bridge', asy
     return { contextIsolation: p?.contextIsolation, sandbox: p?.sandbox, nodeIntegration: p?.nodeIntegration, webviewTag: p?.webviewTag }
   })
   expect(prefs).toEqual({ contextIsolation: true, sandbox: true, nodeIntegration: false, webviewTag: false })
-  await app.close()
+  await closeApp(app)
 })
 
 test('production page carries a strict Content-Security-Policy', async () => {
@@ -89,7 +83,7 @@ test('production page carries a strict Content-Security-Policy', async () => {
   expect(csp).toContain("default-src 'self'")
   expect(csp).toContain("script-src 'self'")
   expect(csp).not.toContain("'unsafe-eval'")
-  await app.close()
+  await closeApp(app)
 })
 
 test('navigation away and new windows are blocked', async () => {
@@ -104,7 +98,7 @@ test('navigation away and new windows are blocked', async () => {
   const opened = await page.evaluate(() => window.open('http://example.com/') === null)
   expect(opened).toBe(true)
   expect(app.windows()).toHaveLength(1)
-  await app.close()
+  await closeApp(app)
 })
 
 test('theme choice survives a restart', async () => {
@@ -113,10 +107,10 @@ test('theme choice survives a restart', async () => {
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'gold')
   await page.getByRole('button', { name: /^Theme:/ }).click()
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'azure')
-  await app.close()
+  await closeApp(app)
   ;({ app, page } = await launch(profile))
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'azure')
-  await app.close()
+  await closeApp(app)
 })
 
 test('Stop all halts everything and Re-arm restores it', async () => {
@@ -127,7 +121,7 @@ test('Stop all halts everything and Re-arm restores it', async () => {
   await page.getByRole('button', { name: 'Re-arm' }).click()
   await expect(page.locator('.core-state')).toHaveText('STANDING BY')
   await expect(page.getByRole('textbox', { name: 'Message' })).toBeEnabled()
-  await app.close()
+  await closeApp(app)
 })
 
 test('typing without a key gives an honest notice, not a fake reply', async () => {
@@ -137,7 +131,7 @@ test('typing without a key gives an honest notice, not a fake reply', async () =
   await box.press('Enter')
   await expect(page.locator('.msg-system')).toContainText('No AI provider is connected yet')
   await expect(page.locator('.msg-assistant')).toHaveCount(0)
-  await app.close()
+  await closeApp(app)
 })
 
 test('settings open with ⌘, and close with Esc; bad key is rejected before any network call', async () => {
@@ -151,7 +145,7 @@ test('settings open with ⌘, and close with Esc; bad key is rejected before any
   await expect(openai.locator('.form-msg.is-error')).toContainText("doesn't look like an OpenAI API key")
   await page.keyboard.press('Escape')
   await expect(page.getByRole('heading', { name: 'Conversation' })).toBeVisible()
-  await app.close()
+  await closeApp(app)
 })
 
 test('Claude for typed replies: key form validates, missing key is reported honestly', async () => {
@@ -178,7 +172,7 @@ test('Claude for typed replies: key form validates, missing key is reported hone
     const j = (window as unknown as { jarvis: { settings: { update: (patch: { textModel: string }) => Promise<unknown> } } }).jarvis
     await j.settings.update({ textModel: 'gpt-5.4-mini' })
   })
-  await app.close()
+  await closeApp(app)
 })
 
 test('conversations persist across restarts, stay in their workspace, and delete cleanly', async () => {
@@ -190,7 +184,7 @@ test('conversations persist across restarts, stay in their workspace, and delete
     return (await j.conversations.append(null, { role: 'user', text: 'Remember the Acme follow-up', via: 'voice' })).ok
   })
   expect(saved).toBe(true)
-  await app.close()
+  await closeApp(app)
 
   ;({ app, page } = await launch(profile))
   const picker = page.getByRole('combobox', { name: 'Conversation' })
@@ -208,11 +202,11 @@ test('conversations persist across restarts, stay in their workspace, and delete
   await page.getByRole('button', { name: 'Delete', exact: true }).click()
   await page.getByRole('alertdialog').getByRole('button', { name: 'Delete' }).click()
   await expect(page.locator('.msg-user')).toHaveCount(0)
-  await app.close()
+  await closeApp(app)
 
   ;({ app, page } = await launch(profile))
   await expect(page.getByRole('combobox', { name: 'Conversation' }).locator('option')).toHaveCount(1)
-  await app.close()
+  await closeApp(app)
 })
 
 test('memory: add, scope to workspace, refuse secrets, edit, delete, /remember', async () => {
@@ -237,7 +231,7 @@ test('memory: add, scope to workspace, refuse secrets, edit, delete, /remember',
   await expect(page.locator('.memory-text', { hasText: 'Owner prefers mornings' })).toBeVisible()
 
   // Survives restart; workspace fact hidden from another workspace, global fact visible.
-  await app.close()
+  await closeApp(app)
   ;({ app, page } = await launch(profile))
   await page.getByRole('button', { name: 'Memory', exact: true }).click()
   await expect(page.locator('.memory-text', { hasText: 'Acme renews in March' })).toBeVisible()
@@ -266,7 +260,7 @@ test('memory: add, scope to workspace, refuse secrets, edit, delete, /remember',
   await expect(page.locator('.msg-system')).toContainText('Remembered for this workspace')
   await page.getByRole('button', { name: 'Memory', exact: true }).click()
   await expect(page.locator('.memory-text', { hasText: 'Track agent benchmark papers' })).toBeVisible()
-  await app.close()
+  await closeApp(app)
 })
 
 // Sprint 8: drives tool calls through the same bridge a live voice session uses (no API key needed),
@@ -282,7 +276,7 @@ const invoke = (page: Page, name: string, args: object) =>
   )
 
 test('tools: low risk runs, medium asks, high always asks, secrets refused, Stop all answers no', async () => {
-  test.setTimeout(90_000)
+  test.setTimeout(LAUNCH_BUDGET + 60_000)
   const { app, page } = await launch(profile)
   const fact = 'Prefers tea in the afternoon'
 
@@ -335,7 +329,7 @@ test('tools: low risk runs, medium asks, high always asks, secrets refused, Stop
   // Leave the shared profile clean.
   await page.evaluate(() => (window as unknown as { jarvis: { settings: { update: (p: object) => Promise<unknown> } } }).jarvis.settings.update({ disabledTools: [] }))
   await page.evaluate((mid: string) => (window as unknown as { jarvis: { memory: { delete: (id: string) => Promise<unknown> } } }).jarvis.memory.delete(mid), id)
-  await app.close()
+  await closeApp(app)
 })
 
 test('settings: tool switches and the standing permission persist', async () => {
@@ -362,7 +356,7 @@ test('settings: tool switches and the standing permission persist', async () => 
     const r = await j.memory.list()
     for (const m of r.value ?? []) if (m.text === 'Uses metric units') await j.memory.delete(m.id)
   })
-  await app.close()
+  await closeApp(app)
 })
 
 test('connections: GitHub token is validated locally; repositories need a connection first', async () => {
@@ -384,7 +378,7 @@ test('connections: GitHub token is validated locally; repositories need a connec
   const r = await invoke(page, 'github_list_repos', {})
   expect(r.output).toMatch(/^Not run: No access to github:read/)
   await expect(page.locator('.approval')).toHaveCount(0)
-  await app.close()
+  await closeApp(app)
 })
 
 type ReminderBridge = {
@@ -393,7 +387,7 @@ type ReminderBridge = {
 }
 
 test('reminders: add and cancel from the dashboard; a due reminder fires, snoozes and dismisses', async () => {
-  test.setTimeout(90_000)
+  test.setTimeout(LAUNCH_BUDGET + 90_000) // one launch, plus waiting for a real reminder to fire
   const { app, page } = await launch(profile)
   // Keep the test run quiet: no macOS notifications.
   await page.evaluate(() => (window as unknown as { jarvis: ReminderBridge }).jarvis.settings.update({ reminderNotifications: false }))
@@ -431,7 +425,7 @@ test('reminders: add and cancel from the dashboard; a due reminder fires, snooze
   // Clean up: cancel the snoozed one.
   await panel.getByRole('button', { name: 'Cancel reminder: Stretch break' }).click()
   await expect(panel.locator('.reminder-row')).toHaveCount(0)
-  await app.close()
+  await closeApp(app)
 })
 
 test('reminders: Jarvis setting one asks first; approving puts it on the list', async () => {
@@ -451,7 +445,7 @@ test('reminders: Jarvis setting one asks first; approving puts it on the list', 
   await expect(panel.locator('.reminder-row', { hasText: 'Renew the domain' })).toBeVisible()
   await panel.getByRole('button', { name: 'Cancel reminder: Renew the domain' }).click()
   await expect(panel.locator('.reminder-row', { hasText: 'Renew the domain' })).toHaveCount(0)
-  await app.close()
+  await closeApp(app)
 })
 
 test('background mode: menu-bar icon on and off; open-at-login only in the installed app', async () => {
@@ -468,7 +462,7 @@ test('background mode: menu-bar icon on and off; open-at-login only in the insta
   await expect(login).toBeDisabled() // development build
   await bg.click()
   await expect(page.getByText('Menu-bar mode is off.')).toBeVisible()
-  await app.close()
+  await closeApp(app)
 })
 
 test('stop levels: stopping a running action withdraws its approval and logs it', async () => {
@@ -488,5 +482,5 @@ test('stop levels: stopping a running action withdraws its approval and logs it'
     (window as unknown as { jarvis: ToolBridge }).jarvis.memory.list(),
   )
   expect(memories.value?.some((m) => m.text === 'Should be stopped')).toBe(false)
-  await app.close()
+  await closeApp(app)
 })
