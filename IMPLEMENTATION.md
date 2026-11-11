@@ -179,7 +179,9 @@ Packaging for Windows (NSIS installer) and Linux (AppImage, .deb); platform fixe
 - ✅ Linux key storage: `basic_text` backend treated as unavailable (no weak storage) with an explanation in Settings
 - ✅ Packaging: NSIS (Windows x64/arm64), AppImage + .deb (Linux x64/arm64); `dist:win`, `dist:linux`
 - ✅ CI: `.github/workflows/ci.yml` — three OSes; Linux e2e under xvfb with an unlocked GNOME Keyring and Chromium's sandbox kept on; installers uploaded as artifacts; e2e made platform-neutral (tray labels, Windows file-lock-safe cleanup)
-- 🟡 Not yet proven: the first CI run is the real test of Windows and Linux (I can't run them here); expect a round of fixes from its logs
+- ✅ **Proven in CI (run 42947499725, 2026-11-10):** typecheck ✓ and 119/119 unit tests (Drizzle included) on macOS, Windows and Linux; e2e 20 passed + 1 skipped on macOS and Windows, 18 passed + 3 skipped on Linux; installers built: macOS .dmg/.zip (arm64), Windows NSIS .exe (x64 + arm64), Linux AppImage + .deb (x64)
+- ✅ Fixed along the way: stale package-lock (CI uses `npm install` until the lock is pushed from a machine with registry access); message/memory ordering ties now broken by insertion order (a real bug CI's faster machines exposed)
+- ⚠ Linux CI has no usable keyring: after 3 attempts (unlocked GNOME Keyring; GNOME session; `--password-store=gnome-libsecret`) I stopped, per the project rules. JARVIS correctly refuses weak storage there, so the 3 key-form tests skip with a reason and a new test verifies the refusal. Saving keys on a real Linux desktop is still unverified
 - ⬜ Code signing (Apple Developer ID, Windows certificate) before sharing builds with anyone else
 
 ### Sprint 15 — Business workflows ⬜
