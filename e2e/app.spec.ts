@@ -51,6 +51,41 @@ test('launches to the dashboard in the standing-by state', async () => {
   await closeApp(app)
 })
 
+test('performance: startup timeline and live usage are measured and shown; startup within budget', async () => {
+  const { app, page } = await launch(profile)
+  type Snap = {
+    startup: Array<{ mark: string; label: string; atMs: number }>
+    processes: Array<{ label: string; memoryMB: number }>
+    totalMemoryMB: number
+    databaseMB: number | null
+  }
+  const read = (): Promise<Snap> =>
+    page.evaluate(() => (window as unknown as { jarvis: { perf: { get: () => Promise<Snap> } } }).jarvis.perf.get())
+  // The dashboard reports in once its first conversation list has loaded.
+  await expect
+    .poll(async () => (await read()).startup.map((r) => r.mark), { timeout: 15_000 })
+    .toEqual(['appReady', 'databaseReady', 'windowShown', 'dashboardReady'])
+  const snap = await read()
+  const at = snap.startup.map((r) => r.atMs)
+  expect([...at].sort((a, b) => a - b)).toEqual(at)
+  // Generous ceiling for slow CI machines; the real numbers are printed for the sprint report.
+  expect(at[3]).toBeLessThan(20_000)
+  expect(snap.processes.map((p) => p.label)).toEqual(expect.arrayContaining(['Main process', 'Interface']))
+  expect(snap.totalMemoryMB).toBeGreaterThan(20)
+  expect(snap.databaseMB).toBeGreaterThan(0)
+  console.log(`[perf] ${process.platform}: ${snap.startup.map((r) => `${r.label} ${r.atMs} ms`).join(' · ')} · memory ${snap.totalMemoryMB} MB`)
+
+  // The same numbers on screen, in Settings → About (a screen that loads on first visit).
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('button', { name: 'About', exact: true }).click()
+  const panel = page.getByLabel('Performance')
+  await expect(panel.getByText('Dashboard ready')).toBeVisible()
+  await expect(panel.getByText('Main process')).toBeVisible()
+  await panel.getByRole('button', { name: 'Measure again' }).click()
+  await expect(panel.getByText('Total')).toBeVisible()
+  await closeApp(app)
+})
+
 test('renderer is isolated: no Node globals, only the narrow jarvis bridge', async () => {
   const { app, page } = await launch(profile)
   const globals = await page.evaluate(() => {
@@ -76,6 +111,7 @@ test('renderer is isolated: no Node globals, only the narrow jarvis bridge', asy
     'killSwitch',
     'leads',
     'memory',
+    'perf',
     'reminders',
     'settings',
     'tasks',

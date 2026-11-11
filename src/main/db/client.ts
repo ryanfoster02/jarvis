@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite'
 import { drizzle } from 'drizzle-orm/sqlite-proxy'
 import { execute } from './executor.ts'
-import { configure, migrate, seedWorkspaces } from './migrations.ts'
+import { configure, migrate, optimize, seedWorkspaces } from './migrations.ts'
 import { schema } from './schema.ts'
 import type { Db } from './conversations.ts'
 
@@ -19,5 +19,12 @@ export function openDatabase(path: string): Database {
   seedWorkspaces(sqlite)
   // node:sqlite is synchronous; the proxy callback wraps results in a resolved promise.
   const db = drizzle(async (query, params, method) => execute(sqlite, query, params, method), { schema })
-  return { db, sqlite, close: () => sqlite.close() }
+  return {
+    db,
+    sqlite,
+    close: () => {
+      optimize(sqlite)
+      sqlite.close()
+    },
+  }
 }

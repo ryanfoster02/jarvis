@@ -74,6 +74,10 @@ jobs:
         if: runner.os != 'Linux'
         run: npm run test:e2e
 
+      - name: Bundle size
+        # out/ was built by test:e2e. Fails if startup JavaScript exceeds its budget.
+        run: npm run check:bundle
+
       - name: Package
         # out/ was built by test:e2e. Unsigned (ad-hoc on macOS).
         run: npx electron-builder ${{ matrix.package }} --publish never

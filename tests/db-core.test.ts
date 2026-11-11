@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
 import { execute } from '../src/main/db/executor.ts'
-import { configure, migrate, MIGRATIONS, schemaVersion, seedWorkspaces } from '../src/main/db/migrations.ts'
+import { configure, migrate, MIGRATIONS, optimize, schemaVersion, seedWorkspaces } from '../src/main/db/migrations.ts'
 import { WORKSPACES } from '../src/shared/ipc.ts'
 
 function fresh(): DatabaseSync {
@@ -164,4 +164,25 @@ test('leads table: stages, values, date format', () => {
   assert.throws(() => ins.run('l4', 'personal', 'Di', 'new', 0, '20/11/2026'), /CHECK/)
   assert.throws(() => ins.run('l5', 'personal', '', 'new', 0, null), /CHECK/)
   assert.throws(() => ins.run('l6', 'nowhere', 'Ed', 'new', 0, null), /FOREIGN KEY/)
+})
+
+test('connection settings: WAL on disk, synchronous NORMAL, foreign keys on; optimize is safe', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const dir = mkdtempSync(join(tmpdir(), 'jarvis-db-'))
+  try {
+    const db = new DatabaseSync(join(dir, 'test.db'))
+    configure(db)
+    migrate(db)
+    const one = (sql: string): unknown => Object.values(db.prepare(sql).get() as Record<string, unknown>)[0]
+    assert.equal(one('PRAGMA journal_mode'), 'wal')
+    assert.equal(one('PRAGMA synchronous'), 1) // 1 = NORMAL
+    assert.equal(one('PRAGMA foreign_keys'), 1)
+    optimize(db)
+    db.close()
+    optimize(db) // already closed: must not throw
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })

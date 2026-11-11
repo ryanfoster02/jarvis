@@ -31,5 +31,9 @@ export default defineConfig({
   preload: {},
   renderer: {
     plugins: [react(), injectProdCsp()],
+    // electron-vite leaves the renderer unminified by default; minifying cuts what Chromium must
+    // parse at every launch (Sprint 16, checked by scripts/check-bundle.mjs). Main and preload stay
+    // readable for stack traces.
+    build: { minify: 'esbuild' },
   },
 })

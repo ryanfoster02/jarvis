@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import {
   textModelProvider,
   type ActionNote,
@@ -22,16 +22,19 @@ import { SpeechQueue } from './voice/speechQueue.ts'
 import { AiCore, type CoreState } from './components/AiCore.tsx'
 import { ConversationPanel, type Entry } from './components/ConversationPanel.tsx'
 import { OpsColumn } from './components/OpsColumn.tsx'
-import { SettingsView } from './components/SettingsView.tsx'
-import { MemoryView } from './components/MemoryView.tsx'
 import { parseRememberCommand } from '../../shared/memory.ts'
 import { describeAction } from '../../shared/tools.ts'
 import { StateLegend } from './components/StateLegend.tsx'
 import { StatusTerminal, type Telemetry } from './components/StatusTerminal.tsx'
 import { TopBar, type View } from './components/TopBar.tsx'
-import { WorkflowsView } from './components/WorkflowsView.tsx'
-import { LeadsView } from './components/LeadsView.tsx'
 import { useVoice, type VoiceActivity, type VoicePhase } from './voice/useVoice.ts'
+import { shouldCalm } from '../../shared/perf.ts'
+
+// Screens other than the dashboard load on first visit (Sprint 16), keeping startup lean.
+const SettingsView = lazy(() => import('./components/SettingsView.tsx').then((m) => ({ default: m.SettingsView })))
+const MemoryView = lazy(() => import('./components/MemoryView.tsx').then((m) => ({ default: m.MemoryView })))
+const WorkflowsView = lazy(() => import('./components/WorkflowsView.tsx').then((m) => ({ default: m.WorkflowsView })))
+const LeadsView = lazy(() => import('./components/LeadsView.tsx').then((m) => ({ default: m.LeadsView })))
 
 const ACTIVITY_TO_CORE: Record<VoiceActivity, CoreState> = {
   idle: 'listening', // mic is live and waiting
@@ -395,8 +398,13 @@ export function App(): React.JSX.Element {
     if (!activeWs) return
     stopVoice()
     void (async () => {
-      const list = await refreshList()
-      await openConversation(list[0]?.id ?? null)
+      try {
+        const list = await refreshList()
+        await openConversation(list[0]?.id ?? null)
+      } finally {
+        // Startup timeline: the dashboard has its data (main keeps only the first report).
+        void window.jarvis.perf.dashboardReady().catch(() => undefined)
+      }
     })()
   }, [activeWs, refreshList, openConversation, stopVoice])
 
@@ -494,6 +502,25 @@ export function App(): React.JSX.Element {
         : typedSpeaking
           ? 'speaking'
           : 'idle'
+  // Pause idle animation while nobody is looking (Sprint 16): hidden/minimised, or in the
+  // background while standing by. Waiting approvals and running tasks keep their motion.
+  const calmState = approvals.length > 0 ? 'needs-you' : running.length > 0 ? 'executing' : coreState
+  useEffect(() => {
+    const root = document.documentElement
+    const apply = (): void => {
+      root.dataset.calm = String(shouldCalm({ hidden: document.hidden, focused: document.hasFocus(), state: calmState }))
+    }
+    apply()
+    document.addEventListener('visibilitychange', apply)
+    window.addEventListener('focus', apply)
+    window.addEventListener('blur', apply)
+    return () => {
+      document.removeEventListener('visibilitychange', apply)
+      window.removeEventListener('focus', apply)
+      window.removeEventListener('blur', apply)
+    }
+  }, [calmState])
+
   const workspace = WORKSPACES.find((w) => w.id === settings?.activeWorkspace) ?? WORKSPACES[0]
   const elevenActive = voice.engine === 'elevenlabs' || (voice.engine === null && settings?.speechEngine === 'elevenlabs')
   const telemetry: Telemetry = {
@@ -590,22 +617,26 @@ export function App(): React.JSX.Element {
               }}
             />
           </div>
-        ) : view === 'memory' ? (
-          <MemoryView workspaceName={workspace.name} refreshKey={memoryVersion} />
-        ) : view === 'leads' ? (
-          <LeadsView workspaceName={workspace.name} refreshKey={leadsVersion} />
-        ) : view === 'routines' ? (
-          <WorkflowsView workspaceName={workspace.name} refreshKey={workflowsVersion} halted={halted} />
-        ) : settings && creds ? (
-          <SettingsView
-            settings={settings}
-            info={info}
-            creds={creds}
-            onCreds={setCreds}
-            onUpdate={(patch) => void update(patch)}
-          />
         ) : (
-          <p className="loading">Loading settings…</p>
+          <Suspense fallback={<p className="loading">Loading…</p>}>
+            {view === 'memory' ? (
+              <MemoryView workspaceName={workspace.name} refreshKey={memoryVersion} />
+            ) : view === 'leads' ? (
+              <LeadsView workspaceName={workspace.name} refreshKey={leadsVersion} />
+            ) : view === 'routines' ? (
+              <WorkflowsView workspaceName={workspace.name} refreshKey={workflowsVersion} halted={halted} />
+            ) : settings && creds ? (
+              <SettingsView
+                settings={settings}
+                info={info}
+                creds={creds}
+                onCreds={setCreds}
+                onUpdate={(patch) => void update(patch)}
+              />
+            ) : (
+              <p className="loading">Loading settings…</p>
+            )}
+          </Suspense>
         )}
       </main>
     </div>

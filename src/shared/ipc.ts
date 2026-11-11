@@ -51,6 +51,8 @@ export const Channels = {
   webhooksAdd: 'webhooks:add',
   webhooksDelete: 'webhooks:delete',
   webhooksTest: 'webhooks:test',
+  perfGet: 'perf:get',
+  perfDashboardReady: 'perf:dashboard-ready',
 } as const
 
 /** Main → renderer push events. */

@@ -66,6 +66,7 @@ import {
 } from './db/reminders.ts'
 import { remindersChanged } from './scheduler.ts'
 import { applyBackground, backgroundStatus } from './background.ts'
+import { markStartup, perfSnapshot } from './perf.ts'
 import { tasks } from './tasks.ts'
 import { addWebhook, deleteWebhook, findWebhookById, listWebhooks, postWebhook, WebhookError, webhookNames } from './webhooks.ts'
 import { deleteLead, LeadLimitError, LeadNotFoundError, listLeads, saveLead } from './db/leads.ts'
@@ -86,6 +87,7 @@ import { synthesize, verifyElevenLabsKey } from './elevenlabs.ts'
 import { clearKey, credentialStatus, encryptionAvailable, getKey, saveKey } from './vault.ts'
 import { loadSettings, updateSettings } from './settings.ts'
 import type { Database } from './db/client.ts'
+import type { PerfSnapshot } from '../shared/perf.ts'
 import { appendMessage, deleteConversation, getMessages, listConversations, NotFoundError, recentTurns } from './db/conversations.ts'
 import { addMemory, allMemories, deleteMemory, listMemories, MemoryLimitError, MemoryNotFoundError, memoriesForPrompt, updateMemory } from './db/memories.ts'
 import { validateMemoryInput, validateMemoryText } from '../shared/memory.ts'
@@ -165,6 +167,10 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
   )
 
   ipcMain.handle(Channels.backgroundStatus, guard((): BackgroundStatus => backgroundStatus()))
+
+  // Performance (Sprint 16): read-only measurements; the renderer reports when the dashboard has its data.
+  ipcMain.handle(Channels.perfGet, guard((): PerfSnapshot => perfSnapshot()))
+  ipcMain.handle(Channels.perfDashboardReady, guard((): void => markStartup('dashboardReady')))
 
   ipcMain.handle(Channels.killSwitchGet, guard(() => getKillSwitch()))
   ipcMain.handle(Channels.killSwitchEngage, guard((reason: unknown) => engage(validateReason(reason))))

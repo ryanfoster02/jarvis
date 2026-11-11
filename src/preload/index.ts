@@ -37,6 +37,7 @@ import {
   type ToolInvokeResult,
   type ToolRun,
 } from '../shared/ipc.ts'
+import type { PerfSnapshot } from '../shared/perf.ts'
 
 // The only surface the renderer can reach. Functions only — ipcRenderer itself is never exposed,
 // and each method maps to exactly one allowlisted channel.
@@ -151,6 +152,12 @@ const api = {
   background: {
     /** Menu-bar icon and open-at-login state as the OS reports it. */
     status: (): Promise<BackgroundStatus> => ipcRenderer.invoke(Channels.backgroundStatus),
+  },
+  perf: {
+    /** Startup timeline, memory and CPU per process kind, database size (all measured, nothing estimated). */
+    get: (): Promise<PerfSnapshot> => ipcRenderer.invoke(Channels.perfGet),
+    /** The dashboard has its first data on screen (recorded once, for the startup timeline). */
+    dashboardReady: (): Promise<void> => ipcRenderer.invoke(Channels.perfDashboardReady),
   },
   reminders: {
     list: (): Promise<HistoryResult<Reminder[]>> => ipcRenderer.invoke(Channels.remindersList),

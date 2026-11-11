@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { registerIpc, type HistoryStore } from './ipc.ts'
 import { openDatabase } from './db/client.ts'
+import { markStartup, primeMetrics, setDatabasePath } from './perf.ts'
 import { startScheduler, stopScheduler } from './scheduler.ts'
 import { startWorkflowScheduler, stopWorkflowScheduler } from './workflows.ts'
 import { initBackground, onAllWindowsClosed, shouldStartHidden } from './background.ts'
@@ -97,7 +98,11 @@ function createWindow(): BrowserWindow {
     },
   })
 
-  win.once('ready-to-show', () => win.show())
+  win.once('ready-to-show', () => {
+    win.show()
+    markStartup('windowShown')
+    primeMetrics()
+  })
 
   if (devServerUrl) void win.loadURL(devServerUrl)
   else void win.loadFile(rendererFile)
@@ -160,6 +165,7 @@ app.on('web-contents-created', (_event, contents) => {
 app.on('second-instance', () => showMainWindow())
 
 void app.whenReady().then(() => {
+  markStartup('appReady')
   // Deny every permission by default. The single exception is microphone-only media access
   // requested by our own renderer (voice). Camera, screen capture, notifications, etc. stay denied.
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback, details) => {
@@ -187,7 +193,10 @@ void app.whenReady().then(() => {
   // and the UI says history is unavailable.
   const history: HistoryStore = { database: null, error: null }
   try {
-    history.database = openDatabase(join(app.getPath('userData'), 'jarvis.db'))
+    const dbPath = join(app.getPath('userData'), 'jarvis.db')
+    history.database = openDatabase(dbPath)
+    setDatabasePath(dbPath)
+    markStartup('databaseReady')
   } catch (err) {
     history.error = err instanceof Error ? err.message : String(err)
     console.error('[db] could not open database:', history.error)

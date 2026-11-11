@@ -1038,6 +1038,22 @@ select {
   margin: 0;
   font: 400 var(--t-sm) var(--font-mono);
 }
+.perf {
+  margin-top: 22px;
+}
+.perf-head {
+  margin: 14px 0 8px;
+  font: 400 var(--t-micro) / 1.2 var(--font-display);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.perf-step {
+  color: var(--dim);
+}
+.perf .btn {
+  margin-top: 6px;
+}
 
 /* ---------- Voice (Sprint 3) ---------- */
 .voice-bar {

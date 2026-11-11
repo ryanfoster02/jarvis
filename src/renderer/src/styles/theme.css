@@ -68,6 +68,14 @@
   transition-duration: 0.001ms !important;
 }
 
+/* Nobody is looking (window hidden, or in the background while standing by): hold every
+   animation where it is, so the GPU draws no frames. Resumes from the same spot. */
+[data-calm='true'] *,
+[data-calm='true'] *::before,
+[data-calm='true'] *::after {
+  animation-play-state: paused !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

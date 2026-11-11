@@ -35,6 +35,7 @@ import {
 import { SpeechQueue } from '../voice/speechQueue.ts'
 import { AiCore, CORE_LABELS, CORE_STATES, type CoreState } from './AiCore.tsx'
 import { ThemeSwitcher } from './ThemeSwitcher.tsx'
+import { formatMB, formatMs, type PerfSnapshot } from '../../../shared/perf.ts'
 
 type Section = 'appearance' | 'voice' | 'provider' | 'permissions' | 'notifications' | 'connections' | 'about'
 
@@ -250,6 +251,80 @@ function BackgroundSettings({ settings, onUpdate }: { settings: Settings; onUpda
         </p>
       )}
     </>
+  )
+}
+
+/** Measured startup timeline and resource use (Sprint 16). Every number comes from the running app. */
+function PerformancePanel(): React.JSX.Element {
+  const [snap, setSnap] = useState<PerfSnapshot | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const read = (): void => {
+    window.jarvis.perf
+      .get()
+      .then((s) => {
+        setSnap(s)
+        setError(null)
+      })
+      .catch((err: unknown) => setError(`Couldn't read performance: ${String(err)}`))
+  }
+  useEffect(read, [])
+  return (
+    <div className="perf" aria-label="Performance">
+      <h3 className="subhead">Performance</h3>
+      {error && <p className="form-msg is-error">{error}</p>}
+      {!snap ? (
+        !error && <p>Measuring…</p>
+      ) : (
+        <>
+          <h4 className="perf-head">Startup</h4>
+          {snap.startup.length === 0 ? (
+            <p className="fine">No startup timings recorded.</p>
+          ) : (
+            <dl className="about perf-startup">
+              {snap.startup.map((r) => (
+                <div key={r.mark}>
+                  <dt>{r.label}</dt>
+                  <dd>
+                    {formatMs(r.atMs)} <span className="perf-step">+{formatMs(r.stepMs)}</span>
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          )}
+          <h4 className="perf-head">Right now</h4>
+          <dl className="about perf-usage">
+            {snap.processes.map((p) => (
+              <div key={p.label}>
+                <dt>
+                  {p.label}
+                  {p.count > 1 ? ` (${p.count})` : ''}
+                </dt>
+                <dd>
+                  {formatMB(p.memoryMB)} · {p.cpuPercent.toFixed(1)}% CPU
+                </dd>
+              </div>
+            ))}
+            <div>
+              <dt>Total</dt>
+              <dd>
+                {formatMB(snap.totalMemoryMB)} · {snap.totalCpuPercent.toFixed(1)}% CPU
+              </dd>
+            </div>
+            <div>
+              <dt>Database</dt>
+              <dd>{snap.databaseMB === null ? 'not available' : formatMB(snap.databaseMB)}</dd>
+            </div>
+          </dl>
+          <p className="fine">
+            CPU is the share of one core over the last {snap.cpuWindowSec.toFixed(1)} s (100% = one core busy). Memory
+            is what each part of Jarvis holds in RAM. Idle animation pauses while Jarvis is in the background.
+          </p>
+          <button className="btn" onClick={read}>
+            Measure again
+          </button>
+        </>
+      )}
+    </div>
   )
 }
 
@@ -984,6 +1059,7 @@ export function SettingsView({ settings, info, creds, onCreds, onUpdate }: Props
               <p>Reading system details…</p>
             )}
             <p className="fine">Emergency stop: {PT.shortcut('.', true)} from anywhere in Jarvis.</p>
+            <PerformancePanel />
           </>
         )}
       </div>

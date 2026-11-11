@@ -159,6 +159,18 @@ export function seedWorkspaces(db: DatabaseSync, now: number = Date.now()): void
 /** Connection settings: durable writes, enforced foreign keys. */
 export function configure(db: DatabaseSync): void {
   db.exec('PRAGMA journal_mode = WAL')
+  // With WAL, NORMAL is the recommended pairing: no corruption risk, far fewer disk syncs
+  // (a power cut can lose only the last moments of writes, never the database). Sprint 16.
+  db.exec('PRAGMA synchronous = NORMAL')
   db.exec('PRAGMA foreign_keys = ON')
   db.exec('PRAGMA busy_timeout = 3000')
+}
+
+/** Lets SQLite refresh its query-planner statistics where useful; cheap, run when closing. */
+export function optimize(db: DatabaseSync): void {
+  try {
+    db.exec('PRAGMA optimize')
+  } catch {
+    // Best effort: never block closing the app.
+  }
 }
