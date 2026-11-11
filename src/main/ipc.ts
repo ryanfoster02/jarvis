@@ -66,7 +66,7 @@ import {
 } from './db/reminders.ts'
 import { remindersChanged } from './scheduler.ts'
 import { applyBackground, backgroundStatus } from './background.ts'
-import { markStartup, perfSnapshot } from './perf.ts'
+import { dashboardReady, perfSnapshot } from './perf.ts'
 import { tasks } from './tasks.ts'
 import { addWebhook, deleteWebhook, findWebhookById, listWebhooks, postWebhook, WebhookError, webhookNames } from './webhooks.ts'
 import { deleteLead, LeadLimitError, LeadNotFoundError, listLeads, saveLead } from './db/leads.ts'
@@ -170,7 +170,7 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
 
   // Performance (Sprint 16): read-only measurements; the renderer reports when the dashboard has its data.
   ipcMain.handle(Channels.perfGet, guard((): PerfSnapshot => perfSnapshot()))
-  ipcMain.handle(Channels.perfDashboardReady, guard((): void => markStartup('dashboardReady')))
+  ipcMain.handle(Channels.perfDashboardReady, (event) => guard((): void => dashboardReady(event.sender.id))(event))
 
   ipcMain.handle(Channels.killSwitchGet, guard(() => getKillSwitch()))
   ipcMain.handle(Channels.killSwitchEngage, guard((reason: unknown) => engage(validateReason(reason))))

@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { registerIpc, type HistoryStore } from './ipc.ts'
 import { openDatabase } from './db/client.ts'
-import { markStartup, primeMetrics, setDatabasePath } from './perf.ts'
+import { forgetReveal, markStartup, primeMetrics, registerReveal, setDatabasePath } from './perf.ts'
 import { startScheduler, stopScheduler } from './scheduler.ts'
 import { startWorkflowScheduler, stopWorkflowScheduler } from './workflows.ts'
 import { initBackground, onAllWindowsClosed, shouldStartHidden } from './background.ts'
@@ -98,11 +98,18 @@ function createWindow(): BrowserWindow {
     },
   })
 
-  win.once('ready-to-show', () => {
+  let revealed = false
+  const reveal = (): void => {
+    if (revealed || win.isDestroyed()) return
+    revealed = true
     win.show()
     markStartup('windowShown')
     primeMetrics()
-  })
+  }
+  win.once('ready-to-show', reveal)
+  const wcId = win.webContents.id
+  registerReveal(wcId, reveal)
+  win.once('closed', () => forgetReveal(wcId))
 
   if (devServerUrl) void win.loadURL(devServerUrl)
   else void win.loadFile(rendererFile)
