@@ -46,7 +46,10 @@ jobs:
           cache: npm
 
       - name: Install
-        run: npm ci
+        # npm install (not npm ci): the committed package-lock.json can lag package.json, because the
+        # assistant's workspace can't reach the npm registry to refresh it. Pushing the lock file from a
+        # machine that ran `npm install` restores exact installs; then this can go back to `npm ci`.
+        run: npm install --no-audit --no-fund
 
       - name: Type-check
         run: npm run typecheck
