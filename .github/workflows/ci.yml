@@ -69,8 +69,11 @@ jobs:
         if: runner.os == 'Linux'
         # A real, unlocked keyring so key storage behaves as on a desktop; a virtual display for the window.
         run: |
+          # Chromium picks its key store from the desktop type; a bare virtual display reports none and it
+          # falls back to basic_text (which JARVIS rightly refuses). Declare a GNOME session so it uses libsecret.
           dbus-run-session -- bash -c '
             echo -n ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null
+            export XDG_CURRENT_DESKTOP=GNOME
             xvfb-run --auto-servernum --server-args="-screen 0 1600x1000x24" npm run test:e2e
           '
 
