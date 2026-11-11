@@ -89,3 +89,8 @@ test('the n8n client can only read: one fetch, method GET', () => {
   assert.match(src, /method: 'GET'/)
   assert.ok(!/method: '(POST|PUT|PATCH|DELETE)'/.test(src))
 })
+
+test('routine templates have unique names', () => {
+  const names = WORKFLOW_TEMPLATES.map((t) => t.name)
+  assert.equal(new Set(names).size, names.length)
+})

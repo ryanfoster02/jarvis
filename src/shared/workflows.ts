@@ -93,7 +93,7 @@ export const WORKFLOW_TEMPLATES: ReadonlyArray<Omit<WorkflowInput, 'id' | 'enabl
   {
     name: 'Morning briefing',
     instructions:
-      "Tell me today's date. List my reminders for today. If GitHub repositories are allowed, use helpers to check each one for open issues and pull requests updated since yesterday, then summarise anything that needs my attention. Finish with the one thing I should do first.",
+      "Give me my morning briefing for today. Use whichever of these are connected: today's calendar, my reminders for today, overdue leads, n8n failures in the last 24 hours, and — if GitHub repositories are allowed — issues and pull requests updated since yesterday (use helpers for those). Lead with the most important thing (next meeting, something overdue or broken), then the rest in a few short lines, and finish with the one thing I should do first. Under 150 words; skip anything empty.",
     schedule: { days: [1, 2, 3, 4, 5], time: '07:30' },
   },
   {
@@ -101,12 +101,6 @@ export const WORKFLOW_TEMPLATES: ReadonlyArray<Omit<WorkflowInput, 'id' | 'enabl
     instructions:
       'For each allowed GitHub repository, list open pull requests and the newest issues, and note anything stale (no update for two weeks). Keep it to a few lines per repository.',
     schedule: null,
-  },
-  {
-    name: 'Morning briefing',
-    instructions:
-      "Give me my morning briefing. Check today's calendar, reminders due today, overdue leads, and n8n failures in the last 24 hours — whichever of these are connected. Lead with the most important thing (next meeting, something overdue or broken), then the rest in a few short lines. Under 150 words; skip anything empty.",
-    schedule: { days: [1, 2, 3, 4, 5], time: '07:30' },
   },
   {
     name: 'Weekly pipeline report',
