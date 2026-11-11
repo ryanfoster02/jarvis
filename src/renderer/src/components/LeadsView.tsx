@@ -148,7 +148,7 @@ export function LeadsView({ workspaceName, refreshKey }: Props): React.JSX.Eleme
       {sum && list && list.length > 0 && (
         <section className="frame panel pipeline" aria-label="Pipeline">
           {LEAD_STATUSES.map((s) => (
-            <div key={s} className={`stage stage-${s}`}>
+            <div key={s} className={`pipeline-stage stage-${s}`}>
               <span className="stage-name">{STATUS_LABEL[s]}</span>
               <span className="stage-count">{sum.byStatus[s].count}</span>
               <span className="stage-value">{money(sum.byStatus[s].value)}</span>

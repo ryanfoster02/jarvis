@@ -1850,7 +1850,7 @@ select {
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 10px;
 }
-.stage {
+.pipeline-stage {
   display: grid;
   gap: 2px;
   padding: 8px 10px;
