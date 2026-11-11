@@ -17,6 +17,9 @@ app.enableSandbox()
 const testUserData = process.env['JARVIS_USER_DATA']
 if (testUserData && !app.isPackaged) app.setPath('userData', testUserData)
 
+// Windows: notifications only show for an app with an identity (matches electron-builder's appId).
+if (process.platform === 'win32') app.setAppUserModelId('com.fosterautomation.jarvis')
+
 if (!app.requestSingleInstanceLock()) {
   app.quit()
   process.exit(0)
@@ -79,6 +82,8 @@ function createWindow(): BrowserWindow {
     title: 'J.A.R.V.I.S.',
     backgroundColor: '#04070d',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    // Windows/Linux: keep the menu out of the way (Alt shows it); the app has its own top bar.
+    autoHideMenuBar: process.platform !== 'darwin',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -103,7 +108,7 @@ function createWindow(): BrowserWindow {
 function buildMenu(): void {
   const isMac = process.platform === 'darwin'
   const template: MenuItemConstructorOptions[] = [
-    ...(isMac ? [{ role: 'appMenu' as const }] : []),
+    ...(isMac ? [{ role: 'appMenu' as const }] : [{ role: 'fileMenu' as const }]),
     { role: 'editMenu' },
     {
       label: 'Jarvis',

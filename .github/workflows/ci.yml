@@ -1,0 +1,104 @@
+# Build and test JARVIS on macOS, Windows and Linux (Sprint 14).
+# Build and test only: nothing is published, no releases are created, and no secrets are used.
+# Installers from each run are attached as downloadable artifacts for 7 days.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-latest
+            package: --mac
+          - name: Windows
+            os: windows-latest
+            package: --win --x64
+          - name: Linux
+            os: ubuntu-latest
+            package: --linux --x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Linux test environment (sandbox, virtual display, keyring)
+        if: runner.os == 'Linux'
+        run: |
+          # Ubuntu 24.04 blocks the unprivileged user namespaces Chromium's sandbox needs.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          sudo apt-get update
+          sudo apt-get install -y xvfb gnome-keyring dbus-x11
+
+      - name: End-to-end tests (Linux)
+        if: runner.os == 'Linux'
+        # A real, unlocked keyring so key storage behaves as on a desktop; a virtual display for the window.
+        run: |
+          dbus-run-session -- bash -c '
+            echo -n ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null
+            xvfb-run --auto-servernum --server-args="-screen 0 1600x1000x24" npm run test:e2e
+          '
+
+      - name: End-to-end tests
+        if: runner.os != 'Linux'
+        run: npm run test:e2e
+
+      - name: Package
+        # out/ was built by test:e2e. Unsigned (ad-hoc on macOS).
+        run: npx electron-builder ${{ matrix.package }} --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v6
+        with:
+          name: JARVIS-${{ matrix.name }}
+          path: |
+            release/*/*.dmg
+            release/*/*.zip
+            release/*/*.exe
+            release/*/*.AppImage
+            release/*/*.deb
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload test results (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: test-results-${{ matrix.name }}
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7

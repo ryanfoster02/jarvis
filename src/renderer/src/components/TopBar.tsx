@@ -1,4 +1,5 @@
 import { THEMES, WORKSPACES, type KillSwitchState, type Settings, type Theme, type WorkspaceId } from '../../../shared/ipc.ts'
+import { PT } from '../platform.ts'
 import { THEME_NAMES } from './ThemeSwitcher.tsx'
 
 export type View = 'dashboard' | 'memory' | 'routines' | 'settings'
@@ -48,7 +49,7 @@ export function TopBar({ view, onNavigate, settings, kill, onWorkspace, onTheme,
           <button
             aria-current={view === 'settings' ? 'page' : undefined}
             onClick={() => onNavigate('settings')}
-            title="Settings (⌘,)"
+            title={`Settings (${PT.shortcut(',')})`}
           >
             Settings
           </button>
@@ -101,7 +102,7 @@ export function TopBar({ view, onNavigate, settings, kill, onWorkspace, onTheme,
           <button
             className="chip chip-stop"
             onClick={() => void window.jarvis.killSwitch.engage('Stop all (dashboard)')}
-            title="Stop all execution (⌘⇧.)"
+            title={`Stop all execution (${PT.shortcut('.', true)})`}
           >
             <span className="stop-square" aria-hidden="true" />
             Stop all

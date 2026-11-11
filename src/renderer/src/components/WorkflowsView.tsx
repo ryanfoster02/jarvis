@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import type { Workflow, WorkflowInput, WorkflowRun } from '../../../shared/ipc.ts'
 import { formatWhen } from '../../../shared/reminders.ts'
+import { PT } from '../platform.ts'
 import { describeSchedule, MAX_WORKFLOW_INSTRUCTIONS, MAX_WORKFLOW_NAME, WORKFLOW_TEMPLATES } from '../../../shared/workflows.ts'
 
 // Saved routines (Sprint 13): create, schedule, run now, and read past results.
@@ -112,7 +113,7 @@ function Editor({ initial, onDone }: { initial: Draft; onDone: (msg: string | nu
       </div>
       {d.scheduled && (
         <p className="fine">
-          Scheduled runs happen only while JARVIS is running (window open, or menu-bar mode), and can only look things up:
+          Scheduled runs happen only while JARVIS is running (window open, or {PT.tray} mode), and can only look things up:
           anything that needs an action is reported for you to do or approve.
         </p>
       )}

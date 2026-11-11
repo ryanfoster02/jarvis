@@ -1,5 +1,7 @@
-# Packaging for a local, personal Mac build:  npm run dist:mac
-# Output: release/<version>/JARVIS-<version>-<arch>.dmg (+ .zip)
+# Packaging:  npm run dist:mac | dist:win | dist:linux   (each on its own OS — CI does all three)
+# Output: release/<version>/JARVIS-<version>-<arch>.<dmg|zip|exe|AppImage|deb>
+# All builds are unsigned/ad-hoc: fine for your own machines; distributing to other people needs
+# code-signing certificates (Apple Developer ID, a Windows code-signing certificate).
 appId: com.fosterautomation.jarvis
 productName: JARVIS
 copyright: Copyright © 2026 Ryan Foster
@@ -30,6 +32,57 @@ mac:
 
 dmg:
   title: JARVIS ${version}
+
+win:
+  # electron-builder converts the 1024 px PNG into the .ico Windows needs.
+  icon: build/icon.png
+  target:
+    - target: nsis
+      arch: [x64, arm64]
+  # Unsigned: Windows SmartScreen will warn ("More info → Run anyway") until a certificate is added.
+
+nsis:
+  oneClick: false
+  perMachine: false # per-user install, no admin rights needed
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: JARVIS
+  artifactName: ${productName}-${version}-setup-${arch}.${ext}
+
+linux:
+  icon: build/icon.png
+  category: Utility
+  executableName: jarvis
+  synopsis: Local-first personal AI assistant
+  description: JARVIS — a local-first, voice-capable personal assistant with permissions, approvals and a kill switch.
+  maintainer: Ryan Foster <241660064+ryanfoster02@users.noreply.github.com>
+  target:
+    - target: AppImage
+      arch: [x64, arm64]
+    - target: deb
+      arch: [x64, arm64]
+  # Saving keys needs a desktop keyring (GNOME Keyring / KWallet); the tray needs an
+  # AppIndicator/StatusNotifier host on some desktops (e.g. the GNOME extension).
+  desktop:
+    entry:
+      StartupWMClass: JARVIS
+
+deb:
+  # Electron's runtime libraries, plus the keyring and tray support JARVIS uses.
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+  recommends:
+    - libappindicator3-1
+    - gnome-keyring
 
 # Security fuses (SECURITY.md §11): lock the packaged binary down.
 electronFuses:

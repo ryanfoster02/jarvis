@@ -28,6 +28,8 @@ npm run dev          # launches the app with hot reload
 | `npm run build` | Typecheck + production bundle into `out/` |
 | `npm run preview` | Run the production bundle |
 | `npm run dist:mac` | Build **JARVIS.app** as a `.dmg` and `.zip` in `release/<version>/` |
+| `npm run dist:win` | (on Windows) Build the `JARVIS-<version>-setup-<arch>.exe` installer |
+| `npm run dist:linux` | (on Linux) Build `.AppImage` and `.deb` packages |
 | `npm run setup:env` | Create `.env` from `.env.example` |
 | `npm run sunrise` / `npm run sunset -- --done "…"` | Session briefing / session report |
 
@@ -42,12 +44,18 @@ Open `release/0.1.0/JARVIS-0.1.0-arm64.dmg` (or `-x64` on Intel) and drag **JARV
 - macOS will ask for microphone access for **JARVIS** the first time you start voice.
 - Settings and the encrypted key vault live in `~/Library/Application Support/JARVIS/`, shared by the dev build and the installed app.
 
+## Windows and Linux
+Every push to `main` is built and tested on **macOS, Windows and Ubuntu** by GitHub Actions (`.github/workflows/ci.yml`: type-check, unit tests, the full e2e suite, then packaging). The installers from each run can be downloaded from the run's **Artifacts** for 7 days. CI only builds and tests: it publishes nothing and uses no secrets. To turn it off, delete that file.
+- **Windows:** run `JARVIS-<version>-setup-x64.exe`. It's unsigned, so SmartScreen warns: *More info → Run anyway*. Installs per user (no admin). Keys are encrypted with Windows data protection (DPAPI). Shortcuts use **Ctrl** (Ctrl+Shift+. is Stop all; Ctrl+, opens Settings). Background mode lives in the **system tray**.
+- **Linux:** use the `.AppImage` (`chmod +x`, then run) or install the `.deb`. Saving keys needs a desktop keyring (GNOME Keyring or KWallet); without one JARVIS refuses to store keys rather than store them weakly. The tray icon needs AppIndicator support on some desktops (GNOME: the *AppIndicator* extension). *Open at login* writes `~/.config/autostart/jarvis.desktop`.
+- Building: run `dist:win` on Windows and `dist:linux` on Linux (or let CI do it). Settings and the vault live in `%APPDATA%\JARVIS` (Windows) and `~/.config/JARVIS` (Linux).
+
 ## Session routine (sunrise / sunset)
 - **In Claude Code:** type `/sunrise` at the start and `/sunset` at the end (commands in `.claude/commands/`).
 - **In a terminal:** `npm run sunrise`, or `./scripts/sunrise`. For sunset, pass one flag per bullet (all repeatable): `--title`, `--done`, `--decision`, `--issue`, `--todo`, `--next`. Git commits and changed files are added automatically.
 
 ## Configuration
-Settings are stored in `~/Library/Application Support/JARVIS/settings.json`. API keys are **never** stored there — see [SECURITY.md](SECURITY.md). `.env.example` lists dev-only variables.
+Settings are stored in `settings.json` in the app's data folder (`~/Library/Application Support/JARVIS/` on macOS, `%APPDATA%\JARVIS\` on Windows, `~/.config/JARVIS/` on Linux). API keys are **never** stored there — see [SECURITY.md](SECURITY.md). `.env.example` lists dev-only variables.
 
 ## API key (.env)
 For development, put your OpenAI key in a local `.env` file:

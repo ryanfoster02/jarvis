@@ -21,7 +21,12 @@ test.afterEach(async () => {
   // A test that failed or timed out may have left JARVIS running: shut it down (force if needed)
   // so the next test starts clean and Playwright's teardown never hangs.
   await closeAll()
-  rmSync(profile, { recursive: true, force: true })
+  // Windows keeps files locked briefly after a process exits: retry, and never fail a test on cleanup.
+  try {
+    rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 })
+  } catch (err) {
+    console.warn(`Could not remove test profile ${profile}:`, err)
+  }
 })
 
 test('launches to the dashboard in the standing-by state', async () => {
@@ -453,16 +458,16 @@ test('background mode: menu-bar icon on and off; open-at-login only in the insta
   const { app, page } = await launch(profile)
   await page.keyboard.press('ControlOrMeta+,')
   await page.getByRole('button', { name: 'Notifications' }).click()
-  const bg = page.getByRole('switch', { name: 'Keep running in the menu bar' })
+  const bg = page.getByRole('switch', { name: /^Keep running in the (menu bar|system tray)$/ })
   const login = page.getByRole('switch', { name: 'Open at login' })
   await expect(bg).toHaveAttribute('aria-checked', 'false')
   await expect(login).toBeDisabled()
   await bg.click()
-  await expect(page.getByText('Menu-bar icon is showing.')).toBeVisible()
+  await expect(page.getByText(/^The (menu-bar|tray) icon is showing\.$/)).toBeVisible()
   await expect(page.getByText('Available in the installed app')).toBeVisible()
   await expect(login).toBeDisabled() // development build
   await bg.click()
-  await expect(page.getByText('Menu-bar mode is off.')).toBeVisible()
+  await expect(page.getByText('Background mode is off.')).toBeVisible()
   await closeApp(app)
 })
 

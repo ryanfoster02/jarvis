@@ -6,7 +6,10 @@ import { nextPending } from './db/reminders.ts'
 import { engage, isHalted, onKillSwitchChange, rearm } from './killswitch.ts'
 import { onRemindersChanged } from './scheduler.ts'
 import { loadSettings } from './settings.ts'
-import { TRAY_ICON_1X, TRAY_ICON_2X } from './trayIcon.ts'
+import { TRAY_ICON_1X, TRAY_ICON_2X, TRAY_ICON_COLOR_1X, TRAY_ICON_COLOR_2X } from './trayIcon.ts'
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { dirname, join } from 'node:path'
 import { showMainWindow } from './windows.ts'
 
 // Background mode (Sprint 11, owner-approved 2026-11-09). Opt-in. When on, closing the window keeps
@@ -21,13 +24,47 @@ let ticker: ReturnType<typeof setInterval> | null = null
 
 const clip = (s: string, n: number): string => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
 
-export const loginItemSupported = (): boolean => app.isPackaged && (process.platform === 'darwin' || process.platform === 'win32')
+/** Launched by the login item (Windows/Linux pass this flag; macOS reports wasOpenedAtLogin instead). */
+export const BACKGROUND_FLAG = '--background'
+
+/** Installed app only: in development the login item would point at the Electron binary. */
+export const loginItemSupported = (): boolean =>
+  app.isPackaged && (process.platform === 'darwin' || process.platform === 'win32' || process.platform === 'linux')
+
+// Linux has no OS API in Electron for login items: use the XDG autostart standard.
+const autostartFile = (): string => join(process.env['XDG_CONFIG_HOME'] || join(homedir(), '.config'), 'autostart', 'jarvis.desktop')
+
+function setLinuxAutostart(on: boolean): void {
+  const file = autostartFile()
+  if (!on) {
+    rmSync(file, { force: true })
+    return
+  }
+  // AppImages run from a temporary mount: start the .AppImage file itself.
+  const exec = process.env['APPIMAGE'] || process.execPath
+  mkdirSync(dirname(file), { recursive: true })
+  writeFileSync(
+    file,
+    [
+      '[Desktop Entry]',
+      'Type=Application',
+      'Name=JARVIS',
+      'Comment=Start JARVIS in the system tray',
+      `Exec="${exec.replace(/(["\\`$])/g, '\\$1')}" ${BACKGROUND_FLAG}`,
+      'X-GNOME-Autostart-enabled=true',
+      'Terminal=false',
+      '',
+    ].join('\n'),
+    { mode: 0o644 },
+  )
+}
 
 function icon(): Electron.NativeImage {
+  const mac = process.platform === 'darwin'
   const img = nativeImage.createEmpty()
-  img.addRepresentation({ scaleFactor: 1, buffer: Buffer.from(TRAY_ICON_1X, 'base64') })
-  img.addRepresentation({ scaleFactor: 2, buffer: Buffer.from(TRAY_ICON_2X, 'base64') })
-  if (process.platform === 'darwin') img.setTemplateImage(true)
+  img.addRepresentation({ scaleFactor: 1, buffer: Buffer.from(mac ? TRAY_ICON_1X : TRAY_ICON_COLOR_1X, 'base64') })
+  img.addRepresentation({ scaleFactor: 2, buffer: Buffer.from(mac ? TRAY_ICON_2X : TRAY_ICON_COLOR_2X, 'base64') })
+  if (mac) img.setTemplateImage(true)
   return img
 }
 
@@ -73,8 +110,11 @@ export function applyBackground(s: Settings): void {
     if (process.platform === 'darwin') void app.dock?.show()
   }
   if (loginItemSupported()) {
+    const on = s.runInBackground && s.openAtLogin
     try {
-      app.setLoginItemSettings({ openAtLogin: s.runInBackground && s.openAtLogin })
+      if (process.platform === 'linux') setLinuxAutostart(on)
+      else if (process.platform === 'win32') app.setLoginItemSettings({ openAtLogin: on, args: [BACKGROUND_FLAG] })
+      else app.setLoginItemSettings({ openAtLogin: on })
     } catch (err) {
       console.error('[background] could not change the login item:', err)
     }
@@ -83,7 +123,12 @@ export function applyBackground(s: Settings): void {
 
 export function backgroundStatus(): BackgroundStatus {
   if (!loginItemSupported()) return { trayActive: !!tray, loginItemSupported: false, openAtLogin: null, loginItemStatus: null }
-  const li = app.getLoginItemSettings() as Electron.LoginItemSettings & { status?: string }
+  if (process.platform === 'linux') {
+    return { trayActive: !!tray, loginItemSupported: true, openAtLogin: existsSync(autostartFile()), loginItemStatus: null }
+  }
+  const li = (
+    process.platform === 'win32' ? app.getLoginItemSettings({ args: [BACKGROUND_FLAG] }) : app.getLoginItemSettings()
+  ) as Electron.LoginItemSettings & { status?: string }
   return { trayActive: !!tray, loginItemSupported: true, openAtLogin: li.openAtLogin, loginItemStatus: li.status ?? null }
 }
 
@@ -91,6 +136,7 @@ export function backgroundStatus(): BackgroundStatus {
 export function shouldStartHidden(): boolean {
   const s = loadSettings()
   if (!s.runInBackground || !s.openAtLogin || !loginItemSupported()) return false
+  if (process.platform !== 'darwin') return process.argv.includes(BACKGROUND_FLAG)
   try {
     return app.getLoginItemSettings().wasOpenedAtLogin === true
   } catch {

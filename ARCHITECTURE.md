@@ -103,6 +103,11 @@ tasks:cancel → workflow · tasks:cancel-action → worker · Stop all → task
 tasks:changed event → Ops column "Running" (Stop action / Stop request) + composer Stop button
 ```
 
+## Platforms (Sprint 14)
+- `src/shared/platform.ts` (`detectPlatform`, `platformText`) gives the renderer per-OS shortcuts (⌘ vs Ctrl) and wording (menu bar vs system tray, keychain, settings paths); `src/renderer/src/platform.ts` detects the OS from the user agent.
+- Main: Windows sets an AppUserModelID (notifications), non-mac windows auto-hide the menu bar and get a File menu, the tray uses a template icon on macOS and a gold icon elsewhere, login items per OS (`background.ts`), Linux refuses `basic_text` key storage (`vault.ts`).
+- Packaging and CI: `electron-builder.yml` (mac/win/linux), `.github/workflows/ci.yml` (three-OS matrix).
+
 ## Routines / workflows (Sprint 13)
 ```
 Routines view ── workflows:save/delete/run/runs ──▶ db/workflows.ts (workflows, workflow_runs; migration 5)

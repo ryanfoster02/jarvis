@@ -41,7 +41,18 @@ function write(v: VaultFile): void {
   renameSync(tmp, vaultPath())
 }
 
-export const encryptionAvailable = (): boolean => safeStorage.isEncryptionAvailable()
+/**
+ * Real encryption only. On Linux without a keyring (GNOME Keyring / KWallet), Electron falls back to
+ * "basic_text" — a hard-coded password — which is obfuscation, not protection, so keys are refused.
+ */
+export function encryptionAvailable(): boolean {
+  if (!safeStorage.isEncryptionAvailable()) return false
+  if (process.platform === 'linux') {
+    const backend = safeStorage.getSelectedStorageBackend()
+    if (backend === 'basic_text' || backend === 'unknown') return false
+  }
+  return true
+}
 
 // ---------- Development .env fallback ----------
 // Development only (ignored in packaged builds). Reads OPENAI_API_KEY / ANTHROPIC_API_KEY / ELEVENLABS_API_KEY / GITHUB_TOKEN from

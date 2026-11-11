@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { PT } from '../platform.ts'
 import { DEFAULT_LIMITS, HELPER_LIMITS, type ApprovalRequest, type Reminder, type RunningTask, type ToolRun } from '../../../shared/ipc.ts'
 import { formatWhen } from '../../../shared/reminders.ts'
 import { DECISION_LABEL } from '../../../shared/tools.ts'
@@ -150,7 +151,7 @@ function RemindersSection({ list, actions }: { list: Reminder[]; actions: Props[
         </button>
       )}
       {error && <p className="form-msg is-error">{error}</p>}
-      <p className="fine">Reminders alert while JARVIS is running (window open, or in the menu bar if you turn that on in Settings → Notifications). Anything due while it&apos;s quit shows here as missed.</p>
+      <p className="fine">Reminders alert while JARVIS is running (window open, or in the {PT.tray} if you turn that on in Settings → Notifications). Anything due while it&apos;s quit shows here as missed.</p>
     </section>
   )
 }

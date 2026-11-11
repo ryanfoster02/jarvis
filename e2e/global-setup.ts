@@ -13,6 +13,6 @@ export default async function globalSetup(): Promise<void> {
     await closeApp(app)
     console.log(`Warm-up launch: ${((Date.now() - started) / 1000).toFixed(1)} s`)
   } finally {
-    rmSync(profile, { recursive: true, force: true })
+    rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 })
   }
 }

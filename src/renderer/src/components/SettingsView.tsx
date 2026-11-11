@@ -1,4 +1,5 @@
 import { TOOLS } from '../../../shared/tools.ts'
+import { PLATFORM, PT } from '../platform.ts'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import {
   ELEVEN_MODELS,
@@ -46,7 +47,7 @@ const SECTIONS: Array<[Section, string]> = [
   ['about', 'About'],
 ]
 
-const PLATFORM: Record<string, string> = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' }
+const PLATFORM_NAMES: Record<string, string> = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' }
 
 interface Props {
   settings: Settings
@@ -122,7 +123,10 @@ function KeyForm({
     onCreds(await window.jarvis.credentials.clear(provider))
     setMessage({
       tone: 'ok',
-      text: provider === 'github' ? 'Token removed from this Mac. To revoke it completely, delete it on github.com too.' : 'Key removed from this Mac.',
+      text:
+        provider === 'github'
+          ? `Token removed from ${PT.computer}. To revoke it completely, delete it on github.com too.`
+          : `Key removed from ${PT.computer}.`,
     })
   }
 
@@ -192,32 +196,34 @@ function BackgroundSettings({ settings, onUpdate }: { settings: Settings; onUpda
   const loginNote = !status
     ? ''
     : !status.loginItemSupported
-      ? 'Available in the installed app (npm run dist:mac), not in development.'
+      ? 'Available in the installed app, not in development.'
       : !settings.runInBackground
-        ? 'Turn on menu-bar mode first.'
+        ? `Turn on ${PT.tray} mode first.`
         : !settings.openAtLogin
           ? 'Off.'
           : status.loginItemStatus === 'requires-approval'
-            ? 'macOS needs your approval: System Settings → General → Login Items → allow JARVIS.'
+            ? `macOS needs your approval: ${PT.loginItemsHelp} → allow JARVIS.`
             : status.openAtLogin
-              ? 'On: JARVIS starts in the menu bar when you log in.'
-              : "macOS didn't register it. Ad-hoc signed builds may not be allowed to open at login; you can add JARVIS manually in System Settings → General → Login Items."
+              ? `On: JARVIS starts in the ${PT.tray} when you log in.`
+              : PLATFORM === 'mac'
+                ? `macOS didn't register it. Ad-hoc signed builds may not be allowed to open at login; you can add JARVIS manually in ${PT.loginItemsHelp}.`
+                : `It didn't register. You can add JARVIS manually in ${PT.loginItemsHelp}.`
 
   return (
     <>
       <h3 className="subhead">Background</h3>
       <div className="field">
         <div className="field-text">
-          <h3>Keep running in the menu bar</h3>
+          <h3>Keep running in the {PT.tray}</h3>
           <p>
-            Closing the window leaves JARVIS in the menu bar so reminders still fire. Voice and the microphone always
-            stop when the window closes. Quit from the menu-bar icon or with ⌘Q to stop everything.
+            Closing the window leaves JARVIS in the {PT.tray} so reminders and routines still run. Voice and the microphone
+            always stop when the window closes. {PT.quit} to stop everything.
           </p>
         </div>
         <button
           role="switch"
           aria-checked={settings.runInBackground}
-          aria-label="Keep running in the menu bar"
+          aria-label={`Keep running in the ${PT.tray}`}
           className="switch"
           onClick={() => onUpdate({ runInBackground: !settings.runInBackground })}
         />
@@ -239,7 +245,7 @@ function BackgroundSettings({ settings, onUpdate }: { settings: Settings; onUpda
       {status && (
         <p className="status-line">
           <span className={`dot ${status.trayActive ? 'dot-on' : 'dot-off'}`} />
-          {status.trayActive ? 'Menu-bar icon is showing.' : 'Menu-bar mode is off.'}
+          {status.trayActive ? `The ${PT.trayIcon} is showing.` : 'Background mode is off.'}
         </p>
       )}
     </>
@@ -340,11 +346,14 @@ function ProviderSection({ creds, onCreds }: { creds: CredentialStatus; onCreds:
     <>
       <h2>AI provider</h2>
       <p>
-        Keys are checked with the provider, then encrypted with your Mac&apos;s keychain. They never leave the main
+        Keys are checked with the provider, then encrypted with {PT.keychain}. They never leave the main
         process: the interface only ever sees the last four characters.
       </p>
       {!creds.encryptionAvailable && (
-        <p className="form-msg is-error">Secure storage isn&apos;t available on this system, so keys can&apos;t be saved.</p>
+        <p className="form-msg is-error">
+          Secure storage isn&apos;t available on this system, so keys can&apos;t be saved.
+          {PLATFORM === 'linux' && ' Install and unlock a keyring (GNOME Keyring or KWallet), then restart JARVIS.'}
+        </p>
       )}
       <KeyForm provider="openai" creds={creds} onCreds={onCreds} />
       <KeyForm provider="anthropic" creds={creds} onCreds={onCreds} />
@@ -526,7 +535,7 @@ export function SettingsView({ settings, info, creds, onCreds, onUpdate }: Props
             <div className="field">
               <div className="field-text">
                 <h3>Theme</h3>
-                <p>Changes the accent across Jarvis. Saved on this Mac.</p>
+                <p>Changes the accent across Jarvis. Saved on {PT.computer}.</p>
               </div>
               <ThemeSwitcher value={settings.theme} onChange={onTheme} showNames />
             </div>
@@ -835,7 +844,7 @@ export function SettingsView({ settings, info, creds, onCreds, onUpdate }: Props
               <div className="field-text">
                 <h3>Notify me when reminders are due</h3>
                 <p>
-                  Shows a macOS notification. The dashboard always shows the reminder too, and reads it aloud if typed
+                  Shows a desktop notification. The dashboard always shows the reminder too, and reads it aloud if typed
                   replies are read aloud.
                 </p>
               </div>
@@ -848,10 +857,7 @@ export function SettingsView({ settings, info, creds, onCreds, onUpdate }: Props
               />
             </div>
             <p className="fine">
-              Reminders fire only while JARVIS is running: with the window open, or in the menu bar if you turn that on
-              below. If notifications don&apos;t
-              appear, allow them in System Settings → Notifications (in development the app is listed as
-              &ldquo;Electron&rdquo;). Reminders that come due while JARVIS is closed show as missed when you next open it.
+              Reminders and routines run only while JARVIS is running: with the window open, or in the {PT.tray} if you turn that on below. {PT.notificationsHelp} Reminders that come due while JARVIS is closed show as missed when you next open it.
             </p>
             <BackgroundSettings settings={settings} onUpdate={onUpdate} />
           </>
@@ -875,7 +881,7 @@ export function SettingsView({ settings, info, creds, onCreds, onUpdate }: Props
             {info ? (
               <dl className="about">
                 <div><dt>Version</dt><dd>{info.version}</dd></div>
-                <div><dt>System</dt><dd>{PLATFORM[info.platform] ?? info.platform}, {info.arch}</dd></div>
+                <div><dt>System</dt><dd>{PLATFORM_NAMES[info.platform] ?? info.platform}, {info.arch}</dd></div>
                 <div><dt>Electron</dt><dd>{info.versions.electron}</dd></div>
                 <div><dt>Chromium</dt><dd>{info.versions.chrome}</dd></div>
                 <div><dt>Node.js</dt><dd>{info.versions.node}</dd></div>
@@ -884,7 +890,7 @@ export function SettingsView({ settings, info, creds, onCreds, onUpdate }: Props
             ) : (
               <p>Reading system details…</p>
             )}
-            <p className="fine">Emergency stop: ⌘⇧. from anywhere in Jarvis.</p>
+            <p className="fine">Emergency stop: {PT.shortcut('.', true)} from anywhere in Jarvis.</p>
           </>
         )}
       </div>

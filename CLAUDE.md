@@ -22,7 +22,7 @@
 - UI shows real state only; unavailable features say "not available yet".
 
 ## Commands
-`npm run dev` · `npm run typecheck` · `npm test` · `npm run test:e2e` · `npm run build` · `npm run dist:mac` · `npm run sunrise` · `npm run sunset`
+`npm run dev` · `npm run typecheck` · `npm test` · `npm run test:e2e` · `npm run build` · `npm run dist:mac` / `dist:win` / `dist:linux` · `npm run sunrise` · `npm run sunset` · CI: `.github/workflows/ci.yml` (macOS/Windows/Linux)
 
 ## Git
 Commit per meaningful change. Never commit `.env`, keys, DBs, `out/`, `node_modules/`.

@@ -1,6 +1,6 @@
 # IMPLEMENTATION
 
-Current phase: Phase 4 / Sprint 13 — Workflows (saved routines)
+Current phase: Phase 4 / Sprint 14 — Windows & Linux builds
 
 Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ not started
 
@@ -161,7 +161,7 @@ A `delegate` tool hands a focused, self-contained research subtask to a helper a
 - ✅ Tests: 4 new unit tests + registry rewrite; 1 new e2e test (refused without a key; switch in Permissions)
 - ✅ Owner moved on (live two-helper check with a key still recommended)
 
-### Sprint 13 — Workflows (saved routines) 🟡
+### Sprint 13 — Workflows (saved routines) ✅ (owner moved on 2026-11-10)
 Saved routines (name + instructions, optional weekly schedule) per workspace, run on demand or by the scheduler while JARVIS runs. Same agent loop, tools, helpers, limits, stop levels and kill switch as typed requests. Scheduled (unattended) runs get read-only tools only; manual runs use normal approvals. Results kept per routine (last 20) and announced by notification and in the conversation. Starter templates.
 - ✅ Contract: `Workflow`, `WorkflowRun`, `WorkflowInput`, 5 channels + 2 events, `RunningTask.kind 'workflow'`
 - ✅ Pure (`src/shared/workflows.ts`): validation, `nextRun` in local time (incl. DST), schedule wording, run message, read-only toolset for scheduled runs, 3 templates — tested in a fixed time zone
@@ -169,11 +169,18 @@ Saved routines (name + instructions, optional weekly schedule) per workspace, ru
 - ✅ Main: `src/main/workflows.ts` (start checks, background run via the shared pipeline, `readOnly` executor guard when scheduled, results, notification, events; 30 s schedule tick, skipped-when-busy recorded); `executeTracked` shared with typed requests
 - ✅ UI: **Routines** screen (templates, editor with days/time/active, Run now, results history, delete with confirmation), routine results in the conversation, Running shows "Routine: …" with Stop request
 - ✅ Tests: 4 new unit tests + SQL test; 2 Drizzle tests and 1 e2e test (template → schedule → honest failed run without a key → pause → delete) on the Mac
-- 🟡 Needs owner verification: typecheck, `npm test`, `npm run test:e2e`; then with a key create a Morning briefing, press Run now, and schedule one a few minutes ahead with the app open
+- ✅ Owner moved on (live run with a key still recommended)
 - ⬜ Run history export; per-routine tool restrictions
 
-### Sprint 14 — Windows & Linux builds ⬜
-Packaging, platform checks (tray, notifications, login items), CI matrix.
+### Sprint 14 — Windows & Linux builds 🟡
+Packaging for Windows (NSIS installer) and Linux (AppImage, .deb); platform fixes (shortcut and wording per OS, Windows notification identity, File menu, visible tray icon, open-at-login on Windows and Linux, no insecure key storage on keyring-less Linux); a GitHub Actions CI matrix (macOS, Windows, Ubuntu) that type-checks, unit-tests, runs the e2e suite and packages on each OS — build and test only, nothing is published.
+- ✅ Platform wording + shortcuts (`src/shared/platform.ts`) — tested; Settings, top bar, reminders and routines text per OS
+- ✅ Main: Windows AppUserModelID, File menu + auto-hidden menu bar off macOS, gold tray icon for Windows/Linux, open at login on Windows (`--background`) and Linux (XDG autostart), start-hidden detection per OS
+- ✅ Linux key storage: `basic_text` backend treated as unavailable (no weak storage) with an explanation in Settings
+- ✅ Packaging: NSIS (Windows x64/arm64), AppImage + .deb (Linux x64/arm64); `dist:win`, `dist:linux`
+- ✅ CI: `.github/workflows/ci.yml` — three OSes; Linux e2e under xvfb with an unlocked GNOME Keyring and Chromium's sandbox kept on; installers uploaded as artifacts; e2e made platform-neutral (tray labels, Windows file-lock-safe cleanup)
+- 🟡 Not yet proven: the first CI run is the real test of Windows and Linux (I can't run them here); expect a round of fixes from its logs
+- ⬜ Code signing (Apple Developer ID, Windows certificate) before sharing builds with anyone else
 
 ### Sprint 15 — Business workflows ⬜
 Leads/CRM/n8n/report integrations — scope to be agreed with the owner first.
