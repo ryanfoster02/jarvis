@@ -1,6 +1,6 @@
 # IMPLEMENTATION
 
-Current phase: Phase 4 / Sprint 14 — Windows & Linux builds
+Current phase: Phase 4 / Sprint 15 — Business workflows (webhooks + leads)
 
 Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ not started
 
@@ -172,7 +172,7 @@ Saved routines (name + instructions, optional weekly schedule) per workspace, ru
 - ✅ Owner moved on (live run with a key still recommended)
 - ⬜ Run history export; per-routine tool restrictions
 
-### Sprint 14 — Windows & Linux builds 🟡
+### Sprint 14 — Windows & Linux builds ✅ (CI green on all three, 2026-11-10)
 Packaging for Windows (NSIS installer) and Linux (AppImage, .deb); platform fixes (shortcut and wording per OS, Windows notification identity, File menu, visible tray icon, open-at-login on Windows and Linux, no insecure key storage on keyring-less Linux); a GitHub Actions CI matrix (macOS, Windows, Ubuntu) that type-checks, unit-tests, runs the e2e suite and packages on each OS — build and test only, nothing is published.
 - ✅ Platform wording + shortcuts (`src/shared/platform.ts`) — tested; Settings, top bar, reminders and routines text per OS
 - ✅ Main: Windows AppUserModelID, File menu + auto-hidden menu bar off macOS, gold tray icon for Windows/Linux, open at login on Windows (`--background`) and Linux (XDG autostart), start-hidden detection per OS
@@ -184,8 +184,8 @@ Packaging for Windows (NSIS installer) and Linux (AppImage, .deb); platform fixe
 - ⚠ Linux CI has no usable keyring: after 3 attempts (unlocked GNOME Keyring; GNOME session; `--password-store=gnome-libsecret`) I stopped, per the project rules. JARVIS correctly refuses weak storage there, so the 3 key-form tests skip with a reason and a new test verifies the refusal. Saving keys on a real Linux desktop is still unverified
 - ⬜ Code signing (Apple Developer ID, Windows certificate) before sharing builds with anyone else
 
-### Sprint 15 — Business workflows ⬜
-Leads/CRM/n8n/report integrations — scope to be agreed with the owner first.
+### Sprint 15 — Business workflows (webhooks + leads) 🟡
+Vendor-neutral first (owner didn't name specific tools): **webhooks** to n8n / Zapier / Make / any CRM automation (owner-registered, encrypted at rest, every send is high risk = approval each time, never from scheduled routines), and a local **leads** pipeline per workspace (owner UI; Jarvis can list, add and update with approval) plus a weekly pipeline-report routine template. Vendor connectors (HubSpot, Pipedrive, …) later, once the owner picks one.
 
 ## Dependencies between stages
 Sprint 3 needs Sprint 1 IPC + vault. Text chat needs Phase 2 provider (an interim direct OpenAI text call may land in Sprint 4). Integrations need permission engine. Scheduler needs permission engine + limits.
