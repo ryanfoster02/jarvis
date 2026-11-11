@@ -2123,3 +2123,92 @@ select {
 .setup-hide {
   margin-top: 12px;
 }
+
+/* ---------- Google + Today (Sprint 19) ---------- */
+.google-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+  max-width: 560px;
+}
+.google-form label {
+  display: grid;
+  gap: 4px;
+}
+.google-form label span {
+  font: 400 var(--t-micro) / 1.2 var(--font-display);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.google-form input {
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 75%, transparent);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--t-sm);
+  outline: none;
+  min-width: 0;
+}
+.google-form input:focus {
+  border-color: var(--accent);
+}
+.google-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: 400 var(--t-sm) var(--font-mono);
+  margin: 8px 0;
+}
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+.status-dot.is-ok {
+  background: var(--ok);
+}
+.status-dot.is-warn {
+  background: var(--attention);
+}
+.today-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.today-list li {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: baseline;
+}
+.today-list li.is-past {
+  opacity: 0.5;
+}
+.today-list li.is-now .today-time {
+  color: var(--accent);
+}
+.today-time {
+  font: 400 var(--t-xs) var(--font-mono);
+  color: var(--dim);
+}
+.today-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.today-meet {
+  font: 400 var(--t-micro) var(--font-display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.today-more {
+  color: var(--dim);
+  font-size: var(--t-xs);
+}

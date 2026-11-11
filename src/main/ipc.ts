@@ -68,6 +68,8 @@ import { remindersChanged } from './scheduler.ts'
 import { applyBackground, backgroundStatus } from './background.ts'
 import { dashboardReady, perfSnapshot } from './perf.ts'
 import { checkForUpdates, openLatestRelease } from './updates.ts'
+import { cancelGoogleConnect, connectGoogle, disconnectGoogle, GoogleError, googleStatus, listEvents, saveGoogleClient } from './google.ts'
+import { rangeBounds, validateDashboardRange, validateGoogleClient, type CalendarEventsResult, type GoogleResult, type GoogleStatus } from '../shared/google.ts'
 import type { UpdateCheckResult } from '../shared/updates.ts'
 import { createBackupFile, inspectSource, listAutoBackups, restoreFromToken, showBackupFolder } from './backups.ts'
 import { validateBackupSource, validateRestoreToken, type BackupCreateResult, type BackupInspectResult, type BackupListResult, type BackupRestoreResult } from '../shared/backup.ts'
@@ -200,6 +202,54 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
     }),
   )
   ipcMain.handle(Channels.backupShowFolder, guard((): Promise<void> => showBackupFolder()))
+  // Google (Sprint 19): client and tokens stay in main; the renderer sees status and today's events.
+  const googleFail = (err: unknown): GoogleResult => {
+    if (err instanceof GoogleError || err instanceof IpcValidationError) return { ok: false, message: err.message, status: googleStatus() }
+    throw err
+  }
+  ipcMain.handle(Channels.googleStatus, guard((): GoogleStatus => googleStatus()))
+  ipcMain.handle(
+    Channels.googleSaveClient,
+    guard((input: unknown): GoogleResult => {
+      try {
+        return { ok: true, status: saveGoogleClient(validateGoogleClient(input)) }
+      } catch (err) {
+        return googleFail(err)
+      }
+    }),
+  )
+  ipcMain.handle(
+    Channels.googleConnect,
+    guard(async (): Promise<GoogleResult> => {
+      if (!limits.keys.take()) return { ok: false, message: SLOW_DOWN, status: googleStatus() }
+      try {
+        return { ok: true, status: await connectGoogle() }
+      } catch (err) {
+        return googleFail(err)
+      }
+    }),
+  )
+  ipcMain.handle(Channels.googleCancel, guard((): void => cancelGoogleConnect()))
+  ipcMain.handle(
+    Channels.googleDisconnect,
+    guard(async (forgetClient: unknown): Promise<GoogleResult> => {
+      if (typeof forgetClient !== 'boolean') return { ok: false, message: 'forgetClient must be true or false', status: googleStatus() }
+      return { ok: true, status: await disconnectGoogle(forgetClient) }
+    }),
+  )
+  ipcMain.handle(
+    Channels.calendarEvents,
+    guard(async (range: unknown): Promise<CalendarEventsResult> => {
+      if (!limits.tools.take()) return { ok: false, message: SLOW_DOWN }
+      try {
+        const b = rangeBounds(validateDashboardRange(range), Date.now())
+        return { ok: true, events: await listEvents(b.start, b.end), label: b.label }
+      } catch (err) {
+        if (err instanceof GoogleError || err instanceof IpcValidationError) return { ok: false, message: err.message }
+        throw err
+      }
+    }),
+  )
   // Updates (Sprint 18): the owner asks; main fetches the latest release and opens its page.
   ipcMain.handle(
     Channels.updatesCheck,

@@ -105,10 +105,12 @@ test('renderer is isolated: no Node globals, only the narrow jarvis bridge', asy
     'approvals',
     'background',
     'backups',
+    'calendar',
     'chat',
     'conversations',
     'credentials',
     'github',
+    'google',
     'killSwitch',
     'leads',
     'memory',
@@ -582,6 +584,54 @@ test('web search: refused without a text-model key (nothing sent, no approval); 
   await again.page.getByRole('button', { name: 'Permissions' }).click()
   await expect(again.page.getByRole('switch', { name: 'Search the web without asking' })).toHaveAttribute('aria-checked', 'true')
   await closeApp(again.app)
+})
+
+test('google: calendar tools need a connection; client validated; real loopback sign-in, declined in the browser', async () => {
+  test.setTimeout(LAUNCH_BUDGET + 60_000)
+  const { app, page } = await launch(profile)
+  const r = await invoke(page, 'calendar_list_events', { range: 'today', date: null })
+  expect(r.output).toMatch(/^Not run: No access to calendar:read/)
+  await requireSecureStorage(page)
+
+  await page.keyboard.press('ControlOrMeta+,')
+  await page.getByRole('button', { name: 'Connections', exact: true }).click()
+  const google = page.getByLabel('Google', { exact: true })
+  await google.getByLabel('Google client ID').fill('not-a-client-id')
+  await google.getByRole('button', { name: 'Save client' }).click()
+  await expect(google.locator('.form-msg.is-error')).toContainText('Google OAuth client ID')
+  await google.getByLabel('Google client ID').fill('123456789012-abcdefghijklmnop0123456789abcdef.apps.googleusercontent.com')
+  await google.getByLabel('Google client secret').fill('GOCSPX-abcdefghijklmnop')
+  await google.getByRole('button', { name: 'Save client' }).click()
+  await expect(google.getByText('from project 123456789012')).toBeVisible()
+
+  // The browser is the owner's: capture the consent URL instead of opening one, then play the browser.
+  await app.evaluate(({ shell }: typeof import('electron')) => {
+    const g = globalThis as unknown as { opened: string[] }
+    g.opened = []
+    shell.openExternal = (async (u: string) => {
+      g.opened.push(u)
+    }) as typeof shell.openExternal
+  })
+  await google.getByRole('button', { name: 'Connect Google' }).click()
+  await expect(google.getByRole('button', { name: 'Cancel sign-in' })).toBeVisible()
+  await expect
+    .poll(() => app.evaluate(() => (globalThis as unknown as { opened: string[] }).opened[0] ?? ''))
+    .toMatch(/^https:\/\/accounts\.google\.com\/o\/oauth2\/v2\/auth\?/)
+  const consent = new URL(await app.evaluate(() => (globalThis as unknown as { opened: string[] }).opened[0] ?? ''))
+  expect(consent.searchParams.get('scope')).toBe('openid email https://www.googleapis.com/auth/calendar.readonly')
+  expect(consent.searchParams.get('code_challenge_method')).toBe('S256')
+  const redirect = consent.searchParams.get('redirect_uri') ?? ''
+  expect(redirect).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
+  // A forged return with the wrong state is refused; the real one (owner declined) ends the sign-in.
+  expect((await fetch(`${redirect}/?state=forged&code=x`)).status).toBe(400)
+  const back = await fetch(`${redirect}/?state=${consent.searchParams.get('state')}&error=access_denied`)
+  expect(await back.text()).toContain('JARVIS was not connected')
+  await expect(google.locator('.form-msg.is-error')).toContainText('You declined access')
+  await expect(google.getByRole('button', { name: 'Connect Google' })).toBeVisible()
+
+  await google.getByRole('button', { name: 'Remove' }).click()
+  await expect(google.getByLabel('Google client ID')).toBeVisible()
+  await closeApp(app)
 })
 
 test('setup guide: shows real state, links to the right settings, hides and comes back', async () => {

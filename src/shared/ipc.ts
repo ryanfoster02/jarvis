@@ -60,6 +60,12 @@ export const Channels = {
   backupShowFolder: 'backup:show-folder',
   updatesCheck: 'updates:check',
   updatesOpen: 'updates:open',
+  googleStatus: 'google:status',
+  googleSaveClient: 'google:save-client',
+  googleConnect: 'google:connect',
+  googleCancel: 'google:cancel',
+  googleDisconnect: 'google:disconnect',
+  calendarEvents: 'calendar:events',
 } as const
 
 /** Main → renderer push events. */
@@ -643,6 +649,8 @@ export const TOOL_NAMES = [
   'update_lead',
   'send_webhook',
   'web_search',
+  'calendar_list_events',
+  'calendar_find_free_time',
 ] as const
 export type ToolName = (typeof TOOL_NAMES)[number]
 export const isToolName = (v: unknown): v is ToolName => typeof v === 'string' && (TOOL_NAMES as readonly string[]).includes(v)

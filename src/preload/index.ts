@@ -39,6 +39,7 @@ import {
 } from '../shared/ipc.ts'
 import type { PerfSnapshot } from '../shared/perf.ts'
 import type { UpdateCheckResult } from '../shared/updates.ts'
+import type { CalendarEventsResult, GoogleClientInput, GoogleResult, GoogleStatus } from '../shared/google.ts'
 import type { BackupCreateResult, BackupInspectResult, BackupListResult, BackupRestoreResult, BackupSource } from '../shared/backup.ts'
 
 // The only surface the renderer can reach. Functions only — ipcRenderer itself is never exposed,
@@ -165,6 +166,19 @@ const api = {
     /** Replace current data with the inspected backup (a safety copy is taken first). */
     restore: (token: string): Promise<BackupRestoreResult> => ipcRenderer.invoke(Channels.backupRestore, token),
     showFolder: (): Promise<void> => ipcRenderer.invoke(Channels.backupShowFolder),
+  },
+  google: {
+    status: (): Promise<GoogleStatus> => ipcRenderer.invoke(Channels.googleStatus),
+    /** Saves the OAuth client (encrypted in main). The secret never comes back out. */
+    saveClient: (input: GoogleClientInput): Promise<GoogleResult> => ipcRenderer.invoke(Channels.googleSaveClient, input),
+    /** Opens Google's consent page in the browser; resolves when the owner finishes (or after 5 minutes). */
+    connect: (): Promise<GoogleResult> => ipcRenderer.invoke(Channels.googleConnect),
+    cancel: (): Promise<void> => ipcRenderer.invoke(Channels.googleCancel),
+    disconnect: (forgetClient: boolean): Promise<GoogleResult> => ipcRenderer.invoke(Channels.googleDisconnect, forgetClient),
+  },
+  calendar: {
+    /** Today's or tomorrow's events for the dashboard (read-only). */
+    events: (range: 'today' | 'tomorrow'): Promise<CalendarEventsResult> => ipcRenderer.invoke(Channels.calendarEvents, range),
   },
   updates: {
     /** Ask GitHub for the latest published JARVIS release (main makes the request). */

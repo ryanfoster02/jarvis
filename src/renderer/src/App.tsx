@@ -30,6 +30,7 @@ import { TopBar, type View } from './components/TopBar.tsx'
 import { useVoice, type VoiceActivity, type VoicePhase } from './voice/useVoice.ts'
 import { shouldCalm } from '../../shared/perf.ts'
 import { SetupGuide } from './components/SetupGuide.tsx'
+import { TodayPanel } from './components/TodayPanel.tsx'
 import type { SettingsSection } from './components/SettingsView.tsx'
 
 // Screens other than the dashboard load on first visit (Sprint 16), keeping startup lean.
@@ -582,6 +583,7 @@ export function App(): React.JSX.Element {
                   onDismiss={() => void update({ setupGuideDismissed: true })}
                 />
               )}
+              <TodayPanel />
               <StateLegend current={coreState} />
               <OpsColumn
                 approvals={approvals}

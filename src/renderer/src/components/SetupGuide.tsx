@@ -30,13 +30,15 @@ export function SetupGuide({
   onDismiss: () => void
 }): React.JSX.Element {
   const [webhooks, setWebhooks] = useState(0)
+  const [google, setGoogle] = useState(false)
   useEffect(() => {
     void window.jarvis.webhooks.list().then((l) => setWebhooks(l.length))
+    void window.jarvis.google.status().then((g) => setGoogle(g.connected && !g.needsReconnect))
   }, [])
 
   const textKey = creds.openai.configured || creds.anthropic.configured
   const voiceReady = creds.openai.configured && (settings.speechEngine !== 'elevenlabs' || creds.elevenlabs.configured)
-  const connected = (creds.github.configured && settings.githubRepos.length > 0) || webhooks > 0
+  const connected = (creds.github.configured && settings.githubRepos.length > 0) || webhooks > 0 || google
   const steps: Step[] = [
     {
       id: 'key',
@@ -63,8 +65,8 @@ export function SetupGuide({
     },
     {
       id: 'connect',
-      title: 'Connect GitHub or a webhook',
-      detail: connected ? 'A connection is set up.' : 'Read-only GitHub access, or send to n8n, Zapier or Make.',
+      title: 'Connect Google Calendar, GitHub or a webhook',
+      detail: connected ? 'A connection is set up.' : 'Read your calendar or GitHub, or send to n8n, Zapier or Make.',
       done: connected,
       optional: true,
       action: connected ? undefined : { label: 'Open connections', section: 'connections' },

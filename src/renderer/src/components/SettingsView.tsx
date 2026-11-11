@@ -37,6 +37,7 @@ import { AiCore, CORE_LABELS, CORE_STATES, type CoreState } from './AiCore.tsx'
 import { ThemeSwitcher } from './ThemeSwitcher.tsx'
 import { formatMB, formatMs, type PerfSnapshot } from '../../../shared/perf.ts'
 import { BackupsPanel } from './BackupsPanel.tsx'
+import { GooglePanel } from './GooglePanel.tsx'
 import type { UpdateCheckResult } from '../../../shared/updates.ts'
 
 export type SettingsSection = Section
@@ -1112,10 +1113,11 @@ export function SettingsView({ settings, info, creds, onCreds, onUpdate, initial
             <h2>Connections</h2>
             <p>
               Jarvis only connects to services you set up here, one at a time. Each connection shows what it can reach;
-              everything Jarvis reads is listed under Activity on the dashboard. Email, calendars and files aren&apos;t
-              available yet.
+              everything Jarvis reads is listed under Activity on the dashboard. Email and files aren&apos;t available
+              yet.
             </p>
             <GitHubConnection settings={settings} creds={creds} onCreds={onCreds} onUpdate={onUpdate} />
+            <GooglePanel />
             <WebhooksPanel encryptionAvailable={creds.encryptionAvailable} />
           </>
         )}
