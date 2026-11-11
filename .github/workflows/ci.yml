@@ -57,27 +57,19 @@ jobs:
       - name: Unit tests
         run: npm test
 
-      - name: Linux test environment (sandbox, virtual display, keyring)
+      - name: Linux test environment (sandbox, virtual display)
         if: runner.os == 'Linux'
         run: |
-          # Ubuntu 24.04 blocks the unprivileged user namespaces Chromium's sandbox needs.
+          # Ubuntu blocks the unprivileged user namespaces Chromium's sandbox needs (throwaway runner only).
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           sudo apt-get update
-          sudo apt-get install -y xvfb gnome-keyring dbus-x11
+          sudo apt-get install -y xvfb
 
       - name: End-to-end tests (Linux)
         if: runner.os == 'Linux'
-        # A real, unlocked keyring so key storage behaves as on a desktop; a virtual display for the window.
-        run: |
-          # Chromium picks its key store from the desktop type; a bare virtual display reports none and it
-          # falls back to basic_text (which JARVIS rightly refuses). The e2e launcher passes
-          # --password-store=gnome-libsecret so it uses the unlocked GNOME Keyring.
-          dbus-run-session -- bash -c '
-            echo -n ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null
-            xvfb-run --auto-servernum --server-args="-screen 0 1600x1000x24" npm run test:e2e
-          '
-        env:
-          JARVIS_E2E_PASSWORD_STORE: gnome-libsecret
+        # Virtual display for the window. There's no usable keyring here, so JARVIS (correctly) refuses to
+        # store keys: the key-form tests skip and the "no secure storage" test checks the refusal instead.
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1600x1000x24" npm run test:e2e
 
       - name: End-to-end tests
         if: runner.os != 'Linux'

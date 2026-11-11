@@ -17,10 +17,7 @@ export async function launchApp(userData: string, timeout = LAUNCH_BUDGET): Prom
     Object.entries(process.env).filter((e): e is [string, string] => typeof e[1] === 'string' && e[0] !== 'ELECTRON_RENDERER_URL'),
   )
   env.JARVIS_USER_DATA = userData
-  // CI on Linux: name the key store explicitly (a bare virtual display gives Chromium no desktop to detect).
-  const store = process.env['JARVIS_E2E_PASSWORD_STORE']
-  const args = store ? [root, `--password-store=${store}`] : [root]
-  const app = await electron.launch({ args, cwd: root, env, timeout })
+  const app = await electron.launch({ args: [root], cwd: root, env, timeout })
   open.add(app)
   app.on('close', () => open.delete(app))
   const page = await app.firstWindow({ timeout })

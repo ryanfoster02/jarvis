@@ -13,6 +13,19 @@ async function launch(userData: string): Promise<{ app: ElectronApplication; pag
   return { app, page }
 }
 
+/**
+ * Key forms need real encryption. Linux machines without a working keyring (e.g. CI's virtual display)
+ * have none, and JARVIS deliberately disables the forms there — so those tests skip, and the refusal
+ * itself is tested instead ("no secure storage" test below).
+ */
+async function requireSecureStorage(page: Page): Promise<void> {
+  const ok = await page.evaluate(async () => {
+    const j = (window as unknown as { jarvis: { credentials: { status: () => Promise<{ encryptionAvailable: boolean }> } } }).jarvis
+    return (await j.credentials.status()).encryptionAvailable
+  })
+  test.skip(!ok, 'No secure key storage on this machine (Linux without a keyring); key forms are disabled by design.')
+}
+
 let profile: string
 test.beforeEach(() => {
   profile = mkdtempSync(join(tmpdir(), 'jarvis-e2e-'))
@@ -142,6 +155,7 @@ test('typing without a key gives an honest notice, not a fake reply', async () =
 
 test('settings open with ⌘, and close with Esc; bad key is rejected before any network call', async () => {
   const { app, page } = await launch(profile)
+  await requireSecureStorage(page)
   await page.keyboard.press('ControlOrMeta+,')
   await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible()
   await page.getByRole('button', { name: 'AI provider' }).click()
@@ -156,6 +170,7 @@ test('settings open with ⌘, and close with Esc; bad key is rejected before any
 
 test('Claude for typed replies: key form validates, missing key is reported honestly', async () => {
   const { app, page } = await launch(profile)
+  await requireSecureStorage(page)
   await page.keyboard.press('ControlOrMeta+,')
   await page.getByRole('button', { name: 'Voice' }).click()
   await page.getByRole('combobox', { name: 'Typed replies model' }).selectOption('claude-haiku-5-5')
@@ -367,6 +382,7 @@ test('settings: tool switches and the standing permission persist', async () => 
 
 test('connections: GitHub token is validated locally; repositories need a connection first', async () => {
   const { app, page } = await launch(profile)
+  await requireSecureStorage(page)
   await page.keyboard.press('ControlOrMeta+,')
   await page.getByRole('button', { name: 'Connections' }).click()
   const gh = page.locator('.provider').filter({ hasText: 'GitHub' })
@@ -536,5 +552,20 @@ test('routines: create from a template, schedule, run honestly without a key, pa
   await item.getByRole('button', { name: 'Delete' }).click()
   await item.getByRole('alertdialog').getByRole('button', { name: 'Delete' }).click()
   await expect(page.getByText('No routines yet.')).toBeVisible()
+  await closeApp(app)
+})
+
+test('no secure storage: key forms are disabled and explain why (instead of storing keys weakly)', async () => {
+  const { app, page } = await launch(profile)
+  const available = await page.evaluate(async () => {
+    const j = (window as unknown as { jarvis: { credentials: { status: () => Promise<{ encryptionAvailable: boolean }> } } }).jarvis
+    return (await j.credentials.status()).encryptionAvailable
+  })
+  test.skip(available, 'This machine has secure key storage; the refusal path only applies without it.')
+  await page.keyboard.press('ControlOrMeta+,')
+  await page.getByRole('button', { name: 'AI provider' }).click()
+  await expect(page.getByText("Secure storage isn't available on this system, so keys can't be saved.")).toBeVisible()
+  await expect(page.getByText(/Install and unlock a keyring/)).toBeVisible()
+  await expect(page.locator('.provider input[type="password"]').first()).toBeDisabled()
   await closeApp(app)
 })
