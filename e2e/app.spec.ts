@@ -608,6 +608,8 @@ test('leads: add with a past next step, pipeline and overdue, change stage, dele
   await page.getByRole('button', { name: 'Leads', exact: true }).click()
   await expect(page.getByRole('listitem', { name: 'Grace Hopper' })).toBeVisible()
 
+  // Ada is won, so she is hidden again until closed leads are shown.
+  await page.getByLabel('Show won and lost').check()
   await page.getByRole('listitem', { name: 'Ada Lovelace' }).getByRole('button', { name: 'Delete' }).click()
   await page.getByRole('alertdialog', { name: 'Delete lead' }).getByRole('button', { name: 'Delete' }).click()
   await expect(page.getByRole('listitem', { name: 'Ada Lovelace' })).toHaveCount(0)
