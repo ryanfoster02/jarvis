@@ -12,6 +12,7 @@ import {
   type ToolName,
   type ToolOutcome,
   type ToolSource,
+  type WebLink,
   type WorkspaceId,
 } from '../shared/ipc.ts'
 import type { ExecutedTool, ToolCall } from '../shared/agent.ts'
@@ -33,6 +34,8 @@ import { getLead, LeadLimitError, LeadNotFoundError, listLeads, saveLead } from 
 import { applyLeadPatch, OPEN_STATUSES, pipelineSummary, todayIso } from '../shared/leads.ts'
 import { findWebhook, postWebhook, webhookNames } from './webhooks.ts'
 import { webhookHost, webhookPayload } from '../shared/webhooks.ts'
+import { buildWebSearchRequest, formatResearchReport, parseWebSearch, WEB_SEARCH, webSearchCostUsd } from '../shared/websearch.ts'
+import { RateLimiter } from '../shared/ratelimit.ts'
 import { addReminder, cancelReminder, getReminder, listReminders, ReminderLimitError, ReminderNotFoundError } from './db/reminders.ts'
 import { remindersChanged } from './scheduler.ts'
 import { formatWhen, localIso } from '../shared/reminders.ts'
@@ -166,7 +169,7 @@ export function grantedScopes(ctx: Pick<ToolContext, 'db' | 'settings'>): ToolSc
   if (ctx.db) scopes.push('leads:read', 'leads:write')
   if (webhookNames().length > 0) scopes.push('webhooks:send')
   // Helpers run on the typed-replies model, so they need that provider's key.
-  if (getKey(textModelProvider(ctx.settings.textModel))) scopes.push('agents:delegate')
+  if (getKey(textModelProvider(ctx.settings.textModel))) scopes.push('agents:delegate', 'web:search')
   if (ctx.settings.githubRepos.length > 0 && getKey('github')) scopes.push('github:read')
   return scopes
 }
@@ -179,6 +182,7 @@ export function permissionContext(ctx: Pick<ToolContext, 'db' | 'settings' | 'un
     mandates: [
       ...(ctx.settings.autoSaveMemories ? (['memory:write'] as const) : []),
       ...(ctx.settings.autoSetReminders ? (['reminders:write'] as const) : []),
+      ...(ctx.settings.autoWebSearch ? (['web:search'] as const) : []),
     ],
     untrusted: ctx.untrusted ?? false,
   }
@@ -201,6 +205,7 @@ async function record(
   outcome: ToolOutcome,
   detail: string,
   started: number,
+  links?: WebLink[],
 ): Promise<ActionNote> {
   if (ctx.db) {
     try {
@@ -218,7 +223,7 @@ async function record(
       console.error('[tools] could not write the action log:', err)
     }
   }
-  const note: ActionNote = { tool: name, title: TOOLS[name].title, decision, outcome, detail }
+  const note: ActionNote = { tool: name, title: TOOLS[name].title, decision, outcome, detail, ...(links?.length ? { links } : {}) }
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed()) win.webContents.send(Events.toolRunLogged, note)
   }
@@ -235,13 +240,47 @@ async function gh(repo: string, path: string, signal?: AbortSignal): Promise<unk
   return r.value
 }
 
+// Web searches cost money: a cap per minute across JARVIS, on top of each request's spend limit.
+const searchLimiter = new RateLimiter(WEB_SEARCH.perMinute, 60_000)
+
+class SearchError extends Error {
+  readonly costUsd: number
+  constructor(message: string, costUsd: number) {
+    super(message)
+    this.costUsd = costUsd
+  }
+}
+
+/** One research request to the typed-replies provider with its built-in web search (Sprint 17). */
+async function runWebSearch(query: string, ctx: ToolContext): Promise<{ output: string; detail: string; untrusted: true; costUsd: number; links: WebLink[] }> {
+  const model = ctx.settings.textModel
+  const providerId = textModelProvider(model)
+  const key = getKey(providerId)
+  if (!key) throw new Error(`Web search uses the typed-replies model, and no ${TEXT_PROVIDER_NAMES[providerId]} key is saved.`)
+  if (!searchLimiter.take()) throw new Error(`More than ${WEB_SEARCH.perMinute} web searches in a minute. Wait a moment.`)
+  const res = await TEXT_PROVIDER_IMPLS[providerId].send(key, buildWebSearchRequest(model, query, todayIso(Date.now())), ctx.signal)
+  if (!res.ok) throw new Error(res.message)
+  const r = parseWebSearch(model, res.value)
+  const costUsd = webSearchCostUsd(model, r)
+  if (!r.text && r.searchError) throw new SearchError(`Web search failed (${r.searchError}).`, costUsd)
+  return {
+    output: formatResearchReport(query, r),
+    detail: `${r.searches} search${r.searches === 1 ? '' : 'es'} · ${r.sources.length} source${r.sources.length === 1 ? '' : 's'}`,
+    untrusted: true,
+    costUsd,
+    links: r.sources,
+  }
+}
+
 /** Runs the tool itself. Only called after the permission decision allowed it. */
 async function run(
   name: ToolName,
   args: ToolArgs[ToolName],
   ctx: ToolContext,
-): Promise<{ output: string; detail: string; untrusted?: boolean; costUsd?: number }> {
+): Promise<{ output: string; detail: string; untrusted?: boolean; costUsd?: number; links?: WebLink[] }> {
   switch (name) {
+    case 'web_search':
+      return runWebSearch((args as ToolArgs['web_search']).query, ctx)
     case 'delegate':
       return runHelper((args as ToolArgs['delegate']).task, ctx)
     case 'list_leads': {
@@ -511,10 +550,10 @@ export async function executeTool(rawName: string, rawArgs: unknown, ctx: ToolCo
   }
   try {
     const r = await run(name, args, ctx)
-    const note = await record(ctx, name, summary, decision, 'ok', r.detail, started)
+    const note = await record(ctx, name, summary, decision, 'ok', r.detail, started, r.links)
     return { output: r.output, isError: false, note, waitedMs, untrusted: r.untrusted, costUsd: r.costUsd }
   } catch (err) {
-    const costUsd = err instanceof HelperError ? err.costUsd : undefined
+    const costUsd = err instanceof HelperError || err instanceof SearchError ? err.costUsd : undefined
     if (ctx.signal?.aborted) {
       const note = await record(ctx, name, summary, decision, 'skipped', 'Cancelled by you', started)
       return { output: CANCELLED_TEXT, isError: true, note, waitedMs, costUsd }

@@ -124,7 +124,7 @@ export function App(): React.JSX.Element {
   const [runsVersion, setRunsVersion] = useState(0)
   const onAction = useCallback((note: ActionNote, via: Entry['via']) => {
     const tone = note.outcome === 'ok' ? 'ok' : note.outcome === 'error' ? 'error' : 'skipped'
-    setEntries((e) => [...e, { id: newId(), role: 'action', text: describeAction(note), at: new Date(), via, tone }])
+    setEntries((e) => [...e, { id: newId(), role: 'action', text: describeAction(note), at: new Date(), via, tone, ...(note.links?.length ? { links: note.links } : {}) }])
   }, [])
 
   /** Save a fact for this workspace. Returns an error message, or null when saved. */

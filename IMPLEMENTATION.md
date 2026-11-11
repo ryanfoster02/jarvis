@@ -1,6 +1,6 @@
 # IMPLEMENTATION
 
-Current phase: Phase 4 / Sprint 16 — Performance
+Current phase: Phase 5 / Sprint 17 — Web research
 
 Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ not started
 
@@ -205,6 +205,24 @@ Measure first, then fix what the measurements show. Every number below comes fro
 - ✅ **CI startup (run 42967596774, ms since launch):** macOS window 910 / dashboard 1030 · Windows 375 / 524 · Linux 313 / 314. Memory at rest 347–454 MB (all processes)
 - ✅ Tests: 4 unit (perf), 1 DB (pragmas), 1 e2e (timeline order, usage, panel, startup ceiling 20 s); 131 unit tests on each OS
 - ⬜ Owner check on the Mac: Settings → About → Performance after a normal launch; Activity Monitor with Jarvis in the background
+
+## Phase 5 — Daily operations & release
+Planned with the owner 2026-11-10. Fills the vision's remaining example requests ("what's on my schedule", "research this company", "draft an email", "check my automations", "summarize yesterday") and gets JARVIS ready to share. Owner choices: **Google** (Calendar + Gmail), **Gmail drafts via OAuth** (Jarvis drafts, never sends), **self-hosted n8n**, and **release readiness moved up** to right after research.
+
+### Sprint 17 — Web research ⬜
+`web_search` tool (medium risk: costs money per search) that runs one separate request to the typed-replies provider with its built-in web search (OpenAI Responses `web_search`; Anthropic `web_search_20250305`), capped searches per call, and returns a short report with numbered sources. Results are untrusted text. Helpers may use it. Cost ($10 per 1,000 searches + tokens) counts against the run's spend cap.
+
+### Sprint 18 — Release readiness ⬜
+macOS code signing + notarization (needs the owner's Apple Developer account), auto-update (new dependency, recorded in STACK.md), database backup/export, first-run setup guide.
+
+### Sprint 19 — Google Calendar (read-only) ⬜
+Google OAuth (desktop loopback + PKCE, tokens encrypted in main), `list_events` / free-time tools, Today panel. Creating events later, with approval.
+
+### Sprint 20 — Gmail drafts ⬜
+Same Google connection, compose scope: Jarvis creates drafts in Gmail (medium risk, approval); sending stays with the owner in Gmail.
+
+### Sprint 21 — Automation oversight + morning briefing ⬜
+Self-hosted n8n API (read-only: workflows, failed executions) and a Morning briefing routine: calendar, reminders, overdue leads, GitHub, failed automations — read aloud on request.
 
 ## Dependencies between stages
 Sprint 3 needs Sprint 1 IPC + vault. Text chat needs Phase 2 provider (an interim direct OpenAI text call may land in Sprint 4). Integrations need permission engine. Scheduler needs permission engine + limits.

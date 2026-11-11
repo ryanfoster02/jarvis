@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { MAX_CHAT_CHARS, type ConversationSummary } from '../../../shared/ipc.ts'
+import { MAX_CHAT_CHARS, type ConversationSummary, type WebLink } from '../../../shared/ipc.ts'
 import type { VoiceActivity, VoicePhase } from '../voice/useVoice.ts'
 
 export interface Entry {
@@ -12,6 +12,8 @@ export interface Entry {
   at: Date
   via: 'text' | 'voice'
   streaming?: boolean
+  /** Sources behind an action (web search), shown as links that open in the browser. */
+  links?: WebLink[]
 }
 
 export interface VoiceControls {
@@ -52,6 +54,14 @@ interface Props {
   /** Stop the request Jarvis is answering now (workflow level), or null when there's nothing to stop. */
   onStop: (() => void) | null
   onOpenSettings: () => void
+}
+
+const hostOf = (url: string): string => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return ''
+  }
 }
 
 const WHO: Record<Entry['role'], string> = { user: 'You', assistant: 'Jarvis', system: 'Jarvis system', action: 'Jarvis action', reminder: 'Reminder', workflow: 'Routine' }
@@ -234,6 +244,19 @@ export function ConversationPanel({ entries, history, onRemember, busy, disabled
               {m.via === 'voice' && <span className="msg-via">voice</span>}
             </div>
             <p>{m.text}</p>
+            {m.links && m.links.length > 0 && (
+              <ol className="msg-sources" aria-label="Sources">
+                {m.links.map((l) => (
+                  <li key={l.url}>
+                    {/* Opens in the default browser: main denies new windows and hands https links to the OS. */}
+                    <a href={l.url} target="_blank" rel="noreferrer noopener" title={l.url}>
+                      {l.title}
+                    </a>
+                    <span className="msg-source-host">{hostOf(l.url)}</span>
+                  </li>
+                ))}
+              </ol>
+            )}
             {m.role === 'user' && !m.streaming && <RememberButton text={m.text} onRemember={onRemember} />}
           </li>
         ))}

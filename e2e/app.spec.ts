@@ -557,6 +557,31 @@ test('helpers: refused without a text-model key; switchable in Permissions', asy
   await closeApp(app)
 })
 
+test('web search: refused without a text-model key (nothing sent, no approval); its switches persist', async () => {
+  const { app, page } = await launch(profile)
+  const r = await invoke(page, 'web_search', { query: 'Acme Corp latest funding round' })
+  expect(r.output).toMatch(/^Not run: No access to web:search/)
+  await expect(page.locator('.approval')).toHaveCount(0)
+  // A secret in the query is refused before anything else.
+  const secret = await invoke(page, 'web_search', { query: 'is sk-abcdefghijklmnopqrstuv still valid' })
+  expect(secret.output).toMatch(/^Not run: .*never include secrets/)
+
+  await page.keyboard.press('ControlOrMeta+,')
+  await page.getByRole('button', { name: 'Permissions' }).click()
+  await expect(page.getByRole('switch', { name: 'Search the web', exact: true })).toHaveAttribute('aria-checked', 'true')
+  const standing = page.getByRole('switch', { name: 'Search the web without asking' })
+  await expect(standing).toHaveAttribute('aria-checked', 'false')
+  await standing.click()
+  await expect(standing).toHaveAttribute('aria-checked', 'true')
+  await closeApp(app)
+
+  const again = await launch(profile)
+  await again.page.keyboard.press('ControlOrMeta+,')
+  await again.page.getByRole('button', { name: 'Permissions' }).click()
+  await expect(again.page.getByRole('switch', { name: 'Search the web without asking' })).toHaveAttribute('aria-checked', 'true')
+  await closeApp(again.app)
+})
+
 test('routines: create from a template, schedule, run honestly without a key, pause, delete', async () => {
   test.setTimeout(LAUNCH_BUDGET + 60_000)
   const { app, page } = await launch(profile)

@@ -997,6 +997,23 @@ export function SettingsView({ settings, info, creds, onCreds, onUpdate }: Props
                 onClick={() => onUpdate({ autoSetReminders: !settings.autoSetReminders })}
               />
             </div>
+            <div className="field">
+              <div className="field-text">
+                <h3>Search the web without asking</h3>
+                <p>
+                  Each search costs about 1¢ plus tokens and still counts against the spend limit per task. After Jarvis has read
+                  web or GitHub content in a task, further searches ask again.
+                </p>
+              </div>
+              <button
+                role="switch"
+                aria-checked={settings.autoWebSearch}
+                aria-label="Search the web without asking"
+                className="switch"
+                disabled={settings.disabledTools.includes('web_search')}
+                onClick={() => onUpdate({ autoWebSearch: !settings.autoWebSearch })}
+              />
+            </div>
             <p className="fine">
               Order of precedence: Stop all, then scope, then these switches, then high-risk approval, then standing permissions. Jarvis
               can&apos;t change any of these settings itself, and unanswered approvals expire after two minutes.

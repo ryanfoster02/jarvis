@@ -41,3 +41,4 @@ See [SECURITY.md](SECURITY.md).
 2. Persistent memory, workspaces, tool registry, permissions (Phase 2).
 3. Approved integrations, scheduler, execution logs, kill switch (Phase 3).
 4. Multi-step workflows, controlled subagents, business operations, Windows/Linux (Phase 4).
+5. Daily operations (web research, Google Calendar, Gmail drafts, n8n oversight, morning briefing) and release readiness (Phase 5).

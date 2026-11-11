@@ -198,6 +198,8 @@ export interface Settings {
   githubRepos: string[]
   /** Mandate: let Jarvis set reminders without asking each time. Off by default. Cancelling always asks. */
   autoSetReminders: boolean
+  /** Standing permission: web searches (they cost money) run without asking each time (Sprint 17). */
+  autoWebSearch: boolean
   /** Show macOS notifications when reminders fire (the in-app alert always shows). */
   reminderNotifications: boolean
   /** Keep running in the menu bar when the window is closed, so reminders still fire. Off by default. */
@@ -224,6 +226,7 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   autoSaveMemories: false,
   githubRepos: [],
   autoSetReminders: false,
+  autoWebSearch: false,
   reminderNotifications: true,
   runInBackground: false,
   openAtLogin: false,
@@ -524,6 +527,7 @@ export function validateSettingsPatch(input: unknown): Partial<Settings> {
         out.autoSaveMemories = value
         break
       case 'autoSetReminders':
+      case 'autoWebSearch':
       case 'reminderNotifications':
       case 'runInBackground':
       case 'openAtLogin':
@@ -563,6 +567,7 @@ export function normalizeSettings(stored: unknown): Settings {
   if (Array.isArray(stored.disabledTools)) s.disabledTools = [...new Set(stored.disabledTools.filter(isToolName))]
   if (typeof stored.autoSaveMemories === 'boolean') s.autoSaveMemories = stored.autoSaveMemories
   if (typeof stored.autoSetReminders === 'boolean') s.autoSetReminders = stored.autoSetReminders
+  if (typeof stored.autoWebSearch === 'boolean') s.autoWebSearch = stored.autoWebSearch
   if (typeof stored.reminderNotifications === 'boolean') s.reminderNotifications = stored.reminderNotifications
   if (typeof stored.runInBackground === 'boolean') s.runInBackground = stored.runInBackground
   if (typeof stored.openAtLogin === 'boolean') s.openAtLogin = stored.openAtLogin
@@ -620,6 +625,7 @@ export const TOOL_NAMES = [
   'add_lead',
   'update_lead',
   'send_webhook',
+  'web_search',
 ] as const
 export type ToolName = (typeof TOOL_NAMES)[number]
 export const isToolName = (v: unknown): v is ToolName => typeof v === 'string' && (TOOL_NAMES as readonly string[]).includes(v)
@@ -663,12 +669,20 @@ export interface ToolRun {
 }
 
 /** What the conversation shows about an action. */
+/** A web page an action relied on (web search sources), shown to the owner as a link. */
+export interface WebLink {
+  title: string
+  url: string
+}
+
 export interface ActionNote {
   tool: ToolName
   title: string
   decision: ToolDecision
   outcome: ToolOutcome
   detail: string
+  /** Sources behind the result (web_search), shown as links under the action. */
+  links?: WebLink[]
 }
 
 /** Voice tool call result: `output` goes back to the model; `action` is for the conversation view. */

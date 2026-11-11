@@ -2018,3 +2018,24 @@ select {
     min-height: 520px;
   }
 }
+
+/* ---------- Web sources (Sprint 17) ---------- */
+.msg-sources {
+  margin: 6px 0 0;
+  padding: 0 0 0 18px;
+  display: grid;
+  gap: 3px;
+  font: 400 var(--t-xs) / 1.4 var(--font-ui);
+  user-select: text;
+}
+.msg-sources a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+}
+.msg-source-host {
+  margin-left: 6px;
+  font: 400 var(--t-micro) var(--font-mono);
+  color: var(--dim);
+}
