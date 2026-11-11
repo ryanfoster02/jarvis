@@ -209,8 +209,16 @@ Measure first, then fix what the measurements show. Every number below comes fro
 ## Phase 5 — Daily operations & release
 Planned with the owner 2026-11-10. Fills the vision's remaining example requests ("what's on my schedule", "research this company", "draft an email", "check my automations", "summarize yesterday") and gets JARVIS ready to share. Owner choices: **Google** (Calendar + Gmail), **Gmail drafts via OAuth** (Jarvis drafts, never sends), **self-hosted n8n**, and **release readiness moved up** to right after research.
 
-### Sprint 17 — Web research ⬜
-`web_search` tool (medium risk: costs money per search) that runs one separate request to the typed-replies provider with its built-in web search (OpenAI Responses `web_search`; Anthropic `web_search_20250305`), capped searches per call, and returns a short report with numbered sources. Results are untrusted text. Helpers may use it. Cost ($10 per 1,000 searches + tokens) counts against the run's spend cap.
+### Sprint 17 — Web research 🟡 (CI green 2026-11-11; live search needs the owner's key)
+`web_search` tool (medium risk: costs money per search) that runs one separate request to the typed-replies provider with its built-in web search (OpenAI Responses `web_search`; Anthropic `web_search_20250305`), and returns a short report with numbered sources. Results are untrusted text. Cost ($10 per 1,000 searches + tokens) counts against the run's spend cap.
+- ✅ Pure `src/shared/websearch.ts`: query validation (length, secrets), request bodies for both providers, parsing (OpenAI `url_citation` annotations + `web_search_call` count; Anthropic citations after the last result, `server_tool_use.web_search_requests`, in-band search errors), source cleaning (http(s), de-duplicated, ≤8), cost, report — 9 unit tests
+- ✅ Main: `runWebSearch` (key check, 10/min cap, stop signal, cost on failure too); scope `web:search` granted with a typed-replies key; standing permission `autoWebSearch` (off by default; withdrawn after untrusted reads)
+- ✅ UI: sources as links under the action in the conversation; Settings → Permissions switch *Search the web without asking*
+- ✅ e2e: refused without a key (no approval, nothing sent), secret query refused, switches persist across restart
+- ✅ CI run 42969858322: 140 unit tests on each OS; e2e 24 passed (macOS/Windows), 21 passed + 4 skipped (Linux)
+- Changed from the plan: helpers can't search (they're limited to low-risk tools, and searches cost money); the standing permission covers the "don't ask every time" need instead
+- Not verified: OpenAI does not document a per-request search cap that I could confirm, so for OpenAI models the cap of 3 is asked of the model and the actual count is billed to the budget; Anthropic enforces `max_uses: 3`
+- 🟡 Owner: ask "research <a company> and tell me what they do" with a key; check the source links and the cost in the terminal
 
 ### Sprint 18 — Release readiness ⬜
 macOS code signing + notarization (needs the owner's Apple Developer account), auto-update (new dependency, recorded in STACK.md), database backup/export, first-run setup guide.

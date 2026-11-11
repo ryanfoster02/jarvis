@@ -111,6 +111,13 @@ Leads view ── leads:list/save/delete ──▶ db/leads.ts (migration 6)    
 ```
 Pure: `src/shared/leads.ts` (validation, patches, `pipelineSummary`), `src/shared/webhooks.ts` (URL rules, payload, data/secret checks). Webhook names are offered to the model as an enum (`specsForRequest`).
 
+## Web research (Sprint 17)
+```
+web_search (medium, web:search) ── executeTool → runWebSearch: getKey(provider) · RateLimiter(10/min)
+  → TEXT_PROVIDER_IMPLS[p].send(buildWebSearchRequest)  (OpenAI web_search | Anthropic web_search_20250305)
+  → parseWebSearch → report (untrusted) to the model · ActionNote.links → conversation source links
+```
+
 ## Performance (Sprint 16)
 ```
 main/index.ts  markStartup(appReady, databaseReady) · window reveal = first of ready-to-show | perf:dashboard-ready (windowShown)
