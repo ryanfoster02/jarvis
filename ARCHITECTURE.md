@@ -117,6 +117,7 @@ Settings → Connections → Google ── google:save-client/connect/cancel/dis
   connect → googleOAuth.runLoopbackFlow: PKCE + state → shell.openExternal(consent) → 127.0.0.1:<port> redirect → token exchange
 calendar_list_events / calendar_find_free_time (low, calendar:read) ──▶ listEvents → calendarList (cached) + events per calendar
 Dashboard TodayPanel ── calendar:events('today') ──▶ listEvents
+gmail_create_draft (medium, gmail:draft; Sprint 20) ──▶ createGmailDraft → POST gmail/v1/users/me/drafts (only Gmail call in the codebase)
 ```
 
 ## Backups, updates, releases (Sprint 18)

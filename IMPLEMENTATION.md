@@ -1,6 +1,6 @@
 # IMPLEMENTATION
 
-Current phase: Phase 5 / Sprint 19 — Google Calendar (read-only)
+Current phase: Phase 5 / Sprint 20 — Gmail drafts
 
 Status key: ✅ done · 🟡 code written, needs verification on macOS · ⬜ not started
 
@@ -240,8 +240,12 @@ Owner chose to go without an Apple Developer account for now, so no code signing
 - ✅ CI run 42975030533: 161 unit tests on each OS; e2e 28 passed (macOS/Windows), 24 + 5 skipped (Linux, no keyring)
 - 🟡 Owner: save the client, Connect Google, then ask "what's on my calendar today?" and "when am I free tomorrow for an hour?" 
 
-### Sprint 20 — Gmail drafts ⬜
-Same Google connection, compose scope: Jarvis creates drafts in Gmail (medium risk, approval); sending stays with the owner in Gmail.
+### Sprint 20 — Gmail drafts 🟡 (CI green 2026-11-11; live draft needs the owner's Google sign-in)
+- ✅ Pure `src/shared/gmail.ts`: draft validation (plain addresses, de-dup, ≤20, one-line subject, secrets refused), RFC 2822 plain text (UTF-8, RFC 2047 subject, base64 body), base64url request, response parsing, Drafts link, approval summary
+- ✅ Opt-in `gmail.compose` (Restricted; Google has no drafts-only scope) via *Let Jarvis write Gmail drafts* in Settings → Connections → Google; scopes requested per sign-in (installed apps can't add scopes later); status shows granted / reconnect needed
+- ✅ `gmail_create_draft` (medium, `gmail:draft`, no standing permission) → `POST /gmail/v1/users/me/drafts` only; conversation shows *Open Gmail drafts*
+- ✅ Tests: 7 unit incl. header-injection refusal, MIME round trip with non-ASCII, and a source scan proving no send endpoint/scope exists; e2e: tool refused without access, Gmail switch, consent URL asks for compose. CI run 42977889823: 168 unit tests per OS; e2e 28 (macOS/Windows), 24 + 5 skipped (Linux)
+- 🟡 Owner: enable the **Gmail API** in the Google Cloud project, switch on Gmail drafts, Reconnect Google, then ask "draft an email to … about …" and check Gmail → Drafts
 
 ### Sprint 21 — Automation oversight + morning briefing ⬜
 Self-hosted n8n API (read-only: workflows, failed executions) and a Morning briefing routine: calendar, reminders, overdue leads, GitHub, failed automations — read aloud on request.

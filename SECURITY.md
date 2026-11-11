@@ -179,3 +179,10 @@ Scope: Electron window/session config, preload bridge, all IPC handlers, credent
 - Tokens are refreshed in main; `invalid_grant` (Testing-mode apps expire after 7 days, or access revoked) marks the connection as needing reconnect. Disconnect revokes the grant at Google (best effort) and deletes the tokens; Remove also deletes the client.
 - Calendar text is untrusted: event titles, places and descriptions can be written by anyone who sends an invitation. Tool output is labelled as information, not instructions, and reading it withdraws standing permissions for the rest of the task.
 - Links shown from the calendar are limited to `https://meet.google.com/…` and Google Calendar event pages.
+
+## 26. Gmail drafts (Sprint 20)
+- **Opt-in, separate from Calendar:** the owner switches on *Let Jarvis write Gmail drafts*; only then does the next sign-in ask Google for `gmail.compose`. Switching it off removes the tool at once (Disconnect also revokes the grant at Google).
+- **Never sends, by construction:** Google has no drafts-only scope (`gmail.compose` is classified Restricted and also allows sending), so the guarantee is in the code: the only Gmail request JARVIS can make is `POST /gmail/v1/users/me/drafts`. A unit test scans `src/` and fails if any other Gmail URL or any send endpoint/scope appears. JARVIS cannot read the inbox either.
+- `gmail_create_draft` is **medium risk with no standing permission**: the owner approves every draft and sees recipients, subject and the start of the body on the card.
+- Input rules: plain addresses only (no display names, comments or line breaks), de-duplicated, at most 20 recipients; one-line subject (no header injection); body ≤ 20,000 characters; anything that looks like a secret is refused before it leaves the machine. The message is built as plain-text RFC 2822 (UTF-8, RFC 2047 subject, base64 body).
+- The model is told to use only addresses the owner gave or that come from the owner's own data, and never to guess one.
