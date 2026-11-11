@@ -27,6 +27,11 @@ import {
   type RunningTask,
   type Workflow,
   type WorkflowInput,
+  type Lead,
+  type LeadInput,
+  type WebhookInfo,
+  type WebhookInput,
+  type WebhookSendResult,
   type WorkflowRun,
   type WorkflowRunNotice,
   type ToolInvokeResult,
@@ -96,6 +101,24 @@ const api = {
       ipcRenderer.on(Events.approvalsChanged, listener)
       return () => ipcRenderer.removeListener(Events.approvalsChanged, listener)
     },
+  },
+  leads: {
+    list: (): Promise<HistoryResult<Lead[]>> => ipcRenderer.invoke(Channels.leadsList),
+    save: (input: LeadInput): Promise<HistoryResult<Lead>> => ipcRenderer.invoke(Channels.leadsSave, input),
+    delete: (id: string): Promise<HistoryResult<true>> => ipcRenderer.invoke(Channels.leadsDelete, id),
+    onChanged: (cb: () => void): (() => void) => {
+      const listener = (): void => cb()
+      ipcRenderer.on(Events.leadsChanged, listener)
+      return () => ipcRenderer.removeListener(Events.leadsChanged, listener)
+    },
+  },
+  // Webhooks: the renderer sees names and hosts only, never URLs or secrets.
+  webhooks: {
+    list: (): Promise<WebhookInfo[]> => ipcRenderer.invoke(Channels.webhooksList),
+    add: (input: WebhookInput): Promise<{ ok: true; value: WebhookInfo } | { ok: false; message: string }> =>
+      ipcRenderer.invoke(Channels.webhooksAdd, input),
+    delete: (id: string): Promise<boolean> => ipcRenderer.invoke(Channels.webhooksDelete, id),
+    test: (id: string): Promise<WebhookSendResult> => ipcRenderer.invoke(Channels.webhooksTest, id),
   },
   workflows: {
     list: (): Promise<HistoryResult<Workflow[]>> => ipcRenderer.invoke(Channels.workflowsList),

@@ -23,6 +23,7 @@ import { isHalted } from './killswitch.ts'
 import { notify } from './scheduler.ts'
 import { loadSettings } from './settings.ts'
 import { tasks } from './tasks.ts'
+import { webhookNames } from './webhooks.ts'
 import { TEXT_PROVIDER_IMPLS } from './textProviders.ts'
 import { executeTracked, permissionContext } from './tools.ts'
 import { getKey } from './vault.ts'
@@ -86,6 +87,7 @@ async function execute(db: Db, wf: Workflow, run: WorkflowRun): Promise<Workflow
         run.trigger,
       ),
       settings.githubRepos,
+      webhookNames(),
     )
     const body = buildProviderRequest({
       model: settings.textModel,

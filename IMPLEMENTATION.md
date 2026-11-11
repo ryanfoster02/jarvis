@@ -186,6 +186,13 @@ Packaging for Windows (NSIS installer) and Linux (AppImage, .deb); platform fixe
 
 ### Sprint 15 — Business workflows (webhooks + leads) 🟡
 Vendor-neutral first (owner didn't name specific tools): **webhooks** to n8n / Zapier / Make / any CRM automation (owner-registered, encrypted at rest, every send is high risk = approval each time, never from scheduled routines), and a local **leads** pipeline per workspace (owner UI; Jarvis can list, add and update with approval) plus a weekly pipeline-report routine template. Vendor connectors (HubSpot, Pipedrive, …) later, once the owner picks one.
+- ✅ Pure: `src/shared/leads.ts`, `src/shared/webhooks.ts` + 4 tools (list_leads low, add/update_lead medium, send_webhook high; webhook enum) — 5 unit tests
+- ✅ Storage: migration 6 `leads` (CHECKs) — SQL test; Drizzle store — test on Mac/CI
+- ✅ Main: encrypted webhook store + sender (POST, no redirects, timeout, stop); executor cases with lead/host shown on approval cards; IPC + preload (renderer never sees URLs/secrets)
+- ✅ UI: **Leads** screen (pipeline by stage, overdue, inline stage change, add/edit/delete); Settings → Connections → Webhooks (add, test, remove)
+- ✅ e2e: leads flow incl. Jarvis adding with approval; webhooks against a **real local HTTP receiver** (test ping with secret header, denied send arrives nowhere, approved send arrives exactly)
+- ✅ CI back on `npm ci` (lock file pushed by the owner)
+- 🟡 Needs owner verification with a real n8n (or Zapier/Make) workflow
 
 ## Dependencies between stages
 Sprint 3 needs Sprint 1 IPC + vault. Text chat needs Phase 2 provider (an interim direct OpenAI text call may land in Sprint 4). Integrations need permission engine. Scheduler needs permission engine + limits.

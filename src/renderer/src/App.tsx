@@ -30,6 +30,7 @@ import { StateLegend } from './components/StateLegend.tsx'
 import { StatusTerminal, type Telemetry } from './components/StatusTerminal.tsx'
 import { TopBar, type View } from './components/TopBar.tsx'
 import { WorkflowsView } from './components/WorkflowsView.tsx'
+import { LeadsView } from './components/LeadsView.tsx'
 import { useVoice, type VoiceActivity, type VoicePhase } from './voice/useVoice.ts'
 
 const ACTIVITY_TO_CORE: Record<VoiceActivity, CoreState> = {
@@ -285,6 +286,13 @@ export function App(): React.JSX.Element {
       offChanged()
       offFinished()
     }
+  }, [])
+
+  // ---- Leads (Sprint 15): reload when Jarvis changes them ----
+  const [leadsVersion, setLeadsVersion] = useState(0)
+  useEffect(() => {
+    if (!window.jarvis) return
+    return window.jarvis.leads.onChanged(() => setLeadsVersion((v) => v + 1))
   }, [])
 
   // ---- Running tasks and stop levels (Sprint 11) ----
@@ -584,6 +592,8 @@ export function App(): React.JSX.Element {
           </div>
         ) : view === 'memory' ? (
           <MemoryView workspaceName={workspace.name} refreshKey={memoryVersion} />
+        ) : view === 'leads' ? (
+          <LeadsView workspaceName={workspace.name} refreshKey={leadsVersion} />
         ) : view === 'routines' ? (
           <WorkflowsView workspaceName={workspace.name} refreshKey={workflowsVersion} halted={halted} />
         ) : settings && creds ? (

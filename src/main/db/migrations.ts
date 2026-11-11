@@ -105,6 +105,24 @@ export const MIGRATIONS: readonly string[] = [
   );
   CREATE INDEX workflow_runs_wf ON workflow_runs(workflow_id, started_at);
   `,
+  // 6 — leads (Sprint 15): a small local pipeline per workspace.
+  `
+  CREATE TABLE leads (
+    id            TEXT PRIMARY KEY,
+    workspace_id  TEXT NOT NULL REFERENCES workspaces(id),
+    name          TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 80),
+    company       TEXT NOT NULL DEFAULT '' CHECK (length(company) <= 80),
+    email         TEXT NOT NULL DEFAULT '' CHECK (length(email) <= 120),
+    status        TEXT NOT NULL CHECK (status IN ('new', 'contacted', 'qualified', 'proposal', 'won', 'lost')),
+    value         INTEGER NOT NULL DEFAULT 0 CHECK (value >= 0),
+    notes         TEXT NOT NULL DEFAULT '' CHECK (length(notes) <= 1000),
+    next_step     TEXT NOT NULL DEFAULT '' CHECK (length(next_step) <= 200),
+    next_date     TEXT CHECK (next_date IS NULL OR next_date GLOB '[0-9][0-9][0-9][0-9]-[01][0-9]-[0-3][0-9]'),
+    created_at    INTEGER NOT NULL,
+    updated_at    INTEGER NOT NULL
+  );
+  CREATE INDEX leads_ws_status ON leads(workspace_id, status);
+  `,
 ]
 
 export function schemaVersion(db: DatabaseSync): number {

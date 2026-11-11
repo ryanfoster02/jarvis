@@ -24,6 +24,9 @@ import {
   type RunningTask,
   type Workflow,
   type WorkflowRun,
+  type Lead,
+  type WebhookInfo,
+  type WebhookSendResult,
   isToolName,
   DEFAULT_LIMITS,
   type ApprovalRequest,
@@ -64,11 +67,15 @@ import {
 import { remindersChanged } from './scheduler.ts'
 import { applyBackground, backgroundStatus } from './background.ts'
 import { tasks } from './tasks.ts'
+import { addWebhook, deleteWebhook, findWebhookById, listWebhooks, postWebhook, WebhookError, webhookNames } from './webhooks.ts'
+import { deleteLead, LeadLimitError, LeadNotFoundError, listLeads, saveLead } from './db/leads.ts'
+import { validateLeadInput } from '../shared/leads.ts'
+import { validateWebhookInput, webhookPayload } from '../shared/webhooks.ts'
 import { deleteWorkflow, getWorkflow, listRuns, listWorkflows, saveWorkflow, WorkflowLimitError, WorkflowNotFoundError } from './db/workflows.ts'
 import { startWorkflow, WorkflowBusyError, workflowsChanged } from './workflows.ts'
 import { validateWorkflowInput } from '../shared/workflows.ts'
 import { parseWhen, SNOOZE_MINUTES, validateReminderText } from '../shared/reminders.ts'
-import { executeTool, executeTracked, permissionContext } from './tools.ts'
+import { executeTool, executeTracked, leadsChanged, permissionContext } from './tools.ts'
 import { answerApproval, listApprovals } from './approvals.ts'
 import { listToolRuns } from './db/toolRuns.ts'
 import { TEXT_PROVIDER_IMPLS } from './textProviders.ts'
@@ -224,6 +231,7 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
       const tools = specsForRequest(
         Object.values(TOOLS).filter((t) => isOffered(t, perm)),
         settings.githubRepos,
+        webhookNames(),
       )
       const body = buildProviderRequest({
         model: settings.textModel,
@@ -546,6 +554,7 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
         tools: specsForRequest(
           Object.values(TOOLS).filter((t) => isOffered(t, permissionContext({ db: history.database?.db ?? null, settings }))),
           settings.githubRepos,
+          webhookNames(),
         ),
       }
 
@@ -813,6 +822,88 @@ export function registerIpc(trusted: TrustedOrigins, history: HistoryStore): voi
       } catch (err) {
         return workflowError(err)
       }
+    }),
+  )
+
+  // ---------- Leads and webhooks (Sprint 15) — the owner's own actions ----------
+  const leadError = (err: unknown): { ok: false; code: 'invalid_input' | 'not_found'; message: string } => {
+    if (err instanceof IpcValidationError || err instanceof LeadLimitError) return { ok: false, code: 'invalid_input', message: err.message }
+    if (err instanceof LeadNotFoundError) return { ok: false, code: 'not_found', message: err.message }
+    throw err
+  }
+
+  ipcMain.handle(
+    Channels.leadsList,
+    guard(async (): Promise<HistoryResult<Lead[]>> => {
+      const db = history.database?.db
+      if (!db) return unavailable()
+      return { ok: true, value: await listLeads(db, activeWorkspace()) }
+    }),
+  )
+  ipcMain.handle(
+    Channels.leadsSave,
+    guard(async (input: unknown): Promise<HistoryResult<Lead>> => {
+      const db = history.database?.db
+      if (!db) return unavailable()
+      try {
+        const l = await saveLead(db, activeWorkspace(), validateLeadInput(input))
+        leadsChanged()
+        return { ok: true, value: l }
+      } catch (err) {
+        return leadError(err)
+      }
+    }),
+  )
+  ipcMain.handle(
+    Channels.leadsDelete,
+    guard(async (id: unknown): Promise<HistoryResult<true>> => {
+      const db = history.database?.db
+      if (!db) return unavailable()
+      try {
+        await deleteLead(db, activeWorkspace(), validateConversationId(id))
+        leadsChanged()
+        return { ok: true, value: true }
+      } catch (err) {
+        return leadError(err)
+      }
+    }),
+  )
+
+  ipcMain.handle(Channels.webhooksList, guard((): WebhookInfo[] => listWebhooks()))
+  ipcMain.handle(
+    Channels.webhooksAdd,
+    guard((input: unknown): { ok: true; value: WebhookInfo } | { ok: false; message: string } => {
+      try {
+        return { ok: true, value: addWebhook(validateWebhookInput(input)) }
+      } catch (err) {
+        if (err instanceof IpcValidationError || err instanceof WebhookError) return { ok: false, message: err.message }
+        throw err
+      }
+    }),
+  )
+  ipcMain.handle(
+    Channels.webhooksDelete,
+    guard((id: unknown): boolean => (typeof id === 'string' && id.length <= 64 ? deleteWebhook(id) : false)),
+  )
+  // The owner's own test send (not an agent action, so no approval): a fixed test payload only.
+  ipcMain.handle(
+    Channels.webhooksTest,
+    guard(async (id: unknown): Promise<WebhookSendResult> => {
+      if (typeof id !== 'string' || id.length > 64) return { ok: false, message: 'Unknown webhook.' }
+      if (isHalted()) return { ok: false, message: 'Stop all is engaged. Re-arm Jarvis first.' }
+      if (!limits.keys.take()) return { ok: false, message: SLOW_DOWN }
+      const target = findWebhookById(id)
+      if (!target) return { ok: false, message: 'Unknown webhook.' }
+      const ws = activeWorkspace()
+      const payload = webhookPayload({
+        webhook: target.name,
+        message: 'Test from JARVIS: if you can see this, the webhook works.',
+        data: null,
+        workspace: WORKSPACES.find((w) => w.id === ws)?.name ?? 'Personal',
+        now: Date.now(),
+        test: true,
+      })
+      return postWebhook(target, payload)
     }),
   )
 }

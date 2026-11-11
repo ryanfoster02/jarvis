@@ -1,5 +1,6 @@
 import { test, expect, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtempSync, rmSync } from 'node:fs'
+import { createServer, type IncomingHttpHeaders } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { closeAll, closeApp, launchApp, LAUNCH_BUDGET } from './electron'
@@ -73,6 +74,7 @@ test('renderer is isolated: no Node globals, only the narrow jarvis bridge', asy
     'credentials',
     'github',
     'killSwitch',
+    'leads',
     'memory',
     'reminders',
     'settings',
@@ -80,6 +82,7 @@ test('renderer is isolated: no Node globals, only the narrow jarvis bridge', asy
     'tools',
     'tts',
     'voice',
+    'webhooks',
     'workflows',
   ])
 
@@ -568,4 +571,103 @@ test('no secure storage: key forms are disabled and explain why (instead of stor
   await expect(page.getByText(/Install and unlock a keyring/)).toBeVisible()
   await expect(page.locator('.provider input[type="password"]').first()).toBeDisabled()
   await closeApp(app)
+})
+
+test('leads: add with a past next step, pipeline and overdue, change stage, delete; Jarvis adds with approval', async () => {
+  const { app, page } = await launch(profile)
+  await page.getByRole('button', { name: 'Leads', exact: true }).click()
+  await page.getByRole('button', { name: 'New lead' }).click()
+  const form = page.getByRole('form', { name: 'Lead editor' })
+  await form.getByLabel('Lead name').fill('Ada Lovelace')
+  await form.getByLabel('Company').fill('Acme')
+  await form.getByLabel('Stage').selectOption('qualified')
+  await form.getByLabel('Value').fill('12500')
+  await form.getByLabel('Next step date').fill('2020-01-15')
+  await form.getByLabel('Next step', { exact: true }).fill('Send proposal')
+  await form.getByRole('button', { name: 'Add' }).click()
+
+  const pipeline = page.getByRole('region', { name: 'Pipeline' })
+  await expect(pipeline.locator('.stage-qualified .stage-count')).toHaveText('1')
+  await expect(pipeline).toContainText('1 overdue next step')
+  const ada = page.getByRole('listitem', { name: 'Ada Lovelace' })
+  await expect(ada).toContainText('Send proposal')
+
+  await ada.getByLabel('Stage for Ada Lovelace').selectOption('won')
+  await expect(page.getByRole('listitem', { name: 'Ada Lovelace' })).toHaveCount(0) // won leads hide by default
+  await page.getByLabel('Show won and lost').check()
+  await expect(pipeline.locator('.stage-won .stage-count')).toHaveText('1')
+
+  // Jarvis adding a lead asks first (medium risk) and the new lead appears.
+  const adding = invoke(page, 'add_lead', { name: 'Grace Hopper', company: 'Navy', email: null, status: 'new', value: null, notes: null, next_step: null, next_date: null })
+  const card = page.locator('.approval').filter({ hasText: 'Add lead: Grace Hopper (Navy)' })
+  await expect(card.locator('.risk-badge')).toHaveText('Medium risk')
+  await card.getByRole('button', { name: 'Approve' }).click()
+  expect((await adding).output).toContain('Lead added')
+  await expect(page.getByRole('listitem', { name: 'Grace Hopper' })).toBeVisible()
+
+  await page.getByRole('listitem', { name: 'Ada Lovelace' }).getByRole('button', { name: 'Delete' }).click()
+  await page.getByRole('alertdialog', { name: 'Delete lead' }).getByRole('button', { name: 'Delete' }).click()
+  await expect(page.getByRole('listitem', { name: 'Ada Lovelace' })).toHaveCount(0)
+  await closeApp(app)
+})
+
+test('webhooks: a real local receiver gets the test ping and only approved sends, with the secret header', async () => {
+  test.setTimeout(LAUNCH_BUDGET + 60_000)
+  const received: Array<{ headers: IncomingHttpHeaders; body: Record<string, unknown> }> = []
+  const server = createServer((req, res) => {
+    let raw = ''
+    req.on('data', (c: Buffer) => (raw += c.toString()))
+    req.on('end', () => {
+      received.push({ headers: req.headers, body: JSON.parse(raw || '{}') as Record<string, unknown> })
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end('{"received":true}')
+    })
+  })
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
+  const port = (server.address() as { port: number }).port
+  const { app, page } = await launch(profile)
+  try {
+    await requireSecureStorage(page)
+    await page.keyboard.press('ControlOrMeta+,')
+    await page.getByRole('button', { name: 'Connections' }).click()
+    const hooks = page.getByLabel('Webhooks', { exact: true })
+    // Plain http to another host is refused.
+    await hooks.getByLabel('Webhook name').fill('Bad')
+    await hooks.getByLabel('Webhook URL').fill('http://example.com/hook')
+    await hooks.getByRole('button', { name: 'Add webhook' }).click()
+    await expect(hooks.locator('.form-msg.is-error')).toContainText('Use https')
+    // A local receiver (like a self-hosted n8n) is allowed.
+    await hooks.getByLabel('Webhook name').fill('CRM')
+    await hooks.getByLabel('Webhook URL').fill(`http://127.0.0.1:${port}/webhook/secret-path`)
+    await hooks.getByLabel('Webhook secret').fill('s3cret')
+    await hooks.getByRole('button', { name: 'Add webhook' }).click()
+    await expect(hooks.locator('.repos')).toContainText(`CRM · 127.0.0.1:${port} · secret`)
+    await expect(hooks).not.toContainText('secret-path') // the URL path is never shown
+
+    await hooks.getByRole('button', { name: 'Test' }).click()
+    await expect(hooks.locator('.form-msg.is-ok')).toContainText('CRM answered 200.')
+    expect(received).toHaveLength(1)
+    expect(received[0]?.headers['x-jarvis-secret']).toBe('s3cret')
+    expect(received[0]?.body.test).toBe(true)
+    await page.keyboard.press('Escape')
+
+    // High risk: denied → nothing sent.
+    const denied = invoke(page, 'send_webhook', { webhook: 'CRM', message: 'New lead: Ada', data_json: '{"name":"Ada"}' })
+    const card = page.locator('.approval').filter({ hasText: `Send to CRM (127.0.0.1:${port}): "New lead: Ada" + data` })
+    await expect(card.locator('.risk-badge')).toHaveText('High risk')
+    await card.getByRole('button', { name: 'Deny' }).click()
+    expect((await denied).output).toContain('declined')
+    expect(received).toHaveLength(1)
+
+    // Approved → exactly that payload arrives.
+    const sent = invoke(page, 'send_webhook', { webhook: 'CRM', message: 'New lead: Ada', data_json: '{"name":"Ada"}' })
+    await page.locator('.approval').getByRole('button', { name: 'Approve' }).click()
+    expect((await sent).output).toContain('Sent to CRM. It answered 200.')
+    expect(received).toHaveLength(2)
+    expect(received[1]?.body).toMatchObject({ source: 'jarvis', webhook: 'CRM', message: 'New lead: Ada', data: { name: 'Ada' } })
+    expect(received[1]?.headers['x-jarvis-secret']).toBe('s3cret')
+  } finally {
+    await closeApp(app)
+    server.close()
+  }
 })

@@ -2,7 +2,7 @@ import { THEMES, WORKSPACES, type KillSwitchState, type Settings, type Theme, ty
 import { PT } from '../platform.ts'
 import { THEME_NAMES } from './ThemeSwitcher.tsx'
 
-export type View = 'dashboard' | 'memory' | 'routines' | 'settings'
+export type View = 'dashboard' | 'memory' | 'leads' | 'routines' | 'settings'
 
 interface Props {
   view: View
@@ -42,6 +42,9 @@ export function TopBar({ view, onNavigate, settings, kill, onWorkspace, onTheme,
           </button>
           <button aria-current={view === 'memory' ? 'page' : undefined} onClick={() => onNavigate('memory')}>
             Memory
+          </button>
+          <button aria-current={view === 'leads' ? 'page' : undefined} onClick={() => onNavigate('leads')}>
+            Leads
           </button>
           <button aria-current={view === 'routines' ? 'page' : undefined} onClick={() => onNavigate('routines')}>
             Routines

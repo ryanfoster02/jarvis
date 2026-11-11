@@ -44,6 +44,13 @@ export const Channels = {
   workflowsDelete: 'workflows:delete',
   workflowsRun: 'workflows:run',
   workflowsRuns: 'workflows:runs',
+  leadsList: 'leads:list',
+  leadsSave: 'leads:save',
+  leadsDelete: 'leads:delete',
+  webhooksList: 'webhooks:list',
+  webhooksAdd: 'webhooks:add',
+  webhooksDelete: 'webhooks:delete',
+  webhooksTest: 'webhooks:test',
 } as const
 
 /** Main → renderer push events. */
@@ -62,6 +69,8 @@ export const Events = {
   workflowsChanged: 'workflows:changed',
   /** A workflow run finished (carries WorkflowRunNotice). */
   workflowFinished: 'workflows:finished',
+  /** Leads changed (by Jarvis or another window): reload. */
+  leadsChanged: 'leads:changed',
 } as const
 
 export type Channel = (typeof Channels)[keyof typeof Channels]
@@ -605,6 +614,10 @@ export const TOOL_NAMES = [
   'list_reminders',
   'cancel_reminder',
   'delegate',
+  'list_leads',
+  'add_lead',
+  'update_lead',
+  'send_webhook',
 ] as const
 export type ToolName = (typeof TOOL_NAMES)[number]
 export const isToolName = (v: unknown): v is ToolName => typeof v === 'string' && (TOOL_NAMES as readonly string[]).includes(v)
@@ -761,6 +774,52 @@ export interface WorkflowRunNotice {
   workflowName: string
   workspaceId: WorkspaceId
 }
+
+// ---------- Leads (Sprint 15) ----------
+
+export const LEAD_STATUSES = ['new', 'contacted', 'qualified', 'proposal', 'won', 'lost'] as const
+export type LeadStatus = (typeof LEAD_STATUSES)[number]
+
+export interface Lead {
+  id: string
+  workspaceId: WorkspaceId
+  name: string
+  company: string
+  email: string
+  status: LeadStatus
+  /** Estimated deal value in whole currency units (no currency conversion). */
+  value: number
+  notes: string
+  nextStep: string
+  /** YYYY-MM-DD in local time, or null. */
+  nextDate: string | null
+  createdAt: number
+  updatedAt: number
+}
+
+export type LeadInput = Omit<Lead, 'id' | 'workspaceId' | 'createdAt' | 'updatedAt'> & { id?: string }
+
+// ---------- Webhooks (Sprint 15) ----------
+
+/** What the UI may know about a webhook: never the full URL or the secret. */
+export interface WebhookInfo {
+  id: string
+  name: string
+  /** Host only, e.g. "n8n.example.com" — the path of an n8n URL works like a password. */
+  host: string
+  hasSecret: boolean
+  createdAt: number
+  lastSentAt: number | null
+}
+
+export interface WebhookInput {
+  name: string
+  url: string
+  /** Sent as the X-JARVIS-Secret header (n8n "Header Auth"); null for none. */
+  secret: string | null
+}
+
+export type WebhookSendResult = { ok: true; status: number; body: string } | { ok: false; message: string }
 
 // ---------- GitHub (Sprint 9) ----------
 

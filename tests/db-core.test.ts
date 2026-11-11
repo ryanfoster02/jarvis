@@ -21,7 +21,7 @@ test('migrations: apply once, record version, idempotent on reopen', () => {
   assert.equal(schemaVersion(db), MIGRATIONS.length)
   assert.equal(migrate(db), MIGRATIONS.length) // no-op
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all().map((r) => (r as { name: string }).name)
-  assert.deepEqual(tables, ['conversations', 'memories', 'messages', 'reminders', 'tool_runs', 'workflow_runs', 'workflows', 'workspaces'])
+  assert.deepEqual(tables, ['conversations', 'leads', 'memories', 'messages', 'reminders', 'tool_runs', 'workflow_runs', 'workflows', 'workspaces'])
 })
 
 test('migrations: failed migration rolls back and leaves version unchanged', () => {
@@ -150,4 +150,18 @@ test('workflow tables: schedule pairs, cascade delete of runs', () => {
   assert.throws(() => run.run('r3', 'w1', 'manual', 'done', 1), /CHECK/)
   db.prepare("DELETE FROM workflows WHERE id = 'w1'").run()
   assert.equal((db.prepare('SELECT count(*) AS n FROM workflow_runs').get() as { n: number }).n, 0, 'runs deleted with their routine')
+})
+
+test('leads table: stages, values, date format', () => {
+  const db = new DatabaseSync(':memory:')
+  configure(db)
+  migrate(db)
+  seedWorkspaces(db)
+  const ins = db.prepare('INSERT INTO leads (id, workspace_id, name, status, value, next_date, created_at, updated_at) VALUES (?,?,?,?,?,?,1,1)')
+  ins.run('l1', 'personal', 'Ada', 'qualified', 5000, '2026-11-20')
+  assert.throws(() => ins.run('l2', 'personal', 'Bob', 'hot', 0, null), /CHECK/)
+  assert.throws(() => ins.run('l3', 'personal', 'Cy', 'new', -1, null), /CHECK/)
+  assert.throws(() => ins.run('l4', 'personal', 'Di', 'new', 0, '20/11/2026'), /CHECK/)
+  assert.throws(() => ins.run('l5', 'personal', '', 'new', 0, null), /CHECK/)
+  assert.throws(() => ins.run('l6', 'nowhere', 'Ed', 'new', 0, null), /FOREIGN KEY/)
 })

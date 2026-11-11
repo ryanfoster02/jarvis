@@ -103,6 +103,12 @@ export const WORKFLOW_TEMPLATES: ReadonlyArray<Omit<WorkflowInput, 'id' | 'enabl
     schedule: null,
   },
   {
+    name: 'Weekly pipeline report',
+    instructions:
+      'List my open leads. Report how many are at each stage and their total value, then list any whose next-step date has passed, oldest first, with the next step. End with the three leads I should follow up on this week and why.',
+    schedule: { days: [1], time: '08:00' },
+  },
+  {
     name: 'End-of-day wrap-up',
     instructions: "List tomorrow's reminders and anything due in the next three days. Suggest one reminder I might want to add.",
     schedule: { days: [1, 2, 3, 4, 5], time: '17:30' },

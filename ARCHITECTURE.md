@@ -103,6 +103,14 @@ tasks:cancel → workflow · tasks:cancel-action → worker · Stop all → task
 tasks:changed event → Ops column "Running" (Stop action / Stop request) + composer Stop button
 ```
 
+## Business: webhooks and leads (Sprint 15)
+```
+Settings → Connections → Webhooks ── webhooks:add/list/delete/test ──▶ main/webhooks.ts (safeStorage-encrypted webhooks.json)
+send_webhook (high) ── executeTool: findWebhook → summary with host → approval → postWebhook (POST, no redirects, abort) → untrusted response
+Leads view ── leads:list/save/delete ──▶ db/leads.ts (migration 6)      list_leads (low) · add_lead / update_lead (medium) → leads:changed event
+```
+Pure: `src/shared/leads.ts` (validation, patches, `pipelineSummary`), `src/shared/webhooks.ts` (URL rules, payload, data/secret checks). Webhook names are offered to the model as an enum (`specsForRequest`).
+
 ## Platforms (Sprint 14)
 - `src/shared/platform.ts` (`detectPlatform`, `platformText`) gives the renderer per-OS shortcuts (⌘ vs Ctrl) and wording (menu bar vs system tray, keychain, settings paths); `src/renderer/src/platform.ts` detects the OS from the user agent.
 - Main: Windows sets an AppUserModelID (notifications), non-mac windows auto-hide the menu bar and get a File menu, the tray uses a template icon on macOS and a gold icon elsewhere, login items per OS (`background.ts`), Linux refuses `basic_text` key storage (`vault.ts`).

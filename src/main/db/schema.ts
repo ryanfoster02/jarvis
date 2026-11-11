@@ -1,5 +1,5 @@
 import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
-import { REMINDER_STATUSES, RISK_LEVELS, TOOL_NAMES, type WorkspaceId } from '../../shared/ipc.ts'
+import { LEAD_STATUSES, REMINDER_STATUSES, RISK_LEVELS, TOOL_NAMES, type WorkspaceId } from '../../shared/ipc.ts'
 
 // Drizzle table definitions — typed queries. The SQL that creates them lives in migrations.ts.
 
@@ -127,4 +127,26 @@ export const workflowRuns = sqliteTable(
   (t) => [index('workflow_runs_wf').on(t.workflowId, t.startedAt)],
 )
 
-export const schema = { workspaces, conversations, messages, memories, toolRuns, reminders, workflows, workflowRuns }
+export const leads = sqliteTable(
+  'leads',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .$type<WorkspaceId>()
+      .notNull()
+      .references(() => workspaces.id),
+    name: text('name').notNull(),
+    company: text('company').notNull(),
+    email: text('email').notNull(),
+    status: text('status', { enum: LEAD_STATUSES }).notNull(),
+    value: integer('value').notNull(),
+    notes: text('notes').notNull(),
+    nextStep: text('next_step').notNull(),
+    nextDate: text('next_date'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (t) => [index('leads_ws_status').on(t.workspaceId, t.status)],
+)
+
+export const schema = { workspaces, conversations, messages, memories, toolRuns, reminders, workflows, workflowRuns, leads }

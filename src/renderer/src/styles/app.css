@@ -1843,3 +1843,89 @@ select {
   border-left-color: var(--danger);
   background: color-mix(in srgb, var(--danger) 6%, transparent);
 }
+
+/* ---------- Leads and webhooks (Sprint 15) ---------- */
+.pipeline {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+}
+.stage {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--accent);
+}
+.stage-won {
+  border-top-color: var(--ok);
+}
+.stage-lost {
+  border-top-color: var(--faint);
+}
+.stage-name {
+  font: 400 var(--t-micro) var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.stage-count {
+  font: 400 var(--t-lg) / 1.1 var(--font-display);
+}
+.stage-value {
+  font: 400 var(--t-xs) var(--font-mono);
+  color: var(--dim);
+}
+.pipeline-foot {
+  grid-column: 1 / -1;
+  font-size: var(--t-sm);
+  color: var(--dim);
+}
+.overdue {
+  color: var(--danger);
+}
+.lead-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.lead-form .select {
+  width: 100%;
+}
+.lead-list-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.lead-item {
+  padding: 12px 0;
+  border-top: 1px solid var(--line-soft);
+}
+.lead-item:first-child {
+  border-top: none;
+}
+.lead-company {
+  color: var(--dim);
+  font-weight: 400;
+}
+.webhook-form {
+  display: grid;
+  grid-template-columns: 1fr 2fr 1.4fr auto;
+  gap: 8px;
+  margin-top: 10px;
+}
+.webhook-form input {
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 75%, transparent);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--t-sm);
+  outline: none;
+  min-width: 0;
+}
+.webhook-form input:focus {
+  border-color: var(--accent);
+}

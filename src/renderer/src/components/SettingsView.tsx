@@ -13,6 +13,7 @@ import {
   TEXT_MODELS,
   MAX_GITHUB_REPOS,
   type BackgroundStatus,
+  type WebhookInfo,
   TEXT_PROVIDER_NAMES,
   TEXT_PROVIDERS,
   textModelProvider,
@@ -249,6 +250,97 @@ function BackgroundSettings({ settings, onUpdate }: { settings: Settings; onUpda
         </p>
       )}
     </>
+  )
+}
+
+function WebhooksPanel({ encryptionAvailable }: { encryptionAvailable: boolean }): React.JSX.Element {
+  const [list, setList] = useState<WebhookInfo[]>([])
+  const [name, setName] = useState('')
+  const [url, setUrl] = useState('')
+  const [secret, setSecret] = useState('')
+  const [msg, setMsg] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  const load = (): void => void window.jarvis.webhooks.list().then(setList)
+  useEffect(load, [])
+
+  const add = async (e: FormEvent): Promise<void> => {
+    e.preventDefault()
+    const r = await window.jarvis.webhooks.add({ name, url, secret: secret || null })
+    if (r.ok) {
+      setName('')
+      setUrl('')
+      setSecret('')
+      setMsg({ tone: 'ok', text: `Added ${r.value.name} (${r.value.host}). Try “Test” to check it.` })
+      load()
+    } else setMsg({ tone: 'error', text: r.message })
+  }
+  const test = async (w: WebhookInfo): Promise<void> => {
+    setBusy(w.id)
+    const r = await window.jarvis.webhooks.test(w.id)
+    setBusy(null)
+    setMsg(r.ok ? { tone: 'ok', text: `${w.name} answered ${r.status}.` } : { tone: 'error', text: `${w.name}: ${r.message}` })
+    load()
+  }
+  const remove = async (w: WebhookInfo): Promise<void> => {
+    await window.jarvis.webhooks.delete(w.id)
+    setMsg({ tone: 'ok', text: `Removed ${w.name}.` })
+    load()
+  }
+
+  return (
+    <div className="repo-allowlist" aria-label="Webhooks">
+      <h3>Webhooks (n8n, Zapier, Make, CRMs)</h3>
+      <p className="fine">
+        Jarvis can send a message and data to these — e.g. an n8n workflow that adds a lead to your CRM or posts to Slack.
+        Every send asks for your approval and shows exactly what goes out; scheduled routines can never send. Addresses are
+        encrypted on {PT.computer} and only the host is shown here.
+      </p>
+      {list.length === 0 ? (
+        <p className="empty-note">No webhooks yet.</p>
+      ) : (
+        <ul className="repos">
+          {list.map((w) => (
+            <li key={w.id}>
+              <span className="repo-name">
+                {w.name} · {w.host}
+                {w.hasSecret ? ' · secret' : ''}
+              </span>
+              <span className="memory-actions">
+                <button type="button" className="btn btn-quiet" disabled={busy === w.id} onClick={() => void test(w)}>
+                  {busy === w.id ? 'Testing…' : 'Test'}
+                </button>
+                <button type="button" className="btn btn-quiet" aria-label={`Remove ${w.name}`} onClick={() => void remove(w)}>
+                  Remove
+                </button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form className="webhook-form" onSubmit={(e) => void add(e)} aria-label="Add webhook">
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name, e.g. CRM" aria-label="Webhook name" maxLength={40} />
+        <input
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="https://… (or http://localhost:5678/… for a local n8n)"
+          aria-label="Webhook URL"
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <input
+          value={secret}
+          onChange={(e) => setSecret(e.target.value)}
+          placeholder="Optional secret (sent as X-JARVIS-Secret)"
+          aria-label="Webhook secret"
+          type="password"
+          autoComplete="off"
+        />
+        <button type="submit" className="btn" disabled={!name.trim() || !url.trim() || !encryptionAvailable}>
+          Add webhook
+        </button>
+      </form>
+      {msg && <p className={`form-msg ${msg.tone === 'error' ? 'is-error' : 'is-ok'}`}>{msg.text}</p>}
+    </div>
   )
 }
 
@@ -872,6 +964,7 @@ export function SettingsView({ settings, info, creds, onCreds, onUpdate }: Props
               available yet.
             </p>
             <GitHubConnection settings={settings} creds={creds} onCreds={onCreds} onUpdate={onUpdate} />
+            <WebhooksPanel encryptionAvailable={creds.encryptionAvailable} />
           </>
         )}
 
